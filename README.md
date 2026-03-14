@@ -204,40 +204,6 @@ mypy tune_shifter/     # type check
 black tune_shifter/ tests/  # format
 ```
 
----
-
-## Future Improvements
-
-- Cross-platform service installation (Linux systemd, Windows Task Scheduler)
-- Homebrew formula
-- GUI / menu bar app for sync status
-- Fully delete folders from staging after moving files to library
-- Allow a user to verify tags before they're written
-- Make tag writing more robust by adding missing tags from MusicBrainz:
-  - AcoustID
-  - Album Artist Sort Order
-  - Artist Sort Order
-  - Artists
-  - ASIN
-  - Barcode
-  - Catalog Number
-  - Disc Number
-  - MusicBrainz Artist ID
-  - MusicBrainz Recording ID
-  - MusicBrainz Release Artist ID
-  - MusicBrainz Release Group ID
-  - MusicBrainz Release ID
-  - Original Release Date
-  - Original Year
-  - Producer
-  - Record Label
-  - Release Country
-  - Release Status
-  - Release Type
-  - Script
-  - Total Discs
-  - Total Tracks
-- Make cover image source configurable (iTunes, Spotify, Qobuz, Fanart, etc)
 
 ---
 
