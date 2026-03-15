@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.3.0...v0.4.0) (2026-03-15)
+
+
+### Features
+
+* prefer bundled artwork from archive over Cover Art Archive ([88ad795](https://github.com/eightyeighteyes/tune-shifter/commit/88ad7954fad1dd244c1f330b845b9745724f90b4))
+* prefer bundled artwork from archive over Cover Art Archive ([ef33820](https://github.com/eightyeighteyes/tune-shifter/commit/ef33820f93dcdcc4ac8fa76fd0d7a2829a4092d6))
+
+
+### Bug Fixes
+
+* add get_release_by_id mock to pipeline tests ([27169c9](https://github.com/eightyeighteyes/tune-shifter/commit/27169c9183f1418d932440b93a299098ff939de6))
+* fetch full release details and fall back to release-group artwork ([e37ca19](https://github.com/eightyeighteyes/tune-shifter/commit/e37ca19442d8217175f2ddaa7fec5297b530c120))
+* M4A tagging — full release details and release-group artwork fallback ([7879e74](https://github.com/eightyeighteyes/tune-shifter/commit/7879e742c8a2a0c1147e595cb3968a7e7b15c3c1))
+
 ## [0.3.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.2.3...v0.3.0) (2026-03-15)
 
 
