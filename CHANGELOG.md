@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.1](https://github.com/eightyeighteyes/tune-shifter/compare/v0.8.0...v0.8.1) (2026-03-15)
+
+
+### Bug Fixes
+
+* include USAGE.md in Poetry sdist for Homebrew formula ([#29](https://github.com/eightyeighteyes/tune-shifter/issues/29)) ([a6e1ef7](https://github.com/eightyeighteyes/tune-shifter/commit/a6e1ef76742b0abc082e4b3d259452a24817f9b2))
+
 ## [0.8.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.7.0...v0.8.0) (2026-03-15)
 
 
