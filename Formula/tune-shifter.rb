@@ -91,10 +91,9 @@ class TuneShifter < Formula
   end
 
   def caveats
+    usage = (share/"tune-shifter"/"USAGE.md").read
     <<~EOS
-      Quick-start guide:
-        open "#{share}/tune-shifter/USAGE.md"
-
+      #{usage}
       Bandcamp auto-download requires Playwright browser binaries.
       Run this once after install:
 
