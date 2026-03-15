@@ -15,7 +15,9 @@ from tune_shifter.config import (
     MusicBrainzConfig,
     PathsConfig,
 )
-from tune_shifter.pipeline import run
+from tune_shifter.artwork import ArtworkError
+from tune_shifter.mover import MoveError
+from tune_shifter.pipeline import _quarantine, run
 from tune_shifter.tagger import ReleaseInfo, TrackInfo
 
 # ---------------------------------------------------------------------------
@@ -160,6 +162,88 @@ class TestPipelineRun:
         assert errors_dir.exists()
         quarantined = list(errors_dir.iterdir())
         assert len(quarantined) == 1
+
+    def test_quarantine_on_empty_directory(
+        self, tmp_path: Path, config: Config
+    ) -> None:
+        """An extracted directory with no audio files is quarantined."""
+        config.paths.staging.mkdir(parents=True)
+        album_dir = config.paths.staging / "empty-album"
+        album_dir.mkdir()
+        (album_dir / "cover.jpg").write_bytes(b"fake image")
+
+        run(album_dir, config)
+
+        assert (config.paths.staging / "errors" / "empty-album").exists()
+
+    def test_artwork_failure_is_nonfatal(
+        self, tmp_path: Path, config: Config
+    ) -> None:
+        """An ArtworkError is logged as a warning and the pipeline continues."""
+        config.paths.staging.mkdir(parents=True)
+        config.paths.library.mkdir(parents=True)
+
+        album_dir = config.paths.staging / "great-album"
+        album_dir.mkdir()
+        mp3 = album_dir / "01.mp3"
+        mp3.write_bytes(b"\xff\xfb" * 64)
+        import mutagen.id3 as id3
+
+        tags = id3.ID3()
+        tags["TPE1"] = id3.TPE1(encoding=3, text="Artist")
+        tags["TALB"] = id3.TALB(encoding=3, text="Album")
+        tags.save(str(mp3))
+
+        with (
+            patch("musicbrainzngs.search_releases", return_value=MB_SEARCH_RESULT),
+            patch("musicbrainzngs.get_release_by_id", return_value=MB_RELEASE_DETAIL),
+            patch(
+                "tune_shifter.pipeline.fetch_and_embed",
+                side_effect=ArtworkError("no art"),
+            ),
+        ):
+            run(album_dir, config)
+
+        # File should have been moved to library despite artwork failure
+        assert list(config.paths.library.rglob("*.mp3"))
+
+    def test_quarantine_on_move_failure(
+        self, tmp_path: Path, config: Config
+    ) -> None:
+        """A MoveError causes the directory to be quarantined."""
+        config.paths.staging.mkdir(parents=True)
+        config.paths.library.mkdir(parents=True)
+
+        album_dir = config.paths.staging / "great-album"
+        album_dir.mkdir()
+        mp3 = album_dir / "01.mp3"
+        mp3.write_bytes(b"\xff\xfb" * 64)
+        import mutagen.id3 as id3
+
+        tags = id3.ID3()
+        tags.save(str(mp3))
+
+        with (
+            patch("tune_shifter.pipeline.tag_directory", return_value=MOCK_RELEASE),
+            patch("tune_shifter.pipeline.fetch_and_embed"),
+            patch(
+                "tune_shifter.pipeline.move_to_library",
+                side_effect=MoveError("disk full"),
+            ),
+        ):
+            run(album_dir, config)
+
+        assert (config.paths.staging / "errors" / "great-album").exists()
+
+    def test_quarantine_tagging_failure(self, tmp_path: Path, config: Config) -> None:
+        """A quarantine that itself fails logs an error rather than raising."""
+        config.paths.staging.mkdir(parents=True)
+        item = config.paths.staging / "bad-album"
+        item.mkdir()
+
+        with patch("tune_shifter.pipeline.shutil.move", side_effect=OSError("no space")):
+            _quarantine(item, config.paths.staging)
+        # Should not raise; errors/ dir was created even if move failed
 
     def test_quarantine_on_tagging_failure(
         self, tmp_path: Path, config: Config

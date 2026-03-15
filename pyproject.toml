@@ -25,10 +25,30 @@ tune-shifter = "tune_shifter.__main__:main"
 dev = [
     "pytest>=8.0",
     "pytest-mock>=3.12",
+    "pytest-cov>=5.0",
     "mypy>=1.9",
     "black>=24.0",
     "types-requests>=2.31",
     "types-Pillow>=10.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "--cov=tune_shifter --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["tune_shifter"]
+omit = [
+    "tune_shifter/__main__.py",
+    "tune_shifter/bandcamp.py",
+]
+
+[tool.coverage.report]
+fail_under = 95
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
 ]
 
 [tool.black]

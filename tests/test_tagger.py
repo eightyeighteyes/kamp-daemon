@@ -13,7 +13,10 @@ from tune_shifter.tagger import (
     ReleaseInfo,
     TaggingError,
     TrackInfo,
+    _read_existing_metadata,
     _search_release,
+    _write_tags,
+    configure_musicbrainz,
     tag_directory,
 )
 
@@ -358,3 +361,85 @@ class TestRetry:
             with patch("tune_shifter.tagger.time.sleep"):
                 with pytest.raises(TaggingError, match="after 3 retries"):
                     _search_release("Cool Artist", "Great Album")
+
+
+class TestConfigureMusicbrainz:
+    def test_sets_useragent(self) -> None:
+        """configure_musicbrainz delegates to musicbrainzngs.set_useragent."""
+        with patch("tune_shifter.tagger.musicbrainzngs.set_useragent") as mock_ua:
+            configure_musicbrainz("my-app", "1.0", "test@example.com")
+        mock_ua.assert_called_once_with("my-app", "1.0", "test@example.com")
+
+
+class TestReadExistingMetadataEdgeCases:
+    def test_directory_name_heuristic_with_dash_format(self, tmp_path: Path) -> None:
+        """'Artist - Album' directory name is used when the file has no tags."""
+        album_dir = tmp_path / "Cool Artist - Great Album"
+        album_dir.mkdir()
+        mp3 = album_dir / "01.mp3"
+        mp3.write_bytes(b"\xff\xfb" * 64)
+        id3.ID3().save(str(mp3))
+
+        artist, album = _read_existing_metadata(mp3)
+        assert artist == "Cool Artist"
+        assert album == "Great Album"
+
+    def test_m4a_with_none_tags_falls_back(self, tmp_path: Path) -> None:
+        """_read_existing_metadata handles M4A with tags=None by falling back."""
+        album_dir = tmp_path / "Artist - Album"
+        album_dir.mkdir()
+        m4a = album_dir / "01.m4a"
+        m4a.write_bytes(b"\x00" * 32)
+
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = None
+
+        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+            artist, album = _read_existing_metadata(m4a)
+
+        assert artist == "Artist"
+        assert album == "Album"
+
+    def test_read_exception_falls_back_to_directory(self, tmp_path: Path) -> None:
+        """An exception during tag reading falls back to directory name heuristic."""
+        album_dir = tmp_path / "Fallback Artist - Fallback Album"
+        album_dir.mkdir()
+        m4a = album_dir / "01.m4a"
+        m4a.write_bytes(b"\x00" * 32)
+
+        with patch(
+            "tune_shifter.tagger.mutagen.mp4.MP4", side_effect=Exception("corrupt")
+        ):
+            artist, album = _read_existing_metadata(m4a)
+
+        assert artist == "Fallback Artist"
+        assert album == "Fallback Album"
+
+
+class TestWriteTagsEdgeCases:
+    def _make_release(self) -> ReleaseInfo:
+        return ReleaseInfo(
+            mbid="mbid-1",
+            release_group_mbid="rg-1",
+            title="Album",
+            artist="Artist",
+            album_artist="Artist",
+            year="2020",
+            tracks={"1-1": TrackInfo(number=1, disc=1, title="Track One")},
+        )
+
+    def test_unsupported_format_logs_warning(self, tmp_path: Path) -> None:
+        """_write_tags logs a warning for .flac files and does not raise."""
+        flac = tmp_path / "track.flac"
+        flac.write_bytes(b"fLaC")
+        _write_tags(flac, self._make_release())  # must not raise
+
+    def test_mp3_without_id3_header_gets_fresh_tags(self, tmp_path: Path) -> None:
+        """_write_tags on an MP3 with no ID3 header creates a fresh tag set."""
+        mp3 = tmp_path / "01.mp3"
+        mp3.write_bytes(b"\xff\xfb" * 64)  # no ID3 header
+
+        _write_tags(mp3, self._make_release())
+
+        tags = id3.ID3(str(mp3))
+        assert str(tags["TALB"]) == "Album"
