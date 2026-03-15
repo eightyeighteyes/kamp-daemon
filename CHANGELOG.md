@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.5.0...v0.6.0) (2026-03-15)
+
+
+### Features
+
+* log version and install path when daemon starts ([#16](https://github.com/eightyeighteyes/tune-shifter/issues/16)) ([4f49ba4](https://github.com/eightyeighteyes/tune-shifter/commit/4f49ba44abc9433418f28a6cfb22fc0deb88275a))
+* write full MusicBrainz tag set with exponential backoff retry ([#13](https://github.com/eightyeighteyes/tune-shifter/issues/13)) ([59af752](https://github.com/eightyeighteyes/tune-shifter/commit/59af75248daf5db8c2b3ca1dea628c3fe822744f))
+
+
+### Bug Fixes
+
+* sanitize tag values before path template rendering ([#15](https://github.com/eightyeighteyes/tune-shifter/issues/15)) ([1941bb6](https://github.com/eightyeighteyes/tune-shifter/commit/1941bb6945e010775c7020fd3375e1ad4af9fec3))
+
 ## [0.5.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.4.0...v0.5.0) (2026-03-15)
 
 
