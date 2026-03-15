@@ -37,13 +37,17 @@ def fetch_and_embed(
     If no qualifying image is found, logs a warning but does not raise — the
     pipeline continues without artwork.
     """
-    image_bytes = _fetch_cover(COVER_ART_ARCHIVE_URL.format(mbid=mbid), min_dimension, max_bytes)
+    image_bytes = _fetch_cover(
+        COVER_ART_ARCHIVE_URL.format(mbid=mbid), min_dimension, max_bytes
+    )
     if image_bytes is None and release_group_mbid:
         logger.debug(
             "No art for release %s; trying release-group %s", mbid, release_group_mbid
         )
         image_bytes = _fetch_cover(
-            RELEASE_GROUP_ART_URL.format(mbid=release_group_mbid), min_dimension, max_bytes
+            RELEASE_GROUP_ART_URL.format(mbid=release_group_mbid),
+            min_dimension,
+            max_bytes,
         )
     if image_bytes is None:
         logger.warning(
@@ -77,9 +81,13 @@ def _fetch_cover(url: str, min_dimension: int, max_bytes: int) -> bytes | None:
         if exc.response is not None and exc.response.status_code == 404:
             logger.debug("No cover art listing at %s (404)", url)
             return None
-        raise ArtworkError(f"Could not fetch cover art listing from {url}: {exc}") from exc
+        raise ArtworkError(
+            f"Could not fetch cover art listing from {url}: {exc}"
+        ) from exc
     except requests.RequestException as exc:
-        raise ArtworkError(f"Could not fetch cover art listing from {url}: {exc}") from exc
+        raise ArtworkError(
+            f"Could not fetch cover art listing from {url}: {exc}"
+        ) from exc
 
     listing: dict[str, Any] = resp.json()
     images: list[dict[str, Any]] = listing.get("images", [])

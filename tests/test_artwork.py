@@ -192,7 +192,9 @@ class TestFetchAndEmbed:
 
         with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
             with patch("tune_shifter.artwork.requests.get", mock_get):
-                fetch_and_embed("abc-123", [m4a], min_dimension=1000, max_bytes=5_000_000)
+                fetch_and_embed(
+                    "abc-123", [m4a], min_dimension=1000, max_bytes=5_000_000
+                )
 
         assert "covr" in mock_tags
         mock_mp4.save.assert_called_once()

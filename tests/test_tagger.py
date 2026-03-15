@@ -244,7 +244,9 @@ class TestReadExistingMetadata:
         id3.ID3().save(str(mp3))
 
         with patch("musicbrainzngs.search_releases") as mock_search:
-            with pytest.raises(TaggingError, match="Could not determine artist or album"):
+            with pytest.raises(
+                TaggingError, match="Could not determine artist or album"
+            ):
                 tag_directory(album_dir, [mp3])
 
         mock_search.assert_not_called()
