@@ -1,10 +1,16 @@
 # Backlog
-## Bug: No Bandcamp Section in Initial Config
 
-> [tune-shifter] python -m tune_shifter sync
-> tune_shifter.syncer  No [bandcamp] section in config — nothing to sync.
+## Optionally Mark Synced on First Bandcamp Sync
 
-If no bandcamp config exists when sync is one, give the user an interactive prompt to create it, and then run sync.
+*If this is my first time running tune-shifter sync, ask if I've already downloaded all my bandcamp purchases*
+
+If sync is "first run" (bandcamp config is missing), part of the config / onboarding should be asking the user the following question:
+
+> Have you already downloaded your Bandcamp collection (y/n)? [y]
+
+If `y`, then the first run of sync should be `mark-synced`.
+
+If `n`, then the first run of sync should be a normal Bandcamp sync.
 
 ## Process on Start
 
