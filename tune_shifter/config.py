@@ -11,7 +11,7 @@ from pathlib import Path
 
 def _state_dir() -> Path:
     """Return a platform-appropriate directory for persistent runtime state."""
-    if sys.platform == "win32":
+    if sys.platform == "win32":  # pragma: no cover
         localappdata = os.environ.get("LOCALAPPDATA")
         base = Path(localappdata) if localappdata else Path.home() / "AppData" / "Local"
         return base / "tune-shifter"
@@ -20,7 +20,7 @@ def _state_dir() -> Path:
 
 def _default_config_path() -> Path:
     """Return a platform-appropriate default config file path."""
-    if sys.platform == "win32":
+    if sys.platform == "win32":  # pragma: no cover
         appdata = os.environ.get("APPDATA")
         base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
         return base / "tune-shifter" / "config.toml"

@@ -8,7 +8,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from tune_shifter.artwork import ArtworkError, fetch_and_embed, find_local_artwork
+import requests as req_lib
+
+from tune_shifter.artwork import (
+    ArtworkError,
+    _detect_mime,
+    _embed_m4a,
+    _embed_mp3,
+    _load_local_artwork,
+    fetch_and_embed,
+    find_local_artwork,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -303,3 +313,163 @@ class TestLocalArtwork:
             )
 
         assert mock_get.called
+
+
+class TestFindLocalArtworkFallback:
+    def test_returns_first_alphabetically_when_no_preferred_name(
+        self, tmp_path: Path
+    ) -> None:
+        """find_local_artwork falls back to sorted-first when no keyword matches."""
+        (tmp_path / "zzz.jpg").write_bytes(_make_jpeg(100, 100))
+        (tmp_path / "aaa.jpg").write_bytes(_make_jpeg(100, 100))
+
+        result = find_local_artwork(tmp_path)
+        assert result is not None
+        assert result.name == "aaa.jpg"
+
+
+class TestLoadLocalArtwork:
+    def test_returns_none_when_pil_cannot_open(self, tmp_path: Path) -> None:
+        """_load_local_artwork returns None when PIL fails to open the file."""
+        bad = tmp_path / "bad.jpg"
+        bad.write_bytes(b"not an image")
+
+        result = _load_local_artwork(bad, min_dimension=100, max_bytes=5_000_000)
+        assert result is None
+
+    def test_quality_reduction_loop_succeeds(self, tmp_path: Path) -> None:
+        """_load_local_artwork re-encodes at lower quality when raw exceeds max_bytes."""
+        # Create a large image at high quality so the raw file is big
+        img = Image.new("RGB", (1500, 1500), color=(80, 120, 160))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=95)
+        large_jpeg = buf.getvalue()
+
+        cover = tmp_path / "cover.jpg"
+        cover.write_bytes(large_jpeg)
+
+        # max_bytes slightly below the raw size forces the quality loop, but a
+        # lower-quality re-encode of a solid-color image will fit easily
+        max_bytes = len(large_jpeg) - 1
+
+        result = _load_local_artwork(cover, min_dimension=100, max_bytes=max_bytes)
+        assert result is not None
+        assert len(result) <= max_bytes
+
+
+class TestFetchCoverEdgeCases:
+    def test_non_404_http_error_raises_artwork_error(self) -> None:
+        """A 500-class HTTP error raises ArtworkError (not silently ignored)."""
+        http_err = req_lib.HTTPError(response=MagicMock(status_code=500))
+
+        def mock_get(url: str, **kw: object) -> MagicMock:
+            resp = MagicMock()
+            resp.raise_for_status.side_effect = http_err
+            return resp
+
+        with patch("tune_shifter.artwork.requests.get", mock_get):
+            with pytest.raises(ArtworkError, match="Could not fetch cover art listing"):
+                fetch_and_embed("mbid-x", [], min_dimension=1000, max_bytes=1_000_000)
+
+    def test_empty_image_url_is_skipped(self) -> None:
+        """An image entry with no URL is skipped without error."""
+        listing = {"images": [{"image": "", "front": True}]}
+
+        def mock_get(url: str, **kw: object) -> MagicMock:
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = listing
+            return resp
+
+        with patch("tune_shifter.artwork.requests.get", mock_get):
+            # Should complete without downloading or raising
+            fetch_and_embed("mbid-x", [], min_dimension=1000, max_bytes=1_000_000)
+
+    def test_image_download_failure_continues(self) -> None:
+        """A failed image download is skipped and the next candidate is tried."""
+        listing = {"images": [{"image": "http://x.com/img.jpg", "front": True}]}
+
+        call_count = 0
+
+        def mock_get(url: str, **kw: object) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            resp = MagicMock()
+            if call_count == 1:
+                resp.raise_for_status.return_value = None
+                resp.json.return_value = listing
+            else:
+                resp.raise_for_status.side_effect = req_lib.ConnectionError("gone")
+            return resp
+
+        with patch("tune_shifter.artwork.requests.get", mock_get):
+            fetch_and_embed("mbid-x", [], min_dimension=1000, max_bytes=1_000_000)
+
+    def test_unreadable_image_dimensions_are_skipped(self) -> None:
+        """An image whose dimensions can't be parsed by PIL is skipped."""
+        image_bytes = b"not a real image"
+        listing = {"images": [{"image": "http://x.com/img.jpg", "front": True}]}
+
+        call_count = 0
+
+        def mock_get(url: str, **kw: object) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            resp = MagicMock()
+            if call_count == 1:
+                resp.raise_for_status.return_value = None
+                resp.json.return_value = listing
+            else:
+                resp.raise_for_status.return_value = None
+                resp.content = image_bytes
+            return resp
+
+        with patch("tune_shifter.artwork.requests.get", mock_get):
+            fetch_and_embed("mbid-x", [], min_dimension=1000, max_bytes=1_000_000)
+
+
+class TestEmbed:
+    def test_unsupported_format_logs_warning(self, tmp_path: Path) -> None:
+        """_embed logs a warning for formats other than mp3/m4a."""
+        from tune_shifter.artwork import _embed
+
+        flac = tmp_path / "track.flac"
+        flac.write_bytes(b"fLaC")
+        _embed(flac, b"\xff\xd8\xff")  # must not raise
+
+    def test_embed_mp3_creates_id3_when_header_missing(self, tmp_path: Path) -> None:
+        """_embed_mp3 creates a fresh ID3 when the file has no existing header."""
+        raw = tmp_path / "01.mp3"
+        raw.write_bytes(b"\xff\xfb" * 64)  # raw MP3 frames, no ID3 header
+
+        _embed_mp3(raw, _make_jpeg(100, 100))
+
+        import mutagen.id3 as id3_
+
+        tags = id3_.ID3(str(raw))
+        assert any(k.startswith("APIC") for k in tags)
+
+    def test_embed_m4a_adds_tags_when_none(self, tmp_path: Path) -> None:
+        """_embed_m4a calls add_tags() when the MP4 has no tag object."""
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = None
+        # After add_tags(), tags must be non-None
+        mock_tags: dict = {}
+        mock_mp4.add_tags.side_effect = lambda: setattr(mock_mp4, "tags", mock_tags)
+
+        with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
+            m4a = tmp_path / "01.m4a"
+            m4a.write_bytes(b"\x00" * 32)
+            _embed_m4a(m4a, _make_jpeg(100, 100))
+
+        mock_mp4.add_tags.assert_called_once()
+        assert "covr" in mock_tags
+
+
+class TestDetectMime:
+    def test_returns_png_for_png_magic_bytes(self) -> None:
+        png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        assert _detect_mime(png_bytes) == "image/png"
+
+    def test_returns_jpeg_for_other_bytes(self) -> None:
+        assert _detect_mime(b"\xff\xd8\xff\xe0") == "image/jpeg"

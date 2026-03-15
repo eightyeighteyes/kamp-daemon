@@ -55,6 +55,13 @@ def _file_moved_event(src: str, dest: str) -> MagicMock:
     return event
 
 
+def _file_created_event(path: str) -> MagicMock:
+    event = MagicMock(spec=["is_directory", "src_path"])
+    event.is_directory = False
+    event.src_path = path
+    return event
+
+
 def _dir_created_event(path: str) -> MagicMock:
     event = MagicMock()
     event.is_directory = True
@@ -295,3 +302,127 @@ class TestOnCreated:
             handler.on_created(_dir_created_event(path))
 
         mock_schedule.assert_not_called()
+
+    def test_zip_file_created_in_staging_is_scheduled(self, config: Config) -> None:
+        """A ZIP file created in staging is scheduled for processing."""
+        handler = _make_handler(config)
+        path = str(config.paths.staging / "album.zip")
+
+        with patch.object(handler, "_schedule") as mock_schedule:
+            from watchdog.events import FileCreatedEvent
+
+            handler.on_created(FileCreatedEvent(path))
+
+        mock_schedule.assert_called_once_with(Path(path))
+
+    def test_non_zip_file_created_is_ignored(self, config: Config) -> None:
+        """A non-ZIP file created in staging is not scheduled."""
+        handler = _make_handler(config)
+        path = str(config.paths.staging / "cover.jpg")
+
+        with patch.object(handler, "_schedule") as mock_schedule:
+            from watchdog.events import FileCreatedEvent
+
+            handler.on_created(FileCreatedEvent(path))
+
+        mock_schedule.assert_not_called()
+
+
+class TestOnModifiedFileEvent:
+    def test_file_modified_event_is_ignored(self, config: Config) -> None:
+        """on_modified ignores events for files (only directory events matter)."""
+        handler = _make_handler(config)
+        event = MagicMock()
+        event.is_directory = False
+        event.src_path = str(config.paths.staging / "track.mp3")
+
+        with patch.object(handler, "_scan_staging_root") as mock_scan:
+            handler.on_modified(event)
+
+        mock_scan.assert_not_called()
+
+
+class TestScanStagingRootOSError:
+    def test_oserror_during_scan_is_silently_ignored(self, config: Config) -> None:
+        """_scan_staging_root handles OSError from iterdir gracefully."""
+        handler = _make_handler(config)
+
+        # Patch at the class level — PosixPath C-methods can't be patched on instances
+        with patch("pathlib.Path.iterdir", side_effect=OSError("no access")):
+            handler._scan_staging_root()  # must not raise
+
+
+class TestScheduleTimer:
+    def test_schedule_adds_to_pending(self, config: Config) -> None:
+        """_schedule creates a timer and adds it to _pending."""
+        handler = _make_handler(config)
+        path = config.paths.staging / "my-album"
+        (config.paths.staging / "my-album").mkdir()
+
+        handler._schedule(path)
+        assert path in handler._pending
+        handler._pending[path].cancel()
+
+    def test_schedule_cancels_existing_timer(self, config: Config) -> None:
+        """_schedule cancels any existing timer for the same path."""
+        handler = _make_handler(config)
+        path = config.paths.staging / "my-album"
+        path.mkdir()
+
+        old_timer = MagicMock()
+        handler._pending[path] = old_timer
+
+        handler._schedule(path)
+        old_timer.cancel.assert_called_once()
+        handler._pending[path].cancel()
+
+
+class TestWaitForStableSize:
+    def test_returns_when_size_stable(self, tmp_path: Path) -> None:
+        """_wait_for_stable_size returns once the file size stops changing."""
+        from tune_shifter.watcher import _wait_for_stable_size
+
+        f = tmp_path / "track.mp3"
+        f.write_bytes(b"x" * 100)
+
+        with patch("tune_shifter.watcher.time.sleep"):
+            _wait_for_stable_size(f)  # must not hang
+
+    def test_returns_when_file_disappears(self, tmp_path: Path) -> None:
+        """_wait_for_stable_size returns if the file is deleted mid-wait."""
+        from tune_shifter.watcher import _wait_for_stable_size
+
+        f = tmp_path / "track.mp3"
+        f.write_bytes(b"x" * 100)
+
+        call_count = 0
+
+        def fake_stat(self_path: object) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise OSError("gone")
+            m = MagicMock()
+            m.st_size = 100
+            return m
+
+        # Patch at the class level — PosixPath C-methods can't be patched on instances
+        with patch("pathlib.Path.stat", fake_stat):
+            with patch("tune_shifter.watcher.time.sleep"):
+                _wait_for_stable_size(f)
+
+
+class TestWatcherStopJoin:
+    def test_stop_and_join(
+        self, config: Config, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Watcher.stop() and join() delegate to the observer."""
+        watcher = Watcher(config)
+        monkeypatch.setattr(watcher._observer, "start", lambda: None)
+        monkeypatch.setattr(watcher._observer, "schedule", lambda *a, **kw: None)
+        monkeypatch.setattr(watcher._observer, "stop", lambda: None)
+        monkeypatch.setattr(watcher._observer, "join", lambda **kw: None)
+
+        watcher.start()
+        watcher.stop()
+        watcher.join()

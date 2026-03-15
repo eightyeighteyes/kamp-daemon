@@ -1,4 +1,6 @@
 # Backlog
+## Switch to Poetry for dependency management
+
 ## Optimization: Check existing tags / embedded image to see if they even need to be updated
 
 ## Best Release
@@ -20,14 +22,6 @@
 Running `tune-shifter config set paths.staging` lets a user set the staging path, etc.
 
 Running `tune-shifter config show` shows the whole config.
-
-## Code Coverage
-
-CI runs a code coverage tool.
-
-The application has 95% code coverage in its testing.
-
-## Switch to Poetry for dependency management
 
 ## FLAC Support
 

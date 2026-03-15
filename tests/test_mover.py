@@ -1,11 +1,18 @@
 """Tests for tune_shifter.mover."""
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import mutagen.id3 as id3
+import mutagen.mp4
 import pytest
 
-from tune_shifter.mover import _cleanup_staging, _destination
+from tune_shifter.mover import (
+    MoveError,
+    _cleanup_staging,
+    _destination,
+    move_to_library,
+)
 
 TEMPLATE = "{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}"
 
@@ -85,3 +92,138 @@ class TestCleanup:
     def test_does_not_raise_when_directory_is_missing(self, tmp_path: Path) -> None:
         """OSError from rmtree is caught; cleanup never raises."""
         _cleanup_staging(tmp_path / "nonexistent")
+
+
+class TestM4ADestination:
+    def _mock_mp4(self, **tags: object) -> MagicMock:
+        """Return a mock mutagen.mp4.MP4 with the given tag values."""
+        mp4 = MagicMock()
+        t4: dict[str, object] = {}
+        if "artist" in tags:
+            t4["\xa9ART"] = [tags["artist"]]
+        if "album_artist" in tags:
+            t4["aART"] = [tags["album_artist"]]
+        if "album" in tags:
+            t4["\xa9alb"] = [tags["album"]]
+        if "year" in tags:
+            t4["\xa9day"] = [tags["year"]]
+        if "track" in tags:
+            t4["trkn"] = [(tags["track"], 0)]
+        if "disc" in tags:
+            t4["disk"] = [(tags["disc"], 0)]
+        if "title" in tags:
+            t4["\xa9nam"] = [tags["title"]]
+        mp4.tags = t4
+        return mp4
+
+    def test_m4a_tags_are_read(self, tmp_path: Path) -> None:
+        """_destination reads tags from an M4A file via mutagen.mp4."""
+        m4a = tmp_path / "01.m4a"
+        m4a.write_bytes(b"")  # content doesn't matter — MP4 is mocked
+
+        with patch(
+            "tune_shifter.mover.mutagen.mp4.MP4",
+            return_value=self._mock_mp4(
+                artist="Artist",
+                album_artist="Album Artist",
+                album="My Album",
+                year="2021",
+                track=3,
+                disc=1,
+                title="My Track",
+            ),
+        ):
+            library = tmp_path / "library"
+            result = _destination(m4a, library, TEMPLATE)
+
+        assert result.parent == library / "Album Artist" / "2021 - My Album"
+        assert result.name == "03 - My Track.m4a"
+
+    def test_m4a_falls_back_to_defaults_when_tags_absent(self, tmp_path: Path) -> None:
+        """_destination uses fallback values when M4A tags are empty."""
+        m4a = tmp_path / "track.m4a"
+        m4a.write_bytes(b"")
+
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = {}  # empty tag dict
+
+        with patch("tune_shifter.mover.mutagen.mp4.MP4", return_value=mock_mp4):
+            library = tmp_path / "library"
+            result = _destination(m4a, library, TEMPLATE)
+
+        assert "Unknown Artist" in str(result)
+        assert "Unknown Album" in str(result)
+
+    def test_m4a_no_tags_object_falls_back(self, tmp_path: Path) -> None:
+        """_destination handles mp4.tags being None gracefully."""
+        m4a = tmp_path / "track.m4a"
+        m4a.write_bytes(b"")
+
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = None
+
+        with patch("tune_shifter.mover.mutagen.mp4.MP4", return_value=mock_mp4):
+            library = tmp_path / "library"
+            result = _destination(m4a, library, TEMPLATE)
+
+        assert "Unknown Artist" in str(result)
+
+
+class TestMoveToLibrary:
+    def test_moves_files_and_cleans_staging(self, tmp_path: Path) -> None:
+        """move_to_library moves all files and removes the staging dir."""
+        staging = tmp_path / "Artist - Album"
+        staging.mkdir()
+        mp3 = staging / "01.mp3"
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2021",
+            track="1",
+            title="Song",
+        )
+        library = tmp_path / "library"
+        library.mkdir()
+
+        dests = move_to_library([mp3], staging, library, TEMPLATE)
+
+        assert len(dests) == 1
+        assert dests[0].exists()
+        assert not staging.exists()
+
+    def test_raises_move_error_on_failure(self, tmp_path: Path) -> None:
+        """move_to_library raises MoveError when shutil.move fails."""
+        staging = tmp_path / "Artist - Album"
+        staging.mkdir()
+        mp3 = staging / "01.mp3"
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2021",
+            track="1",
+            title="Song",
+        )
+        library = tmp_path / "library"
+
+        with patch("tune_shifter.mover.shutil.move", side_effect=OSError("disk full")):
+            with pytest.raises(MoveError, match="disk full"):
+                move_to_library([mp3], staging, library, TEMPLATE)
+
+    def test_template_error_raises_move_error(self, tmp_path: Path) -> None:
+        """_destination raises MoveError when the template references a missing key."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2021",
+            track="1",
+            title="Song",
+        )
+        library = tmp_path / "library"
+        bad_template = "{nonexistent_key}.{ext}"
+
+        with pytest.raises(MoveError, match="Path template error"):
+            _destination(mp3, library, bad_template)
