@@ -1,18 +1,4 @@
 # Backlog
-
-## Bug: Path Characters Included in File Names
-
-To repro:
-1. Let tune-shifter process Aesop Rock's "N.Y. Electric / Hunter Interlude.mp3" from the album Bazooka Tooth
-
-Expected:
-When file is copied to library, file structure is `Library/Aesop Rock/Bazooka Tooth/N.Y. Electric - Hunter Interlude.mp3`
-
-Actual:
-When file is copied to library, file structure is `Library/Aesop Rock/Bazooka Tooth/N.Y. Electric / Hunter Interlude.mp3` and the actual file name is `Hunter Interlude.mp3`
-
-
-
 ## Bug: No Bandcamp Section in Initial Config
 
 > [tune-shifter] python -m tune_shifter sync
@@ -20,32 +6,39 @@ When file is copied to library, file structure is `Library/Aesop Rock/Bazooka To
 
 If no bandcamp config exists when sync is one, give the user an interactive prompt to create it, and then run sync.
 
-## Bug: Cleanup Doesn't Remove Folders With Non-Music Files Remaining
-
-Fully delete folders from staging after moving files to library, as long as the only remaining files are non-audio files.
-
-Bug: When an archive or folder containing extra files (images, PDFs) is processed by tune-shifter, the folder isn't fully removed from staging and ends up in the error directory.
-
-To repro: 
-1. Start with an empty staging directory
-2. Move The Notwist - Neon Golden.zip into staging directory
-3. Let tune-shifter process it
-
-Expected:
-Staging folder is empty
-
-Actual:
-staging\The Notwist - Neon Golden can't be removed because cover.jpg is in it
-The Notwist - Neon Golden is moved to staging\errors\
-
-
-## Human Readable Bandcamp State
-
-...
-
 ## Process on Start
 
 *When daemon starts, I want everything in the staging folder to be processed*
+
+## Bug: Uncaught Attribute Type-Id
+
+Is this a problem?  If so, fix it. If not, put in debug level logging if possible (since it's from a different library).
+
+```
+26-03-15 12:14:58  INFO      tune_shifter.tagger  Searching MusicBrainz for artist='Earthless' album='Black Heaven'
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:label>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      tune_shifter.tagger  Matched release: 'Black Heaven' (mbid=b0562a95-2dbf-419a-85d9-eca1d082f682)
+```
 
 ## Best Release
 
@@ -86,6 +79,10 @@ The application has 95% code coverage in its testing.
 ## One File At A Time
 
 *I only want to copy one file into the staging folder and let tune-shifter process it*
+
+## Human Readable Bandcamp State
+
+...
 
 ## Nested Folders
 
