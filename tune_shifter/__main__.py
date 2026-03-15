@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import logging
 import shutil
 import signal
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import musicbrainzngs
@@ -19,6 +21,23 @@ from .watcher import Watcher
 _SERVICE_LABEL = "com.tune-shifter"
 _PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{_SERVICE_LABEL}.plist"
 _LOG_PATH = _state_dir() / "daemon.log"
+
+# pyproject.toml lives one level above the package directory and is the canonical
+# version source kept up to date by release-please.  Prefer it over
+# importlib.metadata, which reads the *installed* package and can return a stale
+# version when running directly from a source checkout alongside an older install.
+_PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
+
+
+def _get_version() -> str:
+    if _PYPROJECT.exists():
+        with open(_PYPROJECT, "rb") as f:
+            data = tomllib.load(f)
+        return str(data.get("project", {}).get("version") or "unknown") + "-dev"
+    try:
+        return importlib.metadata.version("tune-shifter")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
 
 
 def main() -> None:
@@ -137,6 +156,16 @@ def _cmd_sync(config: Config, mark_synced: bool = False) -> None:
 
 
 def _cmd_daemon(config: Config) -> None:
+    _logger = logging.getLogger(__name__)
+    pkg_version = _get_version()
+    install_path = Path(__file__).resolve().parent
+    _logger.info(
+        "tune-shifter %s (Python %s, %s)",
+        pkg_version,
+        sys.version.split()[0],
+        install_path,
+    )
+
     watcher = Watcher(config)
     syncer = Syncer(config)
 
