@@ -1,34 +1,4 @@
 # Backlog
-## Bug: Uncaught Attribute Type-Id
-
-Is this a problem?  If so, fix it. If not, put in debug level logging if possible (since it's from a different library).
-
-```
-26-03-15 12:14:58  INFO      tune_shifter.tagger  Searching MusicBrainz for artist='Earthless' album='Black Heaven'
-2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
-2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
-2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
-2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
-2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:label>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
-2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
-2026-03-15 12:14:59  INFO      tune_shifter.tagger  Matched release: 'Black Heaven' (mbid=b0562a95-2dbf-419a-85d9-eca1d082f682)
-```
-
 ## Bug: File Operations on an already moved file
 
 It looks like occasionally tag writing or analysis is attempted after a file has already been moved. This should never happen: file operations after tagging should only happen after all tagging operations are completed.
@@ -78,6 +48,36 @@ Traceback (most recent call last):
   File "/Users/theodore.terry/.pyenv/versions/3.12.10/lib/python3.12/site-packages/mutagen/_util.py", line 272, in _openfile
     raise MutagenError(e)
 mutagen.MutagenError: [Errno 2] No such file or directory: '/Users/theodore.terry/Downloads/_music_staging/Earthless - Black Heaven/Earthless - Black Heaven - 01 Gifted by the Wind.mp3'
+```
+
+## Bug: Uncaught Attribute Type-Id
+
+Is this a problem?  If so, fix it. If not, put in debug level logging if possible (since it's from a different library).
+
+```
+26-03-15 12:14:58  INFO      tune_shifter.tagger  Searching MusicBrainz for artist='Earthless' album='Black Heaven'
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:58  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:release-group>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:label>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:artist>, uncaught attribute type-id
+2026-03-15 12:14:59  INFO      musicbrainzngs  in <ws2:recording>, uncaught <first-release-date>
+2026-03-15 12:14:59  INFO      tune_shifter.tagger  Matched release: 'Black Heaven' (mbid=b0562a95-2dbf-419a-85d9-eca1d082f682)
 ```
 
 ## Optimization: Check existing tags / embedded image to see if they even need to be updated
