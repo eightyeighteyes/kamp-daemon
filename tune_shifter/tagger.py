@@ -36,6 +36,7 @@ class ReleaseInfo:
     """Canonical metadata resolved from MusicBrainz."""
 
     mbid: str
+    release_group_mbid: str
     title: str
     artist: str
     album_artist: str
@@ -102,19 +103,28 @@ def _read_existing_metadata(path: Path) -> tuple[str, str]:
                 alb_vals = mp4.tags.get("\xa9alb")
                 artist = str(art_vals[0]) if art_vals else ""
                 album = str(alb_vals[0]) if alb_vals else ""
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Could not read tags from %s: %s", path, exc)
 
     if not artist and not album:
         # Fall back to filename heuristics: "Artist - Album/01 - Title.mp3"
+        logger.debug("Falling back to directory name heuristic for %s", path)
         parts = path.parent.name.split(" - ", 1)
         if len(parts) == 2:
             artist, album = parts[0].strip(), parts[1].strip()
+
+    logger.debug("Read metadata from %s: artist=%r album=%r", path, artist, album)
+
+    if not artist and not album:
+        raise TaggingError(
+            f"Could not determine artist or album from {path} or its directory name"
+        )
 
     return artist, album
 
 
 def _search_release(artist: str, album: str) -> ReleaseInfo:
+    logger.debug("MusicBrainz search: artist=%r release=%r", artist, album)
     try:
         result = musicbrainzngs.search_releases(
             artist=artist,
@@ -125,6 +135,7 @@ def _search_release(artist: str, album: str) -> ReleaseInfo:
         raise TaggingError(f"MusicBrainz search failed: {exc}") from exc
 
     releases: list[dict[str, Any]] = result.get("release-list", [])
+    logger.debug("MusicBrainz returned %d result(s)", len(releases))
 
     if not releases:
         # Retry once with any iTunes edition suffix stripped from the album name
@@ -148,13 +159,27 @@ def _search_release(artist: str, album: str) -> ReleaseInfo:
         )
 
     best = max(releases, key=lambda r: int(r.get("ext:score", 0)))
-    return _parse_release(best)
+    best_mbid: str = best["id"]
+
+    # search_releases returns minimal data (no full date, no track listings).
+    # Fetch the full release to get accurate year and track info.
+    logger.debug("Fetching full release details for %s", best_mbid)
+    try:
+        detail = musicbrainzngs.get_release_by_id(
+            best_mbid,
+            includes=["artists", "recordings", "release-groups"],
+        )
+    except musicbrainzngs.WebServiceError as exc:
+        raise TaggingError(f"MusicBrainz release lookup failed: {exc}") from exc
+
+    return _parse_release(detail["release"])
 
 
 def _parse_release(raw: dict[str, Any]) -> ReleaseInfo:
     mbid: str = raw["id"]
     title: str = raw.get("title", "")
     year: str = raw.get("date", "")[:4]
+    release_group_mbid: str = raw.get("release-group", {}).get("id", "")
 
     artist_credit = raw.get("artist-credit", [])
     artist = ""
@@ -177,6 +202,7 @@ def _parse_release(raw: dict[str, Any]) -> ReleaseInfo:
 
     return ReleaseInfo(
         mbid=mbid,
+        release_group_mbid=release_group_mbid,
         title=title,
         artist=artist,
         album_artist=album_artist,

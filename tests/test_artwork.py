@@ -115,10 +115,54 @@ class TestFetchAndEmbed:
 
         with patch(
             "tune_shifter.artwork.requests.get",
-            side_effect=req_lib.RequestException("timeout"),
+            side_effect=req_lib.ConnectionError("timeout"),
         ):
             with pytest.raises(ArtworkError, match="Could not fetch cover art listing"):
                 fetch_and_embed("abc-123", [], min_dimension=1000, max_bytes=1_000_000)
+
+    def test_404_falls_back_to_release_group(self, tmp_path: Path) -> None:
+        """A 404 on the release MBID silently falls back to the release-group endpoint."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3)
+
+        image_bytes = _make_jpeg(1200, 1200)
+        listing = _listing_response("http://example.com/cover.jpg")
+
+        import requests as req_lib
+
+        call_count = 0
+
+        def mock_get(url: str, **kwargs: object) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            resp = MagicMock()
+            if call_count == 1:
+                # First call: release MBID → 404
+                http_err = req_lib.HTTPError(response=MagicMock(status_code=404))
+                resp.raise_for_status.side_effect = http_err
+            elif call_count == 2:
+                # Second call: release-group listing
+                resp.raise_for_status.return_value = None
+                resp.json.return_value = listing
+            else:
+                # Third call: download the image
+                resp.raise_for_status.return_value = None
+                resp.content = image_bytes
+            return resp
+
+        with patch("tune_shifter.artwork.requests.get", mock_get):
+            fetch_and_embed(
+                "release-mbid",
+                [mp3],
+                min_dimension=1000,
+                max_bytes=5_000_000,
+                release_group_mbid="group-mbid",
+            )
+
+        import mutagen.id3 as id3
+
+        tags = id3.ID3(str(mp3))
+        assert any(k.startswith("APIC") for k in tags)
 
     def test_no_images_in_listing_is_graceful(self, tmp_path: Path) -> None:
         mp3 = tmp_path / "01.mp3"
@@ -133,3 +177,24 @@ class TestFetchAndEmbed:
         with patch("tune_shifter.artwork.requests.get", mock_get):
             # Should complete without raising
             fetch_and_embed("abc-123", [mp3], min_dimension=1000, max_bytes=1_000_000)
+
+    def test_embeds_qualifying_jpeg_in_m4a(self, tmp_path: Path) -> None:
+        m4a = tmp_path / "01.m4a"
+        m4a.write_bytes(b"\x00" * 64)
+
+        image_bytes = _make_jpeg(1200, 1200)
+        listing = _listing_response("http://example.com/cover.jpg")
+        mock_get = _mock_requests_get(listing, image_bytes)
+
+        mock_tags: dict = {}
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = mock_tags
+
+        with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
+            with patch("tune_shifter.artwork.requests.get", mock_get):
+                fetch_and_embed(
+                    "abc-123", [m4a], min_dimension=1000, max_bytes=5_000_000
+                )
+
+        assert "covr" in mock_tags
+        mock_mp4.save.assert_called_once()

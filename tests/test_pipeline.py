@@ -52,6 +52,7 @@ def _make_zip(path: Path, tracks: list[str]) -> Path:
 
 MOCK_RELEASE = ReleaseInfo(
     mbid="release-abc",
+    release_group_mbid="rg-abc",
     title="Great Album",
     artist="Cool Artist",
     album_artist="Cool Artist",
@@ -70,25 +71,36 @@ MB_SEARCH_RESULT: dict[str, Any] = {
             "date": "2020",
             "ext:score": "100",
             "artist-credit": [{"artist": {"name": "Cool Artist"}}],
-            "medium-list": [
-                {
-                    "position": "1",
-                    "track-list": [
-                        {
-                            "number": "1",
-                            "position": "1",
-                            "recording": {"title": "First Track"},
-                        },
-                        {
-                            "number": "2",
-                            "position": "2",
-                            "recording": {"title": "Second Track"},
-                        },
-                    ],
-                }
-            ],
+            "medium-list": [],
         }
     ]
+}
+
+MB_RELEASE_DETAIL: dict[str, Any] = {
+    "release": {
+        "id": "release-abc",
+        "title": "Great Album",
+        "date": "2020",
+        "artist-credit": [{"artist": {"name": "Cool Artist"}}],
+        "release-group": {"id": "rg-abc"},
+        "medium-list": [
+            {
+                "position": "1",
+                "track-list": [
+                    {
+                        "number": "1",
+                        "position": "1",
+                        "recording": {"title": "First Track"},
+                    },
+                    {
+                        "number": "2",
+                        "position": "2",
+                        "recording": {"title": "Second Track"},
+                    },
+                ],
+            }
+        ],
+    }
 }
 
 
@@ -119,6 +131,7 @@ class TestPipelineRun:
         # Patch network calls
         with (
             patch("musicbrainzngs.search_releases", return_value=MB_SEARCH_RESULT),
+            patch("musicbrainzngs.get_release_by_id", return_value=MB_RELEASE_DETAIL),
             patch("tune_shifter.artwork.requests.get") as mock_get,
         ):
             # Make artwork fetch return an empty listing (no art — that's fine)

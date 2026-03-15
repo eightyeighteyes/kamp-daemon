@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import mutagen.id3 as id3
 import mutagen.mp4
@@ -41,6 +41,34 @@ SAMPLE_RELEASE: dict[str, Any] = {
             ],
         }
     ]
+}
+
+# Full release detail returned by get_release_by_id — includes date, tracks, release-group.
+SAMPLE_RELEASE_DETAIL: dict[str, Any] = {
+    "release": {
+        "id": "abc-123",
+        "title": "Great Album",
+        "date": "2020-04-01",
+        "artist-credit": [{"artist": {"name": "Cool Artist"}}],
+        "release-group": {"id": "rg-456"},
+        "medium-list": [
+            {
+                "position": "1",
+                "track-list": [
+                    {
+                        "number": "1",
+                        "position": "1",
+                        "recording": {"title": "First Track"},
+                    },
+                    {
+                        "number": "2",
+                        "position": "2",
+                        "recording": {"title": "Second Track"},
+                    },
+                ],
+            }
+        ],
+    }
 }
 
 
@@ -101,9 +129,13 @@ class TestTagDirectory:
         _make_mp3(mp3, track=1)
 
         with patch("musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE):
-            release = tag_directory(tmp_path, [mp3])
+            with patch(
+                "musicbrainzngs.get_release_by_id", return_value=SAMPLE_RELEASE_DETAIL
+            ):
+                release = tag_directory(tmp_path, [mp3])
 
         assert release.mbid == "abc-123"
+        assert release.release_group_mbid == "rg-456"
         assert release.title == "Great Album"
         assert release.year == "2020"
 
@@ -139,9 +171,13 @@ class TestTagDirectory:
         }
 
         with patch("musicbrainzngs.search_releases", return_value=multi_result):
-            release = tag_directory(tmp_path, [mp3])
+            with patch(
+                "musicbrainzngs.get_release_by_id", return_value=SAMPLE_RELEASE_DETAIL
+            ) as mock_get:
+                tag_directory(tmp_path, [mp3])
 
-        assert release.mbid == "high"
+        # The winning MBID ("high") must be passed to get_release_by_id
+        assert mock_get.call_args[0][0] == "high"
 
 
 class TestEditionSuffixRetry:
@@ -156,7 +192,10 @@ class TestEditionSuffixRetry:
         with patch(
             "musicbrainzngs.search_releases", side_effect=[empty, SAMPLE_RELEASE]
         ) as mock_search:
-            release = tag_directory(tmp_path, [mp3])
+            with patch(
+                "musicbrainzngs.get_release_by_id", return_value=SAMPLE_RELEASE_DETAIL
+            ):
+                release = tag_directory(tmp_path, [mp3])
 
         assert release.mbid == "abc-123"
         # First call used the full name; second used the stripped name
@@ -189,3 +228,56 @@ class TestEditionSuffixRetry:
         with patch("musicbrainzngs.search_releases", return_value=empty):
             with pytest.raises(TaggingError, match="No MusicBrainz results"):
                 tag_directory(tmp_path, [mp3])
+
+
+class TestReadExistingMetadata:
+    def test_raises_when_no_tags_and_directory_not_artist_album(
+        self, tmp_path: Path
+    ) -> None:
+        """No readable tags + directory name not 'Artist - Album' → TaggingError
+        raised before any MusicBrainz call is made."""
+        album_dir = tmp_path / "Psalm 69 The Way to Succeed"
+        album_dir.mkdir()
+        mp3 = album_dir / "01.mp3"
+        # Write a valid MP3 with no artist or album tag
+        mp3.write_bytes(b"\xff\xfb" * 64)
+        id3.ID3().save(str(mp3))
+
+        with patch("musicbrainzngs.search_releases") as mock_search:
+            with pytest.raises(
+                TaggingError, match="Could not determine artist or album"
+            ):
+                tag_directory(album_dir, [mp3])
+
+        mock_search.assert_not_called()
+
+
+class TestTagDirectoryM4a:
+    def test_m4a_tags_written(self, tmp_path: Path) -> None:
+        """MusicBrainz metadata is written to M4A tag fields."""
+        m4a = tmp_path / "01.m4a"
+        m4a.write_bytes(b"\x00" * 64)
+
+        # Simulate an iTunes M4A that already has artist/album/track tags
+        initial_tags: dict[str, Any] = {
+            "\xa9ART": ["Old Artist"],
+            "\xa9alb": ["Old Album"],
+            "trkn": [(1, 0)],
+        }
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = initial_tags
+
+        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+            with patch("musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE):
+                with patch(
+                    "musicbrainzngs.get_release_by_id",
+                    return_value=SAMPLE_RELEASE_DETAIL,
+                ):
+                    release = tag_directory(tmp_path, [m4a])
+
+        assert release.mbid == "abc-123"
+        assert initial_tags["\xa9ART"] == ["Cool Artist"]
+        assert initial_tags["\xa9alb"] == ["Great Album"]
+        assert initial_tags["\xa9day"] == ["2020"]
+        assert "----:com.apple.iTunes:MusicBrainz Release Id" in initial_tags
+        mock_mp4.save.assert_called()

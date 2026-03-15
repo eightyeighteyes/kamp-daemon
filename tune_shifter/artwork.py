@@ -15,6 +15,7 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 COVER_ART_ARCHIVE_URL = "https://coverartarchive.org/release/{mbid}"
+RELEASE_GROUP_ART_URL = "https://coverartarchive.org/release-group/{mbid}"
 
 
 class ArtworkError(Exception):
@@ -26,17 +27,35 @@ def fetch_and_embed(
     audio_files: list[Path],
     min_dimension: int,
     max_bytes: int,
+    release_group_mbid: str = "",
 ) -> None:
     """Download qualifying front cover art and embed it in all audio files.
 
     A qualifying image must be at least *min_dimension* × *min_dimension* pixels
-    and no larger than *max_bytes* bytes.  If no qualifying image is found, logs
-    a warning but does not raise — the pipeline continues without artwork.
+    and no larger than *max_bytes* bytes.  If the release MBID has no art,
+    falls back to the release-group MBID (which aggregates art across all editions).
+    If no qualifying image is found, logs a warning but does not raise — the
+    pipeline continues without artwork.
     """
-    image_bytes = _fetch_cover(mbid, min_dimension, max_bytes)
+    image_bytes = _fetch_cover(
+        COVER_ART_ARCHIVE_URL.format(mbid=mbid), min_dimension, max_bytes
+    )
+    if image_bytes is None and release_group_mbid:
+        logger.debug(
+            "No art for release %s; trying release-group %s", mbid, release_group_mbid
+        )
+        image_bytes = _fetch_cover(
+            RELEASE_GROUP_ART_URL.format(mbid=release_group_mbid),
+            min_dimension,
+            max_bytes,
+        )
     if image_bytes is None:
         logger.warning(
-            "No qualifying cover art found for release %s — skipping artwork", mbid
+            "No qualifying cover art found for release %s "
+            "(min %dpx, max %d bytes) — skipping artwork",
+            mbid,
+            min_dimension,
+            max_bytes,
         )
         return
 
@@ -49,15 +68,25 @@ def fetch_and_embed(
         _embed(path, image_bytes)
 
 
-def _fetch_cover(mbid: str, min_dimension: int, max_bytes: int) -> bytes | None:
-    """Return image bytes for the first front cover that meets size criteria."""
-    url = COVER_ART_ARCHIVE_URL.format(mbid=mbid)
+def _fetch_cover(url: str, min_dimension: int, max_bytes: int) -> bytes | None:
+    """Return image bytes for the first front cover at *url* that meets size criteria.
+
+    Returns None if the listing returns 404 (no art available at this URL).
+    Raises ArtworkError for other network failures.
+    """
     try:
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            logger.debug("No cover art listing at %s (404)", url)
+            return None
+        raise ArtworkError(
+            f"Could not fetch cover art listing from {url}: {exc}"
+        ) from exc
     except requests.RequestException as exc:
         raise ArtworkError(
-            f"Could not fetch cover art listing for {mbid}: {exc}"
+            f"Could not fetch cover art listing from {url}: {exc}"
         ) from exc
 
     listing: dict[str, Any] = resp.json()
@@ -105,6 +134,11 @@ def _fetch_cover(mbid: str, min_dimension: int, max_bytes: int) -> bytes | None:
         )
         return raw
 
+    logger.debug(
+        "No qualifying cover art after checking %d candidate(s) at %s",
+        len(candidates),
+        url,
+    )
     return None
 
 
