@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.1.0...v0.2.0) (2026-03-15)
+
+
+### Features
+
+* add release please ([75d8180](https://github.com/eightyeighteyes/tune-shifter/commit/75d81801d702400ffdc76cf73136ce842c63dbde))
+
 ## [0.1.0] - 2026-03-14
 
 ### Added
