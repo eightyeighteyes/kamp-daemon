@@ -292,9 +292,7 @@ class TestSkipAlreadyProcessed:
             ),
             patch("tune_shifter.pipeline.tag_directory") as mock_tag,
             patch("tune_shifter.pipeline.fetch_and_embed") as mock_art,
-            patch(
-                "tune_shifter.pipeline.move_to_library", return_value=[mp3]
-            ),
+            patch("tune_shifter.pipeline.move_to_library", return_value=[mp3]),
         ):
             run(album_dir, config)
 
@@ -316,9 +314,7 @@ class TestSkipAlreadyProcessed:
             ),
             patch("tune_shifter.pipeline.tag_directory") as mock_tag,
             patch("tune_shifter.pipeline.fetch_and_embed") as mock_art,
-            patch(
-                "tune_shifter.pipeline.move_to_library", return_value=[mp3]
-            ),
+            patch("tune_shifter.pipeline.move_to_library", return_value=[mp3]),
         ):
             run(album_dir, config)
 
@@ -338,9 +334,7 @@ class TestSkipAlreadyProcessed:
                 "tune_shifter.pipeline.tag_directory", return_value=MOCK_RELEASE
             ) as mock_tag,
             patch("tune_shifter.pipeline.fetch_and_embed") as mock_art,
-            patch(
-                "tune_shifter.pipeline.move_to_library", return_value=[mp3]
-            ),
+            patch("tune_shifter.pipeline.move_to_library", return_value=[mp3]),
         ):
             run(album_dir, config)
 
@@ -360,9 +354,7 @@ class TestSkipAlreadyProcessed:
                 "tune_shifter.pipeline.tag_directory", return_value=MOCK_RELEASE
             ) as mock_tag,
             patch("tune_shifter.pipeline.fetch_and_embed") as mock_art,
-            patch(
-                "tune_shifter.pipeline.move_to_library", return_value=[mp3]
-            ),
+            patch("tune_shifter.pipeline.move_to_library", return_value=[mp3]),
         ):
             run(album_dir, config)
 

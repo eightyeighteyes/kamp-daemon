@@ -550,7 +550,5 @@ class TestHasEmbeddedArt:
         mp3 = tmp_path / "01.mp3"
         mp3.write_bytes(b"\xff\xfb" * 64)
 
-        with patch(
-            "tune_shifter.artwork.id3.ID3", side_effect=Exception("corrupt")
-        ):
+        with patch("tune_shifter.artwork.id3.ID3", side_effect=Exception("corrupt")):
             assert has_embedded_art(mp3) is False

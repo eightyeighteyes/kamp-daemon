@@ -474,9 +474,7 @@ class TestIsTagged:
         m4a.write_bytes(b"\x00" * 32)
 
         mock_mp4 = MagicMock()
-        mock_mp4.tags = {
-            "----:com.apple.iTunes:MusicBrainz Release Id": [b"abc-123"]
-        }
+        mock_mp4.tags = {"----:com.apple.iTunes:MusicBrainz Release Id": [b"abc-123"]}
 
         with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
             assert is_tagged(m4a) is True
