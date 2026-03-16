@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.8.1...v0.9.0) (2026-03-16)
+
+
+### Features
+
+* FLAC support ([#36](https://github.com/eightyeighteyes/tune-shifter/issues/36)) ([00bc8fc](https://github.com/eightyeighteyes/tune-shifter/commit/00bc8fc19756e8ce7ca4466d0b704b865db9f165))
+* OGG Vorbis support ([#37](https://github.com/eightyeighteyes/tune-shifter/issues/37)) ([a4711b1](https://github.com/eightyeighteyes/tune-shifter/commit/a4711b197f6ec796ee92a9ef0c11439b8521565f))
+* skip MusicBrainz lookup for already-tagged files ([#34](https://github.com/eightyeighteyes/tune-shifter/issues/34)) ([3dac571](https://github.com/eightyeighteyes/tune-shifter/commit/3dac5712881a8b4110bc2ff859f7b6cd8971b18a))
+
 ## [0.8.1](https://github.com/eightyeighteyes/tune-shifter/compare/v0.8.0...v0.8.1) (2026-03-15)
 
 
