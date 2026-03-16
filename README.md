@@ -15,6 +15,7 @@ Built with Python 3 by [Claude Sonnet 4.6](https://www.anthropic.com/claude).
 - **Configurable library layout** — moves finished files into your library using a template you control (`{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}`)
 - **Error quarantine** — failed items are moved to `staging/errors/` so nothing loops or blocks the queue
 - **Background service** — one command registers the daemon as a system service that starts at login (macOS launchd)
+- **Spotlight shortcut** — `tune-shifter install-shortcut` creates a "Bandcamp Sync" app in `~/Applications` so you can trigger a sync from Spotlight without opening a terminal (macOS)
 - **Cross-platform** — macOS, Linux, and Windows (Python 3.11+)
 
 ---

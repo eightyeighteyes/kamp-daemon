@@ -3,6 +3,15 @@
 > Estimates use the vinyl scale: Single (<0.5), Side (0.5–1), LP (2), 2xLP (4), Box Set (4–8), Discography (>8)
 > ⚠️ = needs scoping before work can start
 
+## Sync Outside of Terminal
+*Single* — ship a macOS Shortcuts app shortcut (`.shortcut` file) named "Bandcamp Sync" that runs `tune-shifter sync` via a shell script action; Spotlight indexes Shortcuts so no terminal needed. No CLI changes required.
+
+## FLAC Support
+*Side* — extend tagger, mover, and artwork embed to handle `.flac` via `mutagen.flac.FLAC`; mirrors existing MP3/M4A paths
+
+## OGG Support
+*Side* — same as FLAC but via `mutagen.oggvorbis`; can be done alongside FLAC in one pass
+
 ## Optimization: Check existing tags / embedded image to see if they even need to be updated
 *Single* — read tags before writing and skip files that are already correct
 
@@ -14,12 +23,6 @@
 
 ## Config Arguments
 *Side* — add `tune-shifter config set <key> <value>` and `tune-shifter config show` subcommands; reads/writes existing TOML file
-
-## FLAC Support
-*Side* — extend tagger, mover, and artwork embed to handle `.flac` via `mutagen.flac.FLAC`; mirrors existing MP3/M4A paths
-
-## OGG Support
-*Side* — same as FLAC but via `mutagen.oggvorbis`; can be done alongside FLAC in one pass
 
 ## Cross-platform service installation (Linux systemd, Windows Task Scheduler)
 *Side* — Linux systemd unit file is straightforward; Windows Task Scheduler adds another side; can ship incrementally
@@ -46,8 +49,9 @@
 ## Configurable Album Art Search
 ⚠️ Not scoped enough to start — each source (Bandcamp, Apple, Spotify, Qobuz) requires its own API integration and auth flow; estimate per source is ~Side to LP. Needs a design pass on the config schema and fallback order before any source is implemented.
 
-## GUI / menu bar app for sync status
-*Box Set* — new surface area; needs technology choice (SwiftUI, Tauri, rumps, etc.) and design before scoping
-
 ## Allow a user to verify tags before they're written
 ⚠️ Not scoped — needs UI design (CLI prompt? TUI? GUI?) before estimating
+
+
+## GUI / menu bar app for sync status
+*Box Set* — new surface area; needs technology choice (SwiftUI, Tauri, rumps, etc.) and design before scoping

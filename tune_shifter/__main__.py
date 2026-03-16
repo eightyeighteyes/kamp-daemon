@@ -29,6 +29,7 @@ from .watcher import Watcher
 _SERVICE_LABEL = "com.tune-shifter"
 _PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{_SERVICE_LABEL}.plist"
 _LOG_PATH = _state_dir() / "daemon.log"
+_SHORTCUT_APP = Path.home() / "Applications" / "Bandcamp Sync.app"
 
 # pyproject.toml lives one level above the package directory and is the canonical
 # version source kept up to date by release-please.  Prefer it over
@@ -102,6 +103,14 @@ def main() -> None:
         "uninstall-service",
         help="Remove the launchd user agent registration.",
     )
+    subparsers.add_parser(
+        "install-shortcut",
+        help="Create a 'Bandcamp Sync' Spotlight app in ~/Applications (macOS).",
+    )
+    subparsers.add_parser(
+        "uninstall-shortcut",
+        help="Remove the Bandcamp Sync Spotlight app.",
+    )
 
     args = parser.parse_args()
 
@@ -126,6 +135,12 @@ def main() -> None:
         return
     if command == "uninstall-service":
         _cmd_uninstall_service()
+        return
+    if command == "install-shortcut":
+        _cmd_install_shortcut()
+        return
+    if command == "uninstall-shortcut":
+        _cmd_uninstall_shortcut()
         return
 
     try:
@@ -272,6 +287,36 @@ def _cmd_uninstall_service() -> None:
     subprocess.run(["launchctl", "unload", str(_PLIST_PATH)], check=False)
     _PLIST_PATH.unlink()
     print("Service removed.")
+
+
+def _cmd_install_shortcut() -> None:
+    _SHORTCUT_APP.parent.mkdir(parents=True, exist_ok=True)
+    # /bin/zsh -l loads the login profile so tune-shifter is on PATH regardless
+    # of install method (Homebrew, pipx, source checkout, etc.).
+    # try/on error surfaces failures — including a missing [bandcamp] config —
+    # as a notification instead of silently doing nothing.
+    script = """\
+try
+    do shell script "/bin/zsh -l -c 'tune-shifter sync'"
+    display notification "Bandcamp sync complete" with title "tune-shifter"
+on error msg
+    display notification msg with title "tune-shifter: sync failed"
+end try"""
+    subprocess.run(["osacompile", "-o", str(_SHORTCUT_APP), "-e", script], check=True)
+    print(f"Shortcut installed: {_SHORTCUT_APP}")
+    print('Open Spotlight (\u2318 Space), type "Bandcamp Sync", and press Enter.')
+    print(
+        "\nNote: run 'tune-shifter sync' in a terminal first to set up Bandcamp credentials."
+    )
+    print(f"\nTo remove it:\n  tune-shifter uninstall-shortcut")
+
+
+def _cmd_uninstall_shortcut() -> None:
+    if not _SHORTCUT_APP.exists():
+        print("Shortcut is not installed.")
+        return
+    shutil.rmtree(_SHORTCUT_APP)
+    print("Shortcut removed.")
 
 
 if __name__ == "__main__":

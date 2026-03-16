@@ -1,20 +1,17 @@
-Welcome to tune-shifter!
+Quick start:
 
-To get started, run:
-   tune-shifter
+  tune-shifter                  # first-run setup + start daemon
+  tune-shifter install-service  # auto-start at login
 
-On first run, you'll be asked for your staging directory, library directory,
-and contact email (used in the MusicBrainz User-Agent). Press Enter at each
-prompt to accept the shown default. The config is saved automatically and the
-daemon starts right away.
+Drop a ZIP or folder into your staging directory — tune-shifter handles the rest.
 
-Then install the service so it starts at login:
-  tune-shifter install-service
+Bandcamp sync:
 
-Now move a zip or folder into your staging folder and tune-shifter will take care of the rest!
+  tune-shifter sync                  # download new purchases
+  tune-shifter sync --mark-synced    # first time: skip existing collection
 
-To sync your collection from Bandcamp, run:
-  tune-shifter sync
+Spotlight shortcut (macOS):
 
-If most of your Bandcamp collection is already in your local library, run this first to avoid redownloading everything:
-  tune-shifter sync --mark-synced
+  tune-shifter install-shortcut      # adds "Bandcamp Sync" to Spotlight
+                                     # run 'tune-shifter sync' in a terminal first
+                                     # to set up Bandcamp credentials
