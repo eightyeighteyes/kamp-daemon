@@ -31,7 +31,7 @@ from .watcher import Watcher
 _SERVICE_LABEL = "com.tune-shifter"
 _PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{_SERVICE_LABEL}.plist"
 _LOG_PATH = _state_dir() / "daemon.log"
-_SHORTCUT_APP = Path.home() / "Applications" / "Bandcamp Sync.app"
+_SHORTCUT_APP = Path("/Applications/Bandcamp Sync.app")
 
 # pyproject.toml lives one level above the package directory and is the canonical
 # version source kept up to date by release-please.  Prefer it over
