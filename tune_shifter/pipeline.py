@@ -10,7 +10,7 @@ from .artwork import ArtworkError, fetch_and_embed
 from .config import Config
 from .extractor import ExtractionError, extract, find_audio_files
 from .mover import MoveError, move_to_library
-from .tagger import TaggingError, tag_directory
+from .tagger import TaggingError, is_tagged, read_release_mbids, tag_directory
 
 logger = logging.getLogger(__name__)
 
@@ -38,21 +38,35 @@ def run(path: Path, config: Config) -> None:
         return
 
     # --- 2. Tag ---------------------------------------------------------------
-    try:
-        release = tag_directory(directory, audio_files)
-    except TaggingError as exc:
-        logger.error("Tagging failed: %s", exc)
-        _quarantine(directory, config.paths.staging)
-        return
+    # Skip the MusicBrainz lookup (and tag writes) when every file already has
+    # an MBID — the most expensive operation in the pipeline.  If even one file
+    # is untagged, run the full pass for the whole directory to stay consistent.
+    if all(is_tagged(f) for f in audio_files):
+        logger.info("All files already tagged — skipping MusicBrainz lookup")
+        mbid, rg_mbid = read_release_mbids(audio_files[0])
+        title = "(already tagged)"
+    else:
+        try:
+            release = tag_directory(directory, audio_files)
+        except TaggingError as exc:
+            logger.error("Tagging failed: %s", exc)
+            _quarantine(directory, config.paths.staging)
+            return
+        mbid, rg_mbid = release.mbid, release.release_group_mbid
+        title = release.title
 
     # --- 3. Artwork -----------------------------------------------------------
+    # Always run: even if art is already embedded, a higher-quality image may
+    # be available (e.g. a bundled cover.jpg in the ZIP that beats the art the
+    # original files shipped with).  fetch_and_embed handles the local-first
+    # fallback and is cheap when no network call is needed.
     try:
         fetch_and_embed(
-            mbid=release.mbid,
+            mbid=mbid,
             audio_files=audio_files,
             min_dimension=config.artwork.min_dimension,
             max_bytes=config.artwork.max_bytes,
-            release_group_mbid=release.release_group_mbid,
+            release_group_mbid=rg_mbid,
             directory=directory,
         )
     except ArtworkError as exc:
@@ -75,7 +89,7 @@ def run(path: Path, config: Config) -> None:
     logger.info(
         "Pipeline complete: %d file(s) moved to library for release %r",
         len(destinations),
-        release.title,
+        title,
     )
 
 

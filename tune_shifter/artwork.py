@@ -24,6 +24,58 @@ class ArtworkError(Exception):
     pass
 
 
+def has_embedded_art(path: Path, min_dimension: int, max_bytes: int) -> bool:
+    """Return True if *path* has embedded cover art that meets quality requirements.
+
+    Checks that art exists, its dimensions are ≥ min_dimension on both axes,
+    and its byte size is ≤ max_bytes.  Presence alone is not enough — art
+    embedded by another tool may be too small or oversized for our threshold.
+    Returns False on any read or decode error.
+    """
+    try:
+        suffix = path.suffix.lower()
+        image_bytes: bytes | None = None
+
+        if suffix == ".mp3":
+            tags = id3.ID3(str(path))
+            apic_keys = [k for k in tags if k.startswith("APIC")]
+            if not apic_keys:
+                return False
+            image_bytes = tags[apic_keys[0]].data  # type: ignore[attr-defined]
+        elif suffix == ".m4a":
+            audio = mutagen.mp4.MP4(str(path))
+            if audio.tags is None:
+                return False
+            covr = audio.tags.get("covr")
+            if not covr:
+                return False
+            image_bytes = bytes(covr[0])  # type: ignore[index]
+        else:
+            return False
+
+        if len(image_bytes) > max_bytes:
+            logger.debug(
+                "Embedded art in %s exceeds max_bytes (%d > %d)",
+                path,
+                len(image_bytes),
+                max_bytes,
+            )
+            return False
+
+        img = Image.open(io.BytesIO(image_bytes))
+        w, h = img.size
+        if w < min_dimension or h < min_dimension:
+            logger.debug(
+                "Embedded art in %s too small (%dx%d < %dpx)", path, w, h, min_dimension
+            )
+            return False
+
+        return True
+    except Exception:
+        pass
+    return False
+
+
 def find_local_artwork(directory: Path) -> Path | None:
     """Return the best image file found directly in *directory*, or None.
 
