@@ -310,8 +310,22 @@ end try"""
         cwd=str(_SHORTCUT_APP.parent),
         check=True,
     )
-    # Force Spotlight to index the new app immediately; without this it may not
-    # appear in search until the next scheduled mdworker pass.
+    # osacompile omits CFBundleIdentifier, which Spotlight requires to index an app
+    # as an Application. Inject it with PlistBuddy, then re-sign so the bundle
+    # signature covers the updated plist, then force Spotlight to index it.
+    _info_plist = _SHORTCUT_APP / "Contents" / "Info.plist"
+    subprocess.run(
+        [
+            "/usr/libexec/PlistBuddy",
+            "-c",
+            "Add :CFBundleIdentifier string com.tune-shifter.bandcamp-sync",
+            str(_info_plist),
+        ],
+        check=False,
+    )
+    subprocess.run(
+        ["codesign", "--force", "--sign", "-", str(_SHORTCUT_APP)], check=False
+    )
     subprocess.run(["mdimport", str(_SHORTCUT_APP)], check=False)
     print(f"Shortcut installed: {_SHORTCUT_APP}")
     print('Open Spotlight (\u2318 Space), type "Bandcamp Sync", and press Enter.')
