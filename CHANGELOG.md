@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.11.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.10.0...v0.11.0) (2026-03-17)
+
+
+### Features
+
+* hardcode MusicBrainz app name, remove from config ([#42](https://github.com/eightyeighteyes/tune-shifter/issues/42)) ([f709271](https://github.com/eightyeighteyes/tune-shifter/commit/f709271eb3d59d2253a99c6c4c8f09b0d262c948))
+
 ## [0.10.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.9.0...v0.10.0) (2026-03-17)
 
 
