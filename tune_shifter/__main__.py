@@ -22,7 +22,7 @@ from pathlib import Path
 
 import musicbrainzngs
 
-from .config import DEFAULT_CONFIG_PATH, Config, _state_dir
+from .config import DEFAULT_CONFIG_PATH, Config, _state_dir, config_set, config_show
 from .syncer import Syncer
 from .watcher import Watcher
 
@@ -107,6 +107,20 @@ def main() -> None:
         help="Remove the launchd user agent registration.",
     )
 
+    # config subcommand
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Read or update configuration values.",
+    )
+    config_sub = config_parser.add_subparsers(dest="config_command")
+    config_sub.add_parser("show", help="Print current configuration.")
+    set_parser = config_sub.add_parser(
+        "set",
+        help="Set a config value. Keys use dot notation, e.g. paths.staging",
+    )
+    set_parser.add_argument("key", help="Dot-notation key (e.g. paths.staging)")
+    set_parser.add_argument("value", help="New value")
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -130,6 +144,11 @@ def main() -> None:
         return
     if command == "uninstall-service":
         _cmd_uninstall_service()
+        return
+
+    # Config commands bypass daemon lifecycle (no musicbrainzngs setup needed).
+    if command == "config":
+        _cmd_config(args, config_parser)
         return
 
     try:
@@ -163,6 +182,29 @@ def main() -> None:
         if hasattr(args, "library") and args.library:
             config.paths.library = args.library
         _cmd_daemon(config)
+
+
+def _cmd_config(
+    args: argparse.Namespace, config_parser: argparse.ArgumentParser
+) -> None:
+    config_command = getattr(args, "config_command", None)
+    if config_command == "show":
+        if not args.config.exists():
+            print(f"No config file found at {args.config}.", file=sys.stderr)
+            sys.exit(1)
+        print(config_show(args.config))
+    elif config_command == "set":
+        if not args.config.exists():
+            print(f"No config file found at {args.config}.", file=sys.stderr)
+            sys.exit(1)
+        try:
+            config_set(args.config, args.key, args.value)
+            print(f"Set {args.key} = {args.value}")
+        except (KeyError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config_parser.print_help()
 
 
 def _yn_prompt(question: str, default: bool = True) -> bool:

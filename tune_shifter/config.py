@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -241,3 +242,119 @@ class Config:
             ),
             bandcamp=bandcamp,
         )
+
+
+# ---------------------------------------------------------------------------
+# CLI config management helpers
+# ---------------------------------------------------------------------------
+
+# Explicit allowlist of every settable key with its expected Python/TOML type.
+# Drives validation and type coercion in config_set(), and ordering in config_show().
+_CONFIG_KEY_TYPES: dict[str, type] = {
+    "paths.staging": str,
+    "paths.library": str,
+    "musicbrainz.app_name": str,
+    "musicbrainz.app_version": str,
+    "musicbrainz.contact": str,
+    "artwork.min_dimension": int,
+    "artwork.max_bytes": int,
+    "library.path_template": str,
+    "bandcamp.username": str,
+    "bandcamp.cookie_file": str,
+    "bandcamp.format": str,
+    "bandcamp.poll_interval_minutes": int,
+}
+
+
+def config_show(path: Path) -> str:
+    """Return a formatted, human-readable representation of the config file.
+
+    Reads the raw TOML so values reflect the file exactly (paths not expanded).
+    """
+    with open(path, "rb") as f:
+        raw = tomllib.load(f)
+
+    lines: list[str] = []
+    for section, values in raw.items():
+        if lines:
+            lines.append("")
+        lines.append(f"[{section}]")
+        for key, value in values.items():
+            lines.append(f"  {key} = {value}")
+    return "\n".join(lines)
+
+
+def config_set(path: Path, key: str, value: str) -> None:
+    """Update a single key in the TOML config file.
+
+    *key* must be a dot-notation string like ``paths.staging`` or
+    ``artwork.min_dimension``.  *value* is always provided as a string and
+    coerced to the appropriate type.  Raises KeyError for unknown or missing
+    keys, ValueError for type mismatches.
+    """
+    if key not in _CONFIG_KEY_TYPES:
+        valid = ", ".join(sorted(_CONFIG_KEY_TYPES))
+        raise KeyError(f"Unknown config key {key!r}. Valid keys: {valid}")
+
+    target_type = _CONFIG_KEY_TYPES[key]
+    if target_type == int:
+        try:
+            int_value = int(value)
+        except ValueError:
+            raise ValueError(f"Key {key!r} requires an integer value, got {value!r}")
+        toml_value = str(int_value)
+    else:
+        toml_value = f'"{_toml_escape(value)}"'
+
+    section, field = key.split(".", 1)
+    text = path.read_text()
+    new_text = _replace_in_section(text, section, field, toml_value)
+    path.write_text(new_text)
+
+
+def _toml_escape(s: str) -> str:
+    """Escape a string for embedding in a TOML double-quoted string."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _replace_in_section(text: str, section: str, field: str, toml_value: str) -> str:
+    """Replace *field*'s value inside *section* in raw TOML text.
+
+    Raises KeyError if the section or field is not found — callers can
+    surface a helpful message pointing users to the right setup command.
+    """
+    # Locate the target [section] header
+    section_re = re.compile(r"^\[" + re.escape(section) + r"\]", re.MULTILINE)
+    section_match = section_re.search(text)
+    if not section_match:
+        raise KeyError(
+            f"Section [{section}] not found in config. "
+            f"Run 'tune-shifter sync' to add [bandcamp], or check your config file."
+        )
+
+    # Find where this section ends: the next [header] or EOF
+    next_section_re = re.compile(r"^\[[\w-]+\]", re.MULTILINE)
+    next_match = next_section_re.search(text, section_match.end())
+    section_end = next_match.start() if next_match else len(text)
+
+    section_slice = text[section_match.end() : section_end]
+
+    # Replace the field's value line within this section only.
+    # Use a lambda to avoid regex backreference interpretation of toml_value.
+    field_re = re.compile(r"^(" + re.escape(field) + r"\s*=\s*).*$", re.MULTILINE)
+    replacement_count = 0
+
+    def _replacer(m: re.Match[str]) -> str:
+        nonlocal replacement_count
+        replacement_count += 1
+        return m.group(1) + toml_value
+
+    new_slice = field_re.sub(_replacer, section_slice, count=1)
+
+    if replacement_count == 0:
+        raise KeyError(
+            f"Key {field!r} not found in [{section}] section. "
+            f"It may need to be added to the config file manually."
+        )
+
+    return text[: section_match.end()] + new_slice + text[section_end:]
