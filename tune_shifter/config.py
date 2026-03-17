@@ -265,6 +265,13 @@ _CONFIG_KEY_TYPES: dict[str, type] = {
     "bandcamp.poll_interval_minutes": int,
 }
 
+# Keys whose values must come from a fixed set of choices.
+_CONFIG_KEY_CHOICES: dict[str, frozenset[str]] = {
+    "bandcamp.format": frozenset(
+        {"mp3-v0", "mp3-320", "flac", "aac-hi", "vorbis", "alac", "wav"}
+    ),
+}
+
 
 def config_show(path: Path) -> str:
     """Return a formatted, human-readable representation of the config file.
@@ -304,6 +311,13 @@ def config_set(path: Path, key: str, value: str) -> None:
             raise ValueError(f"Key {key!r} requires an integer value, got {value!r}")
         toml_value = str(int_value)
     else:
+        if key in _CONFIG_KEY_CHOICES:
+            valid_choices = sorted(_CONFIG_KEY_CHOICES[key])
+            if value not in _CONFIG_KEY_CHOICES[key]:
+                raise ValueError(
+                    f"Invalid value {value!r} for {key!r}. "
+                    f"Supported values: {', '.join(valid_choices)}"
+                )
         toml_value = f'"{_toml_escape(value)}"'
 
     section, field = key.split(".", 1)

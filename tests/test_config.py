@@ -270,3 +270,26 @@ class TestConfigSet:
         text = path.read_text()
         assert "path_template" in text  # library section untouched
         assert "~/NewLib" in text
+
+    def test_set_bandcamp_format_valid_value_succeeds(self, tmp_path: Path) -> None:
+        """config_set accepts a valid bandcamp.format value."""
+        path = tmp_path / "config.toml"
+        path.write_text(_TOML_WITH_BANDCAMP)
+        config_set(path, "bandcamp.format", "flac")
+        assert 'format = "flac"' in path.read_text()
+
+    def test_set_bandcamp_format_invalid_value_raises(self, tmp_path: Path) -> None:
+        """config_set rejects an unrecognised bandcamp.format value."""
+        path = tmp_path / "config.toml"
+        path.write_text(_TOML_WITH_BANDCAMP)
+        with pytest.raises(ValueError, match="Invalid value 'm5q'"):
+            config_set(path, "bandcamp.format", "m5q")
+
+    def test_set_bandcamp_format_error_lists_valid_choices(
+        self, tmp_path: Path
+    ) -> None:
+        """The ValueError message includes the supported formats."""
+        path = tmp_path / "config.toml"
+        path.write_text(_TOML_WITH_BANDCAMP)
+        with pytest.raises(ValueError, match="mp3-v0"):
+            config_set(path, "bandcamp.format", "bad")
