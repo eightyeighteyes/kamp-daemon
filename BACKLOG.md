@@ -45,4 +45,20 @@
 
 # Needs Estimation
 
-*Running out of excuses not to ship.*
+## zsh shortcuts
+I want tab completion for tune-shifter commands in zsh.
+
+## bug: tune-shifter somehow gets pip installed when homebrew installed
+after brew install i see 
+```
+[tune-shifter] which tune-shifter
+/Users/theodore.terry/.pyenv/shims/tune-shifter
+```
+
+but if i do `pip uninstall tune-shifter`, i see:
+```
+[tune-shifter] which tune-shifter
+/opt/homebrew/bin/tune-shifter
+```
+
+## 
