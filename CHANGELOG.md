@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.12.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.11.0...v0.12.0) (2026-03-17)
+
+
+### Features
+
+* zsh tab completion ([#44](https://github.com/eightyeighteyes/tune-shifter/issues/44)) ([eb9fb49](https://github.com/eightyeighteyes/tune-shifter/commit/eb9fb49b8f91e1bbab86da8a435755f2a272c761))
+
 ## [0.11.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.10.0...v0.11.0) (2026-03-17)
 
 
