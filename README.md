@@ -163,6 +163,17 @@ launchctl load ~/Library/LaunchAgents/com.tune-shifter.plist   # restart the ser
 tune-shifter uninstall-service   # remove the service registration
 ```
 
+### View or update config from the command line
+
+```bash
+tune-shifter config show
+tune-shifter config set paths.staging ~/Downloads/staging
+tune-shifter config set musicbrainz.contact me@example.com
+tune-shifter config set artwork.min_dimension 500
+```
+
+Keys use dot notation (`section.field`). Run `tune-shifter config set --help` to see all valid keys.
+
 ### One-shot Bandcamp sync
 
 ```bash

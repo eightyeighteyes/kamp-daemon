@@ -3,20 +3,17 @@
 > Estimates use the vinyl scale: Single (<0.5), Side (0.5–1), LP (2), 2xLP (4), Box Set (4–8), Discography (>8)
 > ⚠️ = needs scoping before work can start
 
+## Does Bandcamp auto-download actually work? Test poll_interval_minutes.
+*Single* — manual QA task; set a short poll interval and verify downloads trigger correctly
+
 ## Producer Support
 *Side* — add recording-rels include to `get_release_by_id` call and traverse relationships to extract producer credits
 
 ## One File At A Time
 *Single* — watcher already handles ZIPs; extend to schedule individual audio files (`.mp3`, `.m4a`, etc.) dropped directly into staging
 
-## Config Arguments
-*Side* — add `tune-shifter config set <key> <value>` and `tune-shifter config show` subcommands; reads/writes existing TOML file
-
 ## Cross-platform service installation (Linux systemd, Windows Task Scheduler)
 *Side* — Linux systemd unit file is straightforward; Windows Task Scheduler adds another side; can ship incrementally
-
-## Does Bandcamp auto-download actually work? Test poll_interval_minutes.
-*Single* — manual QA task; set a short poll interval and verify downloads trigger correctly
 
 ## Menu Bar Status Item
 *LP* — when the daemon runs, show a menu bar icon with a "Sync Now" item; requires `rumps` dependency and threading integration with the daemon lifecycle
