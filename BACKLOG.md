@@ -18,6 +18,12 @@
 ## ALAC Support
 *Single* — add `"alac"` to `_FORMAT_LABELS` in `bandcamp.py`; the rest of the pipeline already handles `.m4a` containers (ALAC and AAC share the same container format and tag schema via `mutagen.mp4.MP4`)
 
+## App Version shouldn't be configurable
+*Single* — `musicbrainz.app_version` is part of our contract with MB; remove it from the config file and schema, and derive it from `_get_version()` at startup instead
+
+## Hotload config changes
+*Side* — watchdog (already a dep) can watch the config file cheaply; the complexity is safely propagating changes to the live `Syncer` (poll interval) and `Watcher` (paths) threads without a full restart
+
 # Needs Refinement
 ## Best Release
 *Side* — when multiple MB results exist, prefer the release closest to the original physical format (LP/CD over digital/streaming)
@@ -43,8 +49,6 @@
 ## Allow a user to verify tags before they're written
 ⚠️ Not scoped — needs UI design (CLI prompt? TUI? GUI?) before estimating
 
-## App Version shouldn't be configurable
-*Single* — `musicbrainz.app_version` is part of our contract with MB; remove it from the config file and schema, and derive it from `_get_version()` at startup instead
+# Needs Estimation
 
-## Hotload config changes
-*Side* — watchdog (already a dep) can watch the config file cheaply; the complexity is safely propagating changes to the live `Syncer` (poll interval) and `Watcher` (paths) threads without a full restart
+*Too busy shipping to have bad ideas right now.*
