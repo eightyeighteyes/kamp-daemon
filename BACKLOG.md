@@ -3,6 +3,9 @@
 > Estimates use the vinyl scale: Single (<0.5), Side (0.5–1), LP (2), 2xLP (4), Box Set (4–8), Discography (>8)
 > ⚠️ = needs scoping before work can start
 
+## Config commands for managing the service
+*Side* — add `stop`, `play`, and `status` subcommands wrapping launchctl unload/load/list; guard against already-stopped/already-running states with friendly messages; `status` shows uptime when running. Update zsh completion, USAGE.md, and README (remove raw launchctl instructions).
+
 ## Producer Support
 *Side* — add recording-rels include to `get_release_by_id` call and traverse relationships to extract producer credits
 
@@ -45,3 +48,6 @@
 
 ## bug: pyenv shim shadows Homebrew binary after dev/brew cycle
 *Single* — formula is clean (isolated venv). Root cause: a past dev practice (pre-Poetry) wrote `tune-shifter` to pyenv's global site-packages; `pyenv rehash` registered the shim and it persisted. Fix: audit current dev paths for any global pip writes; add `.python-version` to the repo so pyenv doesn't pick up executables from Poetry's cache venv; document the canonical dev workflow.
+
+# Needs Estimation
+-- don't discard this section --

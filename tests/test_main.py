@@ -1,8 +1,19 @@
 """Tests for tune_shifter.__main__ helpers."""
 
+import subprocess
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from tune_shifter.__main__ import _yn_prompt
+from tune_shifter.__main__ import (
+    _SERVICE_LABEL,
+    _cmd_play,
+    _cmd_status,
+    _cmd_stop,
+    _service_pid,
+    _yn_prompt,
+)
 
 
 class TestYnPrompt:
@@ -36,3 +47,140 @@ class TestYnPrompt:
 
         monkeypatch.setattr("builtins.input", raise_eof)
         assert _yn_prompt("Question?", default=True) is True
+
+
+def _launchctl_result(stdout: str, returncode: int = 0) -> MagicMock:
+    result = MagicMock()
+    result.returncode = returncode
+    result.stdout = stdout
+    return result
+
+
+class TestServicePid:
+    def test_returns_pid_when_running(self) -> None:
+        output = f"PID\tStatus\tLabel\n12345\t0\t{_SERVICE_LABEL}\n"
+        with patch("subprocess.run", return_value=_launchctl_result(output)):
+            assert _service_pid() == 12345
+
+    def test_returns_none_when_not_loaded(self) -> None:
+        # launchctl list returns non-zero when the label isn't known
+        with patch("subprocess.run", return_value=_launchctl_result("", returncode=1)):
+            assert _service_pid() is None
+
+    def test_returns_none_when_pid_is_dash(self) -> None:
+        # Service is registered but not currently running (e.g. crashed + KeepAlive delay)
+        output = f"PID\tStatus\tLabel\n-\t0\t{_SERVICE_LABEL}\n"
+        with patch("subprocess.run", return_value=_launchctl_result(output)):
+            assert _service_pid() is None
+
+    def test_returns_none_when_pid_is_zero(self) -> None:
+        output = f"PID\tStatus\tLabel\n0\t0\t{_SERVICE_LABEL}\n"
+        with patch("subprocess.run", return_value=_launchctl_result(output)):
+            assert _service_pid() is None
+
+
+class TestCmdStop:
+    def test_not_installed(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        with patch("tune_shifter.__main__._PLIST_PATH", plist):
+            _cmd_stop()
+        assert "not installed" in capsys.readouterr().out
+
+    def test_already_stopped(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        plist.touch()
+        with (
+            patch("tune_shifter.__main__._PLIST_PATH", plist),
+            patch("tune_shifter.__main__._service_pid", return_value=None),
+        ):
+            _cmd_stop()
+        assert "already stopped" in capsys.readouterr().out
+
+    def test_stops_running_service(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        plist.touch()
+        with (
+            patch("tune_shifter.__main__._PLIST_PATH", plist),
+            patch("tune_shifter.__main__._service_pid", return_value=42),
+            patch("subprocess.run") as mock_run,
+        ):
+            _cmd_stop()
+        mock_run.assert_called_once_with(
+            ["launchctl", "unload", str(plist)], check=True
+        )
+        assert "stopped" in capsys.readouterr().out
+
+
+class TestCmdPlay:
+    def test_not_installed(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        with patch("tune_shifter.__main__._PLIST_PATH", plist):
+            _cmd_play()
+        out = capsys.readouterr().out
+        assert "not installed" in out
+
+    def test_already_running(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        plist.touch()
+        with (
+            patch("tune_shifter.__main__._PLIST_PATH", plist),
+            patch("tune_shifter.__main__._service_pid", return_value=42),
+        ):
+            _cmd_play()
+        assert "already running" in capsys.readouterr().out
+
+    def test_starts_stopped_service(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        plist.touch()
+        with (
+            patch("tune_shifter.__main__._PLIST_PATH", plist),
+            patch("tune_shifter.__main__._service_pid", return_value=None),
+            patch("subprocess.run") as mock_run,
+        ):
+            _cmd_play()
+        mock_run.assert_called_once_with(["launchctl", "load", str(plist)], check=True)
+        assert "started" in capsys.readouterr().out
+
+
+class TestCmdStatus:
+    def test_not_installed(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        with patch("tune_shifter.__main__._PLIST_PATH", plist):
+            _cmd_status()
+        assert "not installed" in capsys.readouterr().out
+
+    def test_stopped(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        plist.touch()
+        with (
+            patch("tune_shifter.__main__._PLIST_PATH", plist),
+            patch("tune_shifter.__main__._service_pid", return_value=None),
+        ):
+            _cmd_status()
+        assert "not running" in capsys.readouterr().out
+
+    def test_running_shows_uptime(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        plist = tmp_path / "com.tune-shifter.plist"
+        plist.touch()
+        ps_result = MagicMock()
+        ps_result.returncode = 0
+        ps_result.stdout = "  1:23:45\n"
+        with (
+            patch("tune_shifter.__main__._PLIST_PATH", plist),
+            patch("tune_shifter.__main__._service_pid", return_value=99),
+            patch("subprocess.run", return_value=ps_result),
+        ):
+            _cmd_status()
+        out = capsys.readouterr().out
+        assert "running" in out
+        assert "1:23:45" in out

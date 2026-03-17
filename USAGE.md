@@ -13,6 +13,11 @@ Then install the service so it starts at login:
 
 Now move a zip or folder into your staging folder and tune-shifter will take care of the rest!
 
+To manage the service:
+  tune-shifter stop     # pause
+  tune-shifter play     # resume
+  tune-shifter status   # check if it's running
+
 To sync your collection from Bandcamp, run:
   tune-shifter sync
 

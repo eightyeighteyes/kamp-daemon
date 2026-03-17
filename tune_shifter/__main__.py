@@ -107,6 +107,9 @@ def main() -> None:
         "uninstall-service",
         help="Remove the launchd user agent registration.",
     )
+    subparsers.add_parser("stop", help="Stop the tune-shifter service.")
+    subparsers.add_parser("play", help="Start the tune-shifter service.")
+    subparsers.add_parser("status", help="Show whether tune-shifter is running.")
 
     # config subcommand
     config_parser = subparsers.add_parser(
@@ -145,6 +148,15 @@ def main() -> None:
         return
     if command == "uninstall-service":
         _cmd_uninstall_service()
+        return
+    if command == "stop":
+        _cmd_stop()
+        return
+    if command == "play":
+        _cmd_play()
+        return
+    if command == "status":
+        _cmd_status()
         return
 
     # Config commands bypass daemon lifecycle (no musicbrainzngs setup needed).
@@ -288,6 +300,72 @@ def _cmd_daemon(config: Config, config_path: Path) -> None:
     watcher.join()
 
 
+def _service_pid() -> int | None:
+    """Return the PID of the running tune-shifter service, or None if not running.
+
+    Queries launchctl for the service label. A positive PID means the process is
+    alive; "-" or 0 means the service is registered but not currently running.
+    """
+    result = subprocess.run(
+        ["launchctl", "list", _SERVICE_LABEL],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    lines = result.stdout.strip().splitlines()
+    if len(lines) < 2:
+        return None
+    pid_str = lines[1].split("\t")[0]
+    if not pid_str.isdigit():
+        return None
+    pid = int(pid_str)
+    return pid if pid > 0 else None
+
+
+def _cmd_stop() -> None:
+    if not _PLIST_PATH.exists():
+        print(
+            "tune-shifter is not installed as a service. Run tune-shifter install-service first."
+        )
+        return
+    if _service_pid() is None:
+        print("tune-shifter is already stopped.")
+        return
+    subprocess.run(["launchctl", "unload", str(_PLIST_PATH)], check=True)
+    print("tune-shifter stopped.")
+
+
+def _cmd_play() -> None:
+    if not _PLIST_PATH.exists():
+        print(
+            "tune-shifter is not installed as a service. Run tune-shifter install-service first."
+        )
+        return
+    if _service_pid() is not None:
+        print("tune-shifter is already running.")
+        return
+    subprocess.run(["launchctl", "load", str(_PLIST_PATH)], check=True)
+    print("tune-shifter started.")
+
+
+def _cmd_status() -> None:
+    if not _PLIST_PATH.exists():
+        print("tune-shifter is not installed as a service.")
+        return
+    pid = _service_pid()
+    if pid is None:
+        print("tune-shifter is not running.")
+        return
+    ps = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "etime="],
+        capture_output=True,
+        text=True,
+    )
+    uptime = ps.stdout.strip() if ps.returncode == 0 else "unknown"
+    print(f"tune-shifter is running (pid {pid}, uptime {uptime})")
+
+
 def _cmd_install_service(config_path: Path) -> None:
     exec_path = shutil.which("tune-shifter") or sys.argv[0]
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -313,13 +391,13 @@ def _cmd_install_service(config_path: Path) -> None:
     _PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
     _PLIST_PATH.write_text(plist)
     subprocess.run(["launchctl", "load", str(_PLIST_PATH)], check=True)
-    print(f"Service installed and started.")
-    print(f"  Logs  → {_LOG_PATH}")
-    print(f"  Plist → {_PLIST_PATH}")
-    print(f"\nTo stop the service temporarily:")
-    print(f"  launchctl unload {_PLIST_PATH}")
-    print(f"To remove it permanently:")
-    print(f"  tune-shifter uninstall-service")
+    print("tune-shifter installed and started.")
+    print(f"  Logs → {_LOG_PATH}")
+    print("\nUseful commands:")
+    print("  tune-shifter stop             # pause the service")
+    print("  tune-shifter play             # resume the service")
+    print("  tune-shifter status           # check if it's running")
+    print("  tune-shifter uninstall-service  # remove it permanently")
 
 
 def _cmd_uninstall_service() -> None:
