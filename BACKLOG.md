@@ -42,3 +42,6 @@
 
 # Needs Estimation
 -- don't discard this section --
+## Menu Bar: Show Pipeline Status (Idle, Tagging, Updating Artwork, Moving)
+
+## Menu Bar: Show What's Being Downloaded from Bandcamp
