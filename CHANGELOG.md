@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.13.0...v0.14.0) (2026-03-18)
+
+
+### Features
+
+* add daemon pause/resume for internal pipeline control ([#51](https://github.com/eightyeighteyes/tune-shifter/issues/51)) ([de57e27](https://github.com/eightyeighteyes/tune-shifter/commit/de57e2769715a6b2880cfc59be3815605ee1e023))
+* add MenuBarApp and --menu-bar flag for macOS menu bar daemon ([#54](https://github.com/eightyeighteyes/tune-shifter/issues/54)) ([805359e](https://github.com/eightyeighteyes/tune-shifter/commit/805359ec9309a5148dc1ae9c8281aca840cf968a))
+* add rumps dep and extract DaemonCore for menu bar support ([#53](https://github.com/eightyeighteyes/tune-shifter/issues/53)) ([13ceb19](https://github.com/eightyeighteyes/tune-shifter/commit/13ceb1951a1ad269de38ba045763ee8a45d491ea))
+
 ## [0.13.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.12.1...v0.13.0) (2026-03-17)
 
 
