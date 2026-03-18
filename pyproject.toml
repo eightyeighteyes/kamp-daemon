@@ -44,6 +44,7 @@ source = ["tune_shifter"]
 omit = [
     "tune_shifter/__main__.py",
     "tune_shifter/bandcamp.py",
+    "tune_shifter/menu_bar.py",
 ]
 
 [tool.coverage.report]
@@ -79,9 +80,16 @@ module = ["tune_shifter.tagger", "tune_shifter.mover", "tune_shifter.artwork"]
 disable_error_code = ["no-untyped-call", "attr-defined", "unused-ignore", "union-attr", "index"]
 
 [[tool.mypy.overrides]]
-# rumps ships no type stubs
-module = ["rumps", "rumps.*"]
+# rumps, AppKit, and objc (PyObjC runtime) ship no type stubs
+module = ["rumps", "rumps.*", "AppKit", "AppKit.*", "objc", "objc.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# menu_bar subclasses rumps.App (typed Any), uses @rumps.timer (untyped decorator),
+# and imports objc/AppKit inline inside methods for lazy PyObjC access
+module = ["tune_shifter.menu_bar"]
+ignore_missing_imports = true
+disable_error_code = ["misc", "untyped-decorator", "import-untyped"]
 
 [[tool.mypy.overrides]]
 # playwright ships no type stubs
