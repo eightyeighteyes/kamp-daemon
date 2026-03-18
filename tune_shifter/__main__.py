@@ -14,6 +14,7 @@ import argparse
 import importlib.metadata
 import logging
 import os
+import platform
 import re
 import shutil
 import signal
@@ -82,6 +83,12 @@ def main() -> None:
     )
     daemon_parser.add_argument("--staging", metavar="DIR", type=Path, default=None)
     daemon_parser.add_argument("--library", metavar="DIR", type=Path, default=None)
+    daemon_parser.add_argument(
+        "--menu-bar",
+        action="store_true",
+        default=False,
+        help="Show a macOS menu bar icon with pipeline controls (macOS only).",
+    )
     daemon_sub = daemon_parser.add_subparsers(dest="daemon_command")
     daemon_sub.add_parser(
         "pause",
@@ -109,9 +116,15 @@ def main() -> None:
     )
 
     # service subcommands (macOS launchd)
-    subparsers.add_parser(
+    install_parser = subparsers.add_parser(
         "install-service",
         help="Register tune-shifter as a launchd user agent (macOS). Starts at login, runs in background.",
+    )
+    install_parser.add_argument(
+        "--menu-bar",
+        action="store_true",
+        default=False,
+        help="Include --menu-bar in the installed service's launch arguments.",
     )
     subparsers.add_parser(
         "uninstall-service",
@@ -154,7 +167,7 @@ def main() -> None:
 
     # Service commands don't require a config file.
     if command == "install-service":
-        _cmd_install_service(args.config)
+        _cmd_install_service(args.config, menu_bar=getattr(args, "menu_bar", False))
         return
     if command == "uninstall-service":
         _cmd_uninstall_service()
@@ -212,7 +225,7 @@ def main() -> None:
                 config.paths.staging = args.staging
             if hasattr(args, "library") and args.library:
                 config.paths.library = args.library
-            _cmd_daemon(config, args.config)
+            _cmd_daemon(config, args.config, menu_bar=getattr(args, "menu_bar", False))
 
 
 def _cmd_config(
@@ -279,7 +292,7 @@ def _cmd_sync(config: Config, config_path: Path, mark_synced: bool = False) -> N
         syncer.sync_once()
 
 
-def _cmd_daemon(config: Config, config_path: Path) -> None:
+def _cmd_daemon(config: Config, config_path: Path, menu_bar: bool = False) -> None:
     _logger = logging.getLogger(__name__)
     pkg_version = _get_version()
     install_path = Path(__file__).resolve().parent
@@ -292,7 +305,12 @@ def _cmd_daemon(config: Config, config_path: Path) -> None:
 
     core = DaemonCore(config, config_path)
     core.start()
-    core.wait()
+    if menu_bar and platform.system() == "Darwin":
+        from .menu_bar import MenuBarApp
+
+        MenuBarApp(core).run()
+    else:
+        core.wait()
 
 
 def _cmd_daemon_signal(sig: int, action: str) -> None:
@@ -442,9 +460,10 @@ def _cmd_status() -> None:
     print(f"tune-shifter is running (pid {pid}, uptime {uptime})")
 
 
-def _cmd_install_service(config_path: Path) -> None:
+def _cmd_install_service(config_path: Path, menu_bar: bool = False) -> None:
     exec_path = shutil.which("tune-shifter") or sys.argv[0]
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    menu_bar_arg = "\n        <string>--menu-bar</string>" if menu_bar else ""
     plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
     "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -456,7 +475,7 @@ def _cmd_install_service(config_path: Path) -> None:
         <string>{exec_path}</string>
         <string>--config</string>
         <string>{config_path}</string>
-        <string>daemon</string>
+        <string>daemon</string>{menu_bar_arg}
     </array>
     <key>RunAtLoad</key>         <true/>
     <key>KeepAlive</key>         <true/>
