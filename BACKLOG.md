@@ -42,6 +42,40 @@
 
 # Needs Estimation
 -- don't discard this section --
-## Menu Bar: Show Pipeline Status (Idle, Tagging, Updating Artwork, Moving)
 
-## Menu Bar: Show What's Being Downloaded from Bandcamp
+## Menu Bar: Enable Bandcamp items when config gains [bandcamp] section
+*Single* — `DaemonCore._on_config_reload` never assigns `self._config = new_config`; fix that one line and the 5-second `_refresh` timer picks up the updated state automatically. No new wiring needed.
+
+## Menu Bar: Show What's Being Downloaded from Bandcamp in Sync Status
+*Single* — album title is already available in the `bandcamp.py` download loop; thread a status callback through `Syncer` → `MenuBarApp` and update `_status_item.title`
+
+## Tagging: Skip artwork fetch when existing art meets quality requirements
+*Single* — add a guard in `artwork.py` (or `pipeline.py`) that checks embedded art dimensions before making a Cover Art Archive request; saves a few seconds per ingest when Bandcamp art already meets the threshold
+
+## Executable / Process name should be tune-shifter, not Python
+*Single* — add `setproctitle` dependency; call `setproctitle.setproctitle("tune-shifter")` near the top of `__main__.py`; covers Activity Monitor and OS permission dialogs
+
+## Menu Bar: Bandcamp Download Format Selector
+*Single* — add a `rumps` submenu under Bandcamp Sync with the supported format labels; selecting one calls `config_set` to update `bandcamp.format` and reloads config
+```
+Bandcamp Sync
+Sync Status
+Download Format -> AAC-HI
+                   ALAC
+                   FLAC
+                   MP3-320
+                   MP3-V0 ✓
+                   Ogg Vorbis
+                   WAV
+```
+
+## Menu Bar: Show Pipeline Status (Idle, Tagging, Updating Artwork, Moving)
+*Side* — requires threading a stage-change callback through `pipeline.py` (Watcher-owned) and the Syncer path; two separate status sources need to be reconciled in `MenuBarApp._refresh`
+
+## Bandcamp Logout: Remove or replace the active Bandcamp session
+*Side* — two surfaces (CLI `tune-shifter sync logout` + menu bar Logout item); CLI deletes the session file and state file; menu bar item calls the same logic and refreshes Bandcamp item state
+```
+Bandcamp Sync
+Sync Status
+Logout
+```
