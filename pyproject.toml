@@ -5,9 +5,10 @@ description = "Automated audio library ingest from Bandcamp downloads."
 authors = []
 packages = [{include = "tune_shifter"}]
 # USAGE.md is read by the Homebrew formula's caveats block; completions/ is
-# installed by the Homebrew formula's zsh_completion.install call. MANIFEST.in
-# is ignored by poetry-core so both must be declared here explicitly.
-include = ["USAGE.md", "completions/_tune-shifter"]
+# installed by the Homebrew formula's zsh_completion.install call; launcher/main.c
+# is compiled by the formula into the native binary. MANIFEST.in is ignored by
+# poetry-core so all three must be declared here explicitly.
+include = ["USAGE.md", "completions/_tune-shifter", "launcher/main.c"]
 
 [tool.poetry.dependencies]
 python = ">=3.11"
