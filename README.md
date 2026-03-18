@@ -153,13 +153,7 @@ tune-shifter daemon --staging ~/Downloads/staging --library ~/Music
 
 ### macOS menu bar
 
-Pass `--menu-bar` to show a status-bar icon while the daemon runs:
-
-```bash
-tune-shifter daemon --menu-bar
-```
-
-The menu provides:
+On macOS the daemon shows a `music.note.list` status-bar icon by default. The menu provides:
 
 | Item | Action |
 |---|---|
@@ -169,10 +163,11 @@ The menu provides:
 | **About Tune-Shifter** | Opens the project GitHub page |
 | **Quit** | Shuts down the daemon and removes the menu bar icon |
 
-To always start with the menu bar when running as a service:
+To run without the menu bar icon:
 
 ```bash
-tune-shifter install-service --menu-bar
+tune-shifter daemon --no-menu-bar
+tune-shifter install-service --no-menu-bar  # persists the preference in the launchd plist
 ```
 
 ---

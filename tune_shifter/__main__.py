@@ -84,10 +84,10 @@ def main() -> None:
     daemon_parser.add_argument("--staging", metavar="DIR", type=Path, default=None)
     daemon_parser.add_argument("--library", metavar="DIR", type=Path, default=None)
     daemon_parser.add_argument(
-        "--menu-bar",
+        "--no-menu-bar",
         action="store_true",
         default=False,
-        help="Show a macOS menu bar icon with pipeline controls (macOS only).",
+        help="Disable the macOS menu bar icon (shown by default on macOS).",
     )
     daemon_sub = daemon_parser.add_subparsers(dest="daemon_command")
     daemon_sub.add_parser(
@@ -121,10 +121,10 @@ def main() -> None:
         help="Register tune-shifter as a launchd user agent (macOS). Starts at login, runs in background.",
     )
     install_parser.add_argument(
-        "--menu-bar",
+        "--no-menu-bar",
         action="store_true",
         default=False,
-        help="Include --menu-bar in the installed service's launch arguments.",
+        help="Exclude the menu bar icon from the installed service (shown by default on macOS).",
     )
     subparsers.add_parser(
         "uninstall-service",
@@ -167,7 +167,9 @@ def main() -> None:
 
     # Service commands don't require a config file.
     if command == "install-service":
-        _cmd_install_service(args.config, menu_bar=getattr(args, "menu_bar", False))
+        _cmd_install_service(
+            args.config, menu_bar=not getattr(args, "no_menu_bar", False)
+        )
         return
     if command == "uninstall-service":
         _cmd_uninstall_service()
@@ -225,7 +227,9 @@ def main() -> None:
                 config.paths.staging = args.staging
             if hasattr(args, "library") and args.library:
                 config.paths.library = args.library
-            _cmd_daemon(config, args.config, menu_bar=getattr(args, "menu_bar", False))
+            _cmd_daemon(
+                config, args.config, menu_bar=not getattr(args, "no_menu_bar", False)
+            )
 
 
 def _cmd_config(
@@ -463,7 +467,7 @@ def _cmd_status() -> None:
 def _cmd_install_service(config_path: Path, menu_bar: bool = False) -> None:
     exec_path = shutil.which("tune-shifter") or sys.argv[0]
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    menu_bar_arg = "\n        <string>--menu-bar</string>" if menu_bar else ""
+    menu_bar_arg = "" if menu_bar else "\n        <string>--no-menu-bar</string>"
     plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
     "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
