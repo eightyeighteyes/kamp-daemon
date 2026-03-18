@@ -317,7 +317,7 @@ def _search_release(artist: str, album: str) -> ReleaseInfo:
             includes=[
                 "artists",
                 "recordings",
-                "recording-rels",
+                "recording-level-rels",  # relations ON each recording (producer, engineer, etc.)
                 "release-groups",
                 "labels",
             ],
