@@ -63,6 +63,9 @@ class MenuBarApp(rumps.App):
         self._core = core
         self._sync_in_progress = False
         self._pulse_active = False
+        # Written by background sync thread; read only by the main-thread _refresh
+        # timer to avoid touching AppKit objects off the main thread.
+        self._sync_status: str = ""
 
         # Replace the text title with an SF Symbol icon.
         self._set_sf_symbol_icon()
@@ -137,8 +140,12 @@ class MenuBarApp(rumps.App):
         threading.Thread(target=_run, daemon=True).start()
 
     def _on_sync_status(self, msg: str) -> None:
-        """Update the status item title with the current download target."""
-        self._status_item.title = f"Status: {msg}"
+        """Store the current download target for the main-thread _refresh timer.
+
+        Called from the background sync thread — must not touch AppKit objects
+        directly, as AppKit requires all UI mutations on the main thread.
+        """
+        self._sync_status = msg
 
     def _on_format(self, sender: rumps.MenuItem) -> None:
         """Write the selected download format to the config file."""
@@ -172,9 +179,11 @@ class MenuBarApp(rumps.App):
             self._toggle_item.title = "Stop"
 
         if self._sync_in_progress:
-            self._status_item.title = "Status: Syncing\u2026"
+            label = self._sync_status or "Syncing\u2026"
+            self._status_item.title = f"Status: {label}"
             self._set_pulse(True)
         else:
+            self._sync_status = ""
             self._status_item.title = "Status: Idle"
             self._set_pulse(False)
 
