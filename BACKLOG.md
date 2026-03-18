@@ -6,7 +6,7 @@
 ## Menu Bar Status Item - Epic
 *LP* — when the daemon runs, show a menu bar icon with pipeline start/stop and Bandcamp sync controls.
 
-Icon: SF Symbol `music.note.square.stack`; pulse animation while a Bandcamp sync is in progress.
+Icon: SF Symbol `music.note.list` (original `music.note.square.stack` does not exist); pulse animation while a Bandcamp sync is in progress.
 
 Menu:
 - **Play / Stop** — toggles the internal pipeline (watcher + syncer) on/off within the running process. Becomes Stop when pipeline is running, Play when paused.

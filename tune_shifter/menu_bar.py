@@ -9,10 +9,13 @@ Must only be imported on macOS — raises ImportError otherwise.
 
 from __future__ import annotations
 
+import logging
 import platform
 import signal
 import subprocess
 import threading
+
+_logger = logging.getLogger(__name__)
 
 if platform.system() != "Darwin":
     raise ImportError("tune_shifter.menu_bar is only available on macOS")
@@ -22,7 +25,7 @@ import rumps  # noqa: E402 — guarded above
 from .daemon_core import DaemonCore, _PID_PATH
 
 _ABOUT_URL = "https://github.com/eightyeighteyes/tune-shifter"
-_SYMBOL_NAME = "music.note.square.stack"
+_SYMBOL_NAME = "music.note.list"  # music.note.square.stack does not exist in SF Symbols
 
 
 class MenuBarApp(rumps.App):
@@ -146,7 +149,13 @@ class MenuBarApp(rumps.App):
     # ------------------------------------------------------------------
 
     def _set_sf_symbol_icon(self) -> None:
-        """Replace the rumps text title with an SF Symbol image."""
+        """Pre-load the SF Symbol NSImage into _icon_nsimage before run() starts.
+
+        rumps.App.run() calls initializeStatusBar() → setStatusBarIcon() which
+        reads self._icon_nsimage directly from the App's __dict__.  Setting it
+        here (before run()) is the correct hook point; the nsstatusitem object
+        does not exist yet during __init__.
+        """
         try:
             from AppKit import NSImage
 
@@ -155,41 +164,46 @@ class MenuBarApp(rumps.App):
             )
             if img:
                 img.setTemplate_(True)  # adapts to light/dark menu bar
-                self._nsapp.statusitem.button().setImage_(img)
-                self.title = ""  # hide text title once icon is set
-        except Exception:
-            pass  # fall back to the "tune-shifter" text title on failure
+                # Bypass the rumps icon setter (which only accepts file paths)
+                # and write the NSImage straight into the attribute rumps reads.
+                self._icon_nsimage = img
+        except Exception as exc:
+            _logger.warning("SF Symbol icon setup failed: %s", exc)
 
     def _set_pulse(self, active: bool) -> None:
-        """Add or remove NSSymbolPulseEffect on the status-bar icon.
+        """Pulse the status-bar icon opacity while a sync is in progress.
 
-        NSSymbolPulseEffect requires macOS 14+; the try/except silently degrades
-        on older systems where the symbol just stays static during sync.
+        Uses CABasicAnimation (QuartzCore) since NSSymbolPulseEffect's
+        addSymbolEffect:options: is not yet bound in PyObjC 12.x.
         """
         if active == self._pulse_active:
             return
         self._pulse_active = active
         try:
-            from AppKit import (
-                NSSymbolEffectOptions,
-                NSSymbolEffectOptionsRepeatBehavior,
-                NSSymbolPulseEffect,
-            )
+            import objc
 
-            btn = self._nsapp.statusitem.button()
+            objc.loadBundle(
+                "QuartzCore",
+                bundle_path="/System/Library/Frameworks/QuartzCore.framework",
+                module_globals={},
+            )
+            CABasicAnimation = objc.lookUpClass("CABasicAnimation")
+            btn = self._nsapp.nsstatusitem.button()
+            btn.setWantsLayer_(True)
+            layer = btn.layer()
             if active:
-                btn.addSymbolEffect_options_(
-                    NSSymbolPulseEffect.effect().effectWithByLayer(),
-                    NSSymbolEffectOptions.optionsWithRepeatBehavior_(
-                        NSSymbolEffectOptionsRepeatBehavior.behaviorPeriodicWithDelay_(
-                            1.0
-                        )
-                    ),
-                )
+                anim = CABasicAnimation.animationWithKeyPath_("opacity")
+                anim.setFromValue_(1.0)
+                anim.setToValue_(0.25)
+                anim.setDuration_(0.8)
+                anim.setRepeatCount_(1e9)  # effectively infinite
+                anim.setAutoreverses_(True)
+                layer.addAnimation_forKey_(anim, "syncPulse")
             else:
-                btn.removeAllSymbolEffects()
-        except Exception:
-            pass  # NSSymbolPulseEffect requires macOS 14+
+                layer.removeAnimationForKey_("syncPulse")
+                layer.setOpacity_(1.0)
+        except Exception as exc:
+            _logger.warning("Pulse animation failed: %s", exc)
 
     def _refresh_bandcamp_items(self) -> None:
         """Disable Bandcamp Sync and Sync Status when config or conditions prevent use."""
