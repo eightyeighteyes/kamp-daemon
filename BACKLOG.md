@@ -3,14 +3,8 @@
 > Estimates use the vinyl scale: Single (<0.5), Side (0.5–1), LP (2), 2xLP (4), Box Set (4–8), Discography (>8)
 > ⚠️ = needs scoping before work can start
 
-## ALAC Support
-*Single* — add `"alac"` to `_FORMAT_LABELS` in `bandcamp.py`; the rest of the pipeline already handles `.m4a` containers (ALAC and AAC share the same container format and tag schema via `mutagen.mp4.MP4`)
-
 ## Tagging: Skip artwork fetch when existing art meets quality requirements
 *Single* — add a guard in `artwork.py` (or `pipeline.py`) that checks embedded art dimensions before making a Cover Art Archive request; saves a few seconds per ingest when Bandcamp art already meets the threshold
-
-## Tagging: Producer Support
-*Side* — add recording-rels include to `get_release_by_id` call and traverse relationships to extract producer credits
 
 ## Pipeline: One File At A Time
 *Single* — watcher already handles ZIPs; extend to schedule individual audio files (`.mp3`, `.m4a`, etc.) dropped directly into staging

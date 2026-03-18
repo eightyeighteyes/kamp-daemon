@@ -17,6 +17,8 @@ from tune_shifter.tagger import (
     _read_existing_metadata,
     _search_release,
     _write_flac_tags,
+    _write_m4a_tags,
+    _write_mp3_tags,
     _write_ogg_tags,
     _write_tags,
     configure_musicbrainz,
@@ -1132,4 +1134,238 @@ class TestTagDirectoryOgg:
         assert tags["ARTIST"] == ["Artist"]
         assert tags["ALBUM"] == ["Album"]
         assert tags["MUSICBRAINZ_ALBUMID"] == ["abc-123"]
+
+
+# ---------------------------------------------------------------------------
+# Producer support
+# ---------------------------------------------------------------------------
+
+# Release detail fixture with producer credits on recordings.
+_RELEASE_WITH_PRODUCERS: dict[str, Any] = {
+    "release": {
+        "id": "abc-123",
+        "title": "Great Album",
+        "date": "2020-04-01",
+        "status": "Official",
+        "country": "US",
+        "artist-credit": [
+            {
+                "name": "Cool Artist",
+                "artist": {
+                    "id": "artist-mbid-1",
+                    "name": "Cool Artist",
+                    "sort-name": "Artist, Cool",
+                },
+            }
+        ],
+        "release-group": {
+            "id": "rg-456",
+            "primary-type": "Album",
+            "first-release-date": "2020-04-01",
+        },
+        "label-info-list": [],
+        "medium-list": [
+            {
+                "position": "1",
+                "track-list": [
+                    {
+                        "number": "1",
+                        "position": "1",
+                        "recording": {
+                            "id": "rec-111",
+                            "title": "First Track",
+                            "relation-list": [
+                                {
+                                    "type": "producer",
+                                    "target-type": "artist",
+                                    "direction": "backward",
+                                    "artist": {"id": "prod-1", "name": "Rick Rubin"},
+                                },
+                                {
+                                    "type": "producer",
+                                    "target-type": "artist",
+                                    "direction": "backward",
+                                    "artist": {
+                                        "id": "prod-2",
+                                        "name": "Brendan O'Brien",
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                    {
+                        "number": "2",
+                        "position": "2",
+                        "recording": {
+                            "id": "rec-222",
+                            "title": "Second Track",
+                            # No producer credits on this track
+                            "relation-list": [
+                                {
+                                    "type": "engineer",
+                                    "target-type": "artist",
+                                    "direction": "backward",
+                                    "artist": {"id": "eng-1", "name": "Some Engineer"},
+                                }
+                            ],
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+}
+
+
+class TestProducerSupport:
+    """Producer credits extracted from recording-rels and written to tags."""
+
+    def test_parse_release_extracts_producers(self) -> None:
+        release = _parse_release(_RELEASE_WITH_PRODUCERS["release"])
+        track1 = release.tracks["1-1"]
+        assert track1.producers == ["Rick Rubin", "Brendan O'Brien"]
+
+    def test_parse_release_ignores_non_producer_rels(self) -> None:
+        release = _parse_release(_RELEASE_WITH_PRODUCERS["release"])
+        track2 = release.tracks["1-2"]
+        assert track2.producers == []
+
+    def test_parse_release_empty_when_no_relation_list(self) -> None:
+        release = _parse_release(SAMPLE_RELEASE_DETAIL["release"])
+        for track in release.tracks.values():
+            assert track.producers == []
+
+    def test_mp3_tipl_written_for_producers(self, tmp_path: Path) -> None:
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3)
+        release = ReleaseInfo(
+            mbid="abc-123",
+            release_group_mbid="rg-456",
+            title="Album",
+            artist="Artist",
+            album_artist="Artist",
+            year="2020",
+            tracks={},
+        )
+        track = TrackInfo(
+            number=1, disc=1, title="Track", producers=["Rick Rubin", "Brendan O'Brien"]
+        )
+        _write_mp3_tags(mp3, release, track)
+
+        tags = id3.ID3(str(mp3))
+        assert "TIPL" in tags
+        people = tags["TIPL"].people
+        assert ["producer", "Rick Rubin"] in people
+        assert ["producer", "Brendan O'Brien"] in people
+
+    def test_mp3_tipl_absent_when_no_producers(self, tmp_path: Path) -> None:
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3)
+        release = ReleaseInfo(
+            mbid="abc-123",
+            release_group_mbid="rg-456",
+            title="Album",
+            artist="Artist",
+            album_artist="Artist",
+            year="2020",
+            tracks={},
+        )
+        track = TrackInfo(number=1, disc=1, title="Track")
+        _write_mp3_tags(mp3, release, track)
+
+        tags = id3.ID3(str(mp3))
+        assert "TIPL" not in tags
+
+    def test_m4a_producer_atom_written(self, tmp_path: Path) -> None:
+        m4a = tmp_path / "01.m4a"
+        m4a.write_bytes(b"\x00" * 32)
+        release = ReleaseInfo(
+            mbid="abc-123",
+            release_group_mbid="rg-456",
+            title="Album",
+            artist="Artist",
+            album_artist="Artist",
+            year="2020",
+            tracks={},
+        )
+        track = TrackInfo(
+            number=1, disc=1, title="Track", producers=["Rick Rubin", "Brendan O'Brien"]
+        )
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = {}
+        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+            _write_m4a_tags(m4a, release, track)
+
+        atom = mock_mp4.tags.get("----:com.apple.iTunes:PRODUCER")
+        assert atom is not None
+        decoded = b"".join(bytes(v) for v in atom).decode()
+        assert decoded == "Rick Rubin; Brendan O'Brien"
+
+    def test_m4a_producer_atom_absent_when_no_producers(self, tmp_path: Path) -> None:
+        m4a = tmp_path / "01.m4a"
+        m4a.write_bytes(b"\x00" * 32)
+        release = ReleaseInfo(
+            mbid="abc-123",
+            release_group_mbid="rg-456",
+            title="Album",
+            artist="Artist",
+            album_artist="Artist",
+            year="2020",
+            tracks={},
+        )
+        track = TrackInfo(number=1, disc=1, title="Track")
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = {}
+        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+            _write_m4a_tags(m4a, release, track)
+
+        assert "----:com.apple.iTunes:PRODUCER" not in mock_mp4.tags
+
+    def test_vorbis_producer_written(self, tmp_path: Path) -> None:
+        ogg = tmp_path / "01.ogg"
+        ogg.write_bytes(b"OggS")
+        release = ReleaseInfo(
+            mbid="abc-123",
+            release_group_mbid="rg-456",
+            title="Album",
+            artist="Artist",
+            album_artist="Artist",
+            year="2020",
+            tracks={},
+        )
+        track = TrackInfo(
+            number=1, disc=1, title="Track", producers=["Rick Rubin", "Brendan O'Brien"]
+        )
+        mock_ogg = MagicMock()
+        tags: dict[str, Any] = {}
+        mock_ogg.tags = tags
+        with patch(
+            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+        ):
+            _write_ogg_tags(ogg, release, track)
+
+        assert tags.get("PRODUCER") == ["Rick Rubin; Brendan O'Brien"]
+
+    def test_vorbis_producer_absent_when_no_producers(self, tmp_path: Path) -> None:
+        ogg = tmp_path / "01.ogg"
+        ogg.write_bytes(b"OggS")
+        release = ReleaseInfo(
+            mbid="abc-123",
+            release_group_mbid="rg-456",
+            title="Album",
+            artist="Artist",
+            album_artist="Artist",
+            year="2020",
+            tracks={},
+        )
+        track = TrackInfo(number=1, disc=1, title="Track")
+        mock_ogg = MagicMock()
+        tags: dict[str, Any] = {}
+        mock_ogg.tags = tags
+        with patch(
+            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+        ):
+            _write_ogg_tags(ogg, release, track)
+
+        assert "PRODUCER" not in tags
         mock_ogg.save.assert_called_once()

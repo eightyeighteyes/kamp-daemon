@@ -70,6 +70,7 @@ class TrackInfo:
     title: str
     recording_mbid: str = ""
     total_tracks: int = 0
+    producers: list[str] = field(default_factory=list)
 
 
 def is_tagged(path: Path) -> bool:
@@ -313,7 +314,13 @@ def _search_release(artist: str, album: str) -> ReleaseInfo:
         detail = _mb_call(
             musicbrainzngs.get_release_by_id,
             candidate_mbid,
-            includes=["artists", "recordings", "release-groups", "labels"],
+            includes=[
+                "artists",
+                "recordings",
+                "recording-rels",
+                "release-groups",
+                "labels",
+            ],
         )
         try:
             return _parse_release(detail["release"])
@@ -377,6 +384,11 @@ def _parse_release(raw: dict[str, Any]) -> ReleaseInfo:
                 pos = track_raw.get("position", 0)
                 track_num = int(pos) if str(pos).isdigit() else 0
             recording = track_raw.get("recording", {})
+            producers = [
+                rel["artist"]["name"]
+                for rel in recording.get("relation-list", [])
+                if rel.get("type") == "producer" and rel.get("artist", {}).get("name")
+            ]
             key = f"{disc_num}-{track_num}"
             tracks[key] = TrackInfo(
                 number=track_num,
@@ -384,6 +396,7 @@ def _parse_release(raw: dict[str, Any]) -> ReleaseInfo:
                 title=recording.get("title", ""),
                 recording_mbid=recording.get("id", ""),
                 total_tracks=total_tracks,
+                producers=producers,
             )
 
     return ReleaseInfo(
@@ -582,6 +595,12 @@ def _write_mp3_tags(path: Path, release: ReleaseInfo, track: TrackInfo | None) -
             tags["TXXX:MusicBrainz Track Id"] = id3.TXXX(
                 encoding=3, desc="MusicBrainz Track Id", text=track.recording_mbid
             )
+        # TIPL (Involved People List) — producer credits per Picard convention
+        if track.producers:
+            tags["TIPL"] = id3.TIPL(
+                encoding=3,
+                people=[["producer", name] for name in track.producers],
+            )
 
     tags.save(str(path))
     logger.debug("Wrote MP3 tags to %s", path)
@@ -667,6 +686,10 @@ def _write_m4a_tags(path: Path, release: ReleaseInfo, track: TrackInfo | None) -
             audio.tags["----:com.apple.iTunes:MusicBrainz Track Id"] = _ff(
                 track.recording_mbid
             )
+        if track.producers:
+            audio.tags["----:com.apple.iTunes:PRODUCER"] = _ff(
+                "; ".join(track.producers)
+            )
 
     audio.save()
     logger.debug("Wrote M4A tags to %s", path)
@@ -743,6 +766,8 @@ def _assign_vorbis_tags(
         tags["TITLE"] = _v(track.title)
         if track.recording_mbid:
             tags["MUSICBRAINZ_TRACKID"] = _v(track.recording_mbid)
+        if track.producers:
+            tags["PRODUCER"] = _v("; ".join(track.producers))
 
 
 def _write_flac_tags(path: Path, release: ReleaseInfo, track: TrackInfo | None) -> None:
