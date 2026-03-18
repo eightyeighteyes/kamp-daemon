@@ -3,6 +3,9 @@
 > Estimates use the vinyl scale: Single (<0.5), Side (0.5–1), LP (2), 2xLP (4), Box Set (4–8), Discography (>8)
 > ⚠️ = needs scoping before work can start
 
+## Homebrew: compiled binary launcher so Activity Monitor shows tune-shifter
+*Single* — macOS Activity Monitor reads `p_comm` (kernel-level, set at exec time from the executable path — not writable from userspace). A compiled trampoline binary named `tune-shifter` that exec's the venv Python would set `p_comm` correctly. Implement as a small C file compiled by the Homebrew formula; `setproctitle` already covers `ps` output and Linux.
+
 ## ALAC Support
 *Single* — add `"alac"` to `_FORMAT_LABELS` in `bandcamp.py`; the rest of the pipeline already handles `.m4a` containers (ALAC and AAC share the same container format and tag schema via `mutagen.mp4.MP4`)
 
