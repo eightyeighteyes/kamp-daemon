@@ -45,7 +45,7 @@ class TuneShifter < Formula
                 "import sysconfig; print(sysconfig.get_config_var('LDVERSION') or '')").chomp
     system ENV.cc,
            buildpath/"launcher/main.c",
-           "-DVENV_PYTHON='\"#{venv_python}\"'",
+           "-DVENV_PYTHON=\"#{venv_python}\"",
            "-I#{include_dir}",
            *cflags.split,
            "-L#{lib_dir}", "-lpython#{py_ver}",
