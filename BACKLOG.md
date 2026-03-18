@@ -12,9 +12,6 @@
 ## Tagging: Producer Support
 *Side* — add recording-rels include to `get_release_by_id` call and traverse relationships to extract producer credits
 
-## Executable / Process name should be tune-shifter, not Python
-*Single* — add `setproctitle` dependency; call `setproctitle.setproctitle("tune-shifter")` near the top of `__main__.py`; covers Activity Monitor and OS permission dialogs
-
 ## Pipeline: One File At A Time
 *Single* — watcher already handles ZIPs; extend to schedule individual audio files (`.mp3`, `.m4a`, etc.) dropped directly into staging
 

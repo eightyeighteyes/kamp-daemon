@@ -56,6 +56,19 @@ def _get_version() -> str:
 
 
 def main() -> None:
+    # Rename the process so `ps` output shows "tune-shifter" instead of
+    # "Python".  setproctitle updates argv[0] which is sufficient on Linux;
+    # on macOS it also helps ps, but Activity Monitor reads the kernel-level
+    # p_comm (set from the executable path at exec time and not writable from
+    # userspace), so the menu-bar icon name requires a compiled binary launcher
+    # — tracked separately in the backlog.
+    try:
+        import setproctitle
+
+        setproctitle.setproctitle("tune-shifter")
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(
         prog="tune-shifter",
         description="Automated audio library ingest from Bandcamp.",
