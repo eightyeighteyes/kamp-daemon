@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.0](https://github.com/eightyeighteyes/tune-shifter/compare/v0.15.3...v0.16.0) (2026-03-19)
+
+
+### Features
+
+* **artwork:** skip CAA fetch when all files have qualifying embedded art ([#67](https://github.com/eightyeighteyes/tune-shifter/issues/67)) ([e9dc2b8](https://github.com/eightyeighteyes/tune-shifter/commit/e9dc2b84e72480117db3300a89058d5ecd1b68e6))
+* **pipeline:** schedule individual audio files dropped into staging ([#69](https://github.com/eightyeighteyes/tune-shifter/issues/69)) ([b11f432](https://github.com/eightyeighteyes/tune-shifter/commit/b11f432be2c3923383799bbc7a1526be12a3ac63))
+
+
+### Performance Improvements
+
+* **pipeline:** isolate mutagen/musicbrainzngs/PIL/requests in subprocess ([#71](https://github.com/eightyeighteyes/tune-shifter/issues/71)) ([cd4e146](https://github.com/eightyeighteyes/tune-shifter/commit/cd4e146810972dbd09aa62a48d9e075d080bbc90))
+* **syncer:** isolate playwright in subprocess for true memory release ([#70](https://github.com/eightyeighteyes/tune-shifter/issues/70)) ([6ca6602](https://github.com/eightyeighteyes/tune-shifter/commit/6ca6602f64df8a260e8efacd2de44f52e5979128))
+
 ## [0.15.3](https://github.com/eightyeighteyes/tune-shifter/compare/v0.15.2...v0.15.3) (2026-03-18)
 
 
