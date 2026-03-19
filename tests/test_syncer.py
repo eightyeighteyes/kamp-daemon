@@ -57,7 +57,7 @@ class TestStart:
 
     def test_launches_thread_when_interval_set(self, tmp_path: Path) -> None:
         """start() spawns a daemon thread when poll_interval_minutes > 0."""
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=[]):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
@@ -75,7 +75,7 @@ class TestStop:
 
     def test_stop_joins_thread(self, tmp_path: Path) -> None:
         """stop() waits for the polling thread to finish."""
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=[]):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
@@ -88,21 +88,21 @@ class TestSyncOnce:
     def test_warns_when_no_bandcamp(self, tmp_path: Path) -> None:
         """sync_once() logs a warning and returns when [bandcamp] is absent."""
         syncer = Syncer(_make_config_no_bandcamp(tmp_path))
-        with patch("tune_shifter.syncer.sync_new_purchases") as mock_sync:
+        with patch("tune_shifter.bandcamp.sync_new_purchases") as mock_sync:
             syncer.sync_once()
         mock_sync.assert_not_called()
 
     def test_logs_downloaded_count(self, tmp_path: Path) -> None:
         """sync_once() reports the number of downloaded files."""
         fake_paths = [tmp_path / "a.mp3", tmp_path / "b.mp3"]
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=fake_paths):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=fake_paths):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path))
                 syncer.sync_once()
 
     def test_logs_nothing_new(self, tmp_path: Path) -> None:
         """sync_once() handles an empty result without error."""
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=[]):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path))
                 syncer.sync_once()
@@ -119,7 +119,7 @@ class TestReload:
 
     def test_reload_same_interval_does_not_restart_thread(self, tmp_path: Path) -> None:
         """reload() with unchanged poll_interval leaves the thread running."""
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=[]):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
@@ -130,7 +130,7 @@ class TestReload:
 
     def test_reload_changed_interval_restarts_thread(self, tmp_path: Path) -> None:
         """reload() with a new poll_interval stops and restarts the thread."""
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=[]):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
@@ -143,7 +143,7 @@ class TestReload:
 
     def test_reload_interval_to_zero_stops_thread(self, tmp_path: Path) -> None:
         """reload() with interval=0 stops the polling thread."""
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=[]):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
@@ -155,7 +155,7 @@ class TestReload:
 class TestPauseResume:
     def test_pause_stops_polling_thread(self, tmp_path: Path) -> None:
         """pause() stops the polling thread."""
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=[]):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
@@ -170,7 +170,7 @@ class TestPauseResume:
 
     def test_resume_restarts_polling_thread(self, tmp_path: Path) -> None:
         """resume() starts a new polling thread after a pause."""
-        with patch("tune_shifter.syncer.sync_new_purchases", return_value=[]):
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
@@ -197,7 +197,7 @@ class TestStatusCallback:
         """sync_once() forwards status_callback to sync_new_purchases."""
         callback = lambda msg: None  # noqa: E731
         with patch(
-            "tune_shifter.syncer.sync_new_purchases", return_value=[]
+            "tune_shifter.bandcamp.sync_new_purchases", return_value=[]
         ) as mock_sync:
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path))
@@ -208,17 +208,38 @@ class TestStatusCallback:
         assert kwargs["status_callback"] is callback
 
 
+class TestLazyImport:
+    def test_bandcamp_not_imported_at_construction(self, tmp_path: Path) -> None:
+        """Constructing a Syncer must not load bandcamp (and by extension playwright)."""
+        import sys
+
+        sys.modules.pop("tune_shifter.bandcamp", None)
+        _ = Syncer(_make_config(tmp_path))
+        assert "tune_shifter.bandcamp" not in sys.modules
+
+    def test_bandcamp_evicted_after_sync_once(self, tmp_path: Path) -> None:
+        """After sync_once() returns, bandcamp is removed from sys.modules."""
+        import sys
+
+        sys.modules.pop("tune_shifter.bandcamp", None)
+        syncer = Syncer(_make_config(tmp_path))
+        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
+            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+                syncer.sync_once()
+        assert "tune_shifter.bandcamp" not in sys.modules
+
+
 class TestMarkSynced:
     def test_warns_when_no_bandcamp(self, tmp_path: Path) -> None:
         """mark_synced() warns and returns when [bandcamp] is absent."""
         syncer = Syncer(_make_config_no_bandcamp(tmp_path))
-        with patch("tune_shifter.syncer.mark_collection_synced") as mock_mark:
+        with patch("tune_shifter.bandcamp.mark_collection_synced") as mock_mark:
             syncer.mark_synced()
         mock_mark.assert_not_called()
 
     def test_calls_mark_collection_synced(self, tmp_path: Path) -> None:
         """mark_synced() delegates to mark_collection_synced with correct args."""
-        with patch("tune_shifter.syncer.mark_collection_synced") as mock_mark:
+        with patch("tune_shifter.bandcamp.mark_collection_synced") as mock_mark:
             with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path))
                 syncer.mark_synced()

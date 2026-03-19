@@ -7,10 +7,27 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from .bandcamp import mark_collection_synced, sync_new_purchases
 from .config import Config, _state_dir
 
 logger = logging.getLogger(__name__)
+
+
+def _evict_bandcamp_modules() -> None:
+    """Remove bandcamp and playwright modules from sys.modules after sync.
+
+    Evicting drops the module objects' reference counts so the GC can reclaim
+    their memory once all local references are gone.  The next sync re-imports
+    cleanly.  This keeps playwright out of memory while the daemon is idle.
+    """
+    import sys
+
+    to_evict = [
+        k
+        for k in sys.modules
+        if k == "tune_shifter.bandcamp" or k.startswith("playwright")
+    ]
+    for key in to_evict:
+        sys.modules.pop(key, None)
 
 
 class Syncer:
@@ -103,12 +120,17 @@ class Syncer:
 
         state_file = _state_dir() / "bandcamp_state.json"
         logger.info("Starting Bandcamp sync…")
-        paths = sync_new_purchases(
-            bc_config=bc,
-            staging_dir=self._config.paths.staging,
-            state_file=state_file,
-            status_callback=self.status_callback,
-        )
+        try:
+            from .bandcamp import sync_new_purchases
+
+            paths = sync_new_purchases(
+                bc_config=bc,
+                staging_dir=self._config.paths.staging,
+                state_file=state_file,
+                status_callback=self.status_callback,
+            )
+        finally:
+            _evict_bandcamp_modules()
         if paths:
             logger.info("Sync complete: %d file(s) downloaded to staging.", len(paths))
         else:
@@ -121,7 +143,12 @@ class Syncer:
             logger.warning("No [bandcamp] section in config — nothing to mark.")
             return
         state_file = _state_dir() / "bandcamp_state.json"
-        mark_collection_synced(bc_config=bc, state_file=state_file)
+        try:
+            from .bandcamp import mark_collection_synced
+
+            mark_collection_synced(bc_config=bc, state_file=state_file)
+        finally:
+            _evict_bandcamp_modules()
 
     # ------------------------------------------------------------------
     # Internal
