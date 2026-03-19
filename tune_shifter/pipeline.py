@@ -40,9 +40,23 @@ def _pipeline_worker(
     """
     _root = logging.getLogger()
     _root.setLevel(logging.DEBUG)
-    _root.addHandler(logging.handlers.QueueHandler(log_q))
+    _queue_handler = logging.handlers.QueueHandler(log_q)
+    _root.addHandler(_queue_handler)
     try:
+        import importlib.metadata
+
+        import musicbrainzngs
+
         from .pipeline_impl import run
+
+        # The subprocess starts with a clean interpreter — set_useragent must be
+        # called here because the parent's call does not carry over across the
+        # process boundary.
+        musicbrainzngs.set_useragent(
+            "tune-shifter",
+            importlib.metadata.version("tune-shifter"),
+            config.musicbrainz.contact,
+        )
 
         run(
             path,
@@ -53,6 +67,10 @@ def _pipeline_worker(
         result_q.put(("ok", None))
     except Exception as exc:  # noqa: BLE001
         result_q.put(("error", str(exc)))
+    finally:
+        # Remove the handler so that _replay_log_queue re-emission does not
+        # loop back through this queue (matters when running inline in tests).
+        _root.removeHandler(_queue_handler)
 
 
 def _spawn_worker(  # pragma: no cover

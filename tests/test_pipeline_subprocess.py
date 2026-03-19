@@ -136,6 +136,19 @@ class TestRunInSubprocess:
                 run_in_subprocess(tmp_path / "album", _make_config(tmp_path))
         mock_run.assert_called_once()
 
+    def test_worker_calls_set_useragent(self, tmp_path: Path) -> None:
+        """_pipeline_worker calls musicbrainzngs.set_useragent with the config contact."""
+        with (
+            patch("tune_shifter.pipeline_impl.run"),
+            patch("musicbrainzngs.set_useragent") as mock_ua,
+            patch("tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker),
+        ):
+            run_in_subprocess(tmp_path / "album", _make_config(tmp_path))
+
+        mock_ua.assert_called_once()
+        _, _, contact = mock_ua.call_args.args
+        assert contact == "t@t.com"
+
     def test_worker_exception_propagates(self, tmp_path: Path) -> None:
         """Exceptions raised in the worker are re-raised by run_in_subprocess()."""
         with patch(
