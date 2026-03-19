@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import multiprocessing
 import queue
 import threading
@@ -31,9 +32,14 @@ def _sync_worker(
     staging_dir: Path,
     state_file: Path,
     status_q: Any,
+    log_q: Any,
     result_q: Any,
 ) -> None:
     """Entry point for the sync subprocess."""
+    # Route all log records to the parent via log_q for a consolidated log stream.
+    _root = logging.getLogger()
+    _root.setLevel(logging.DEBUG)
+    _root.addHandler(logging.handlers.QueueHandler(log_q))
     try:
         from .bandcamp import sync_new_purchases
 
@@ -52,9 +58,13 @@ def _mark_synced_worker(
     bc_config: BandcampConfig,
     state_file: Path,
     status_q: Any,
+    log_q: Any,
     result_q: Any,
 ) -> None:
     """Entry point for the mark-synced subprocess."""
+    _root = logging.getLogger()
+    _root.setLevel(logging.DEBUG)
+    _root.addHandler(logging.handlers.QueueHandler(log_q))
     try:
         from .bandcamp import mark_collection_synced
 
@@ -67,23 +77,38 @@ def _mark_synced_worker(
 def _spawn_worker(  # pragma: no cover
     target: Any,
     args: tuple[Any, ...],
-) -> tuple[Any, Any, Any]:
-    """Spawn an isolated subprocess running target(*args, status_q, result_q).
+) -> tuple[Any, Any, Any, Any]:
+    """Spawn an isolated subprocess running target(*args, status_q, log_q, result_q).
 
     Uses 'spawn' (not 'fork') so the child starts with a clean interpreter —
     no inherited file descriptors, threads, or loaded modules.
 
-    Returns (proc, status_q, result_q).
+    Returns (proc, status_q, log_q, result_q).
     """
     ctx = multiprocessing.get_context("spawn")
     status_q: Any = ctx.Queue()
+    log_q: Any = ctx.Queue()
     result_q: Any = ctx.Queue()
     # Not daemon=True: daemon subprocesses on macOS can have localhost networking
     # issues that break Playwright's Node.js ↔ Chromium DevTools Protocol channel.
     # The parent cleans up via proc.join() and the process terminates naturally.
-    proc = ctx.Process(target=target, args=(*args, status_q, result_q))
+    proc = ctx.Process(target=target, args=(*args, status_q, log_q, result_q))
     proc.start()
-    return proc, status_q, result_q
+    return proc, status_q, log_q, result_q
+
+
+def _replay_log_queue(log_q: Any) -> None:
+    """Re-emit log records from the subprocess into the parent's log handlers.
+
+    Called after the subprocess exits.  QueueHandler.prepare() serialises
+    exc_info into exc_text before pickling, so every record is safe to handle.
+    """
+    while True:
+        try:
+            record = log_q.get_nowait()
+            logging.getLogger(record.name).handle(record)
+        except queue.Empty:
+            break
 
 
 class Syncer:
@@ -172,6 +197,8 @@ class Syncer:
 
         Playwright and bandcamp modules are loaded only inside the child
         process; when it exits the OS reclaims all of their memory.
+        Log records emitted inside the subprocess are replayed into the
+        parent's log stream after the process exits.
         """
         bc = self._config.bandcamp
         if bc is None:
@@ -181,7 +208,7 @@ class Syncer:
         state_file = _state_dir() / "bandcamp_state.json"
         logger.info("Starting Bandcamp sync…")
 
-        proc, status_q, result_q = _spawn_worker(
+        proc, status_q, log_q, result_q = _spawn_worker(
             _sync_worker,
             (bc, self._config.paths.staging, state_file),
         )
@@ -206,6 +233,7 @@ class Syncer:
                 break
 
         proc.join(timeout=10)
+        _replay_log_queue(log_q)
 
         try:
             status, value = result_q.get_nowait()
@@ -229,11 +257,12 @@ class Syncer:
             return
         state_file = _state_dir() / "bandcamp_state.json"
 
-        proc, _status_q, result_q = _spawn_worker(
+        proc, _status_q, log_q, result_q = _spawn_worker(
             _mark_synced_worker,
             (bc, state_file),
         )
         proc.join(timeout=30)
+        _replay_log_queue(log_q)
 
         try:
             status, value = result_q.get_nowait()

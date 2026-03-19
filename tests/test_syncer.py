@@ -1,5 +1,6 @@
 """Tests for tune_shifter.syncer."""
 
+import logging.handlers
 import queue as _queue_module
 from pathlib import Path
 from typing import Any
@@ -58,28 +59,30 @@ class _FakeProc:
         return False
 
 
-def _inline_worker(target: Any, args: tuple[Any, ...]) -> tuple[Any, Any, Any]:
+def _inline_worker(target: Any, args: tuple[Any, ...]) -> tuple[Any, Any, Any, Any]:
     """Test helper: run the worker synchronously in-process.
 
     Patches on tune_shifter.bandcamp.* work because the target code runs in
     the same process and the same sys.modules as the test.
     """
     status_q: _queue_module.Queue[str] = _queue_module.Queue()
+    log_q: _queue_module.Queue[Any] = _queue_module.Queue()
     result_q: _queue_module.Queue[Any] = _queue_module.Queue()
-    target(*args, status_q, result_q)
-    return _FakeProc(), status_q, result_q
+    target(*args, status_q, log_q, result_q)
+    return _FakeProc(), status_q, log_q, result_q
 
 
-def _noop_worker(target: Any, args: tuple[Any, ...]) -> tuple[Any, Any, Any]:
+def _noop_worker(target: Any, args: tuple[Any, ...]) -> tuple[Any, Any, Any, Any]:
     """Test helper: skip the worker entirely, return an empty-ok result.
 
     Use when you only need sync_once() / mark_synced() to complete without
     importing or running any bandcamp code (e.g. isolation assertions).
     """
     status_q: _queue_module.Queue[str] = _queue_module.Queue()
+    log_q: _queue_module.Queue[Any] = _queue_module.Queue()
     result_q: _queue_module.Queue[Any] = _queue_module.Queue()
     result_q.put(("ok", []))
-    return _FakeProc(), status_q, result_q
+    return _FakeProc(), status_q, log_q, result_q
 
 
 class TestStart:
@@ -253,14 +256,15 @@ class TestStatusCallback:
 
         def _worker_with_two_messages(
             target: Any, args: tuple[Any, ...]
-        ) -> tuple[Any, Any, Any]:
+        ) -> tuple[Any, Any, Any, Any]:
             status_q: _queue_module.Queue[str] = _queue_module.Queue()
+            log_q: _queue_module.Queue[Any] = _queue_module.Queue()
             result_q: _queue_module.Queue[Any] = _queue_module.Queue()
             # Two messages to exercise the loop-continues branch in the drain loop.
             status_q.put("Downloading: Album A")
             status_q.put("Downloading: Album B")
             result_q.put(("ok", []))
-            return _FakeProc(), status_q, result_q
+            return _FakeProc(), status_q, log_q, result_q
 
         with patch(
             "tune_shifter.syncer._spawn_worker", side_effect=_worker_with_two_messages
@@ -329,13 +333,14 @@ class TestWorkerExceptions:
 
         def _failing_then_stopping_worker(
             target: Any, args: tuple[Any, ...]
-        ) -> tuple[Any, Any, Any]:
+        ) -> tuple[Any, Any, Any, Any]:
             nonlocal call_count
             call_count += 1
             status_q: _queue_module.Queue[str] = _queue_module.Queue()
+            log_q: _queue_module.Queue[Any] = _queue_module.Queue()
             result_q: _queue_module.Queue[Any] = _queue_module.Queue()
             result_q.put(("error", "boom"))
-            return _FakeProc(), status_q, result_q
+            return _FakeProc(), status_q, log_q, result_q
 
         with patch(
             "tune_shifter.syncer._spawn_worker",
@@ -350,6 +355,51 @@ class TestWorkerExceptions:
                 syncer.stop()
         # _run caught the exception and logged it rather than crashing the thread.
         assert call_count >= 1
+
+
+class TestLogReplay:
+    def test_log_records_forwarded_to_parent(self, tmp_path: Path) -> None:
+        """Log records emitted in the subprocess are re-emitted in the parent."""
+        import logging
+
+        received: list[logging.LogRecord] = []
+
+        def _worker_with_log(
+            target: Any, args: tuple[Any, ...]
+        ) -> tuple[Any, Any, Any, Any]:
+            status_q: _queue_module.Queue[str] = _queue_module.Queue()
+            log_q: _queue_module.Queue[Any] = _queue_module.Queue()
+            result_q: _queue_module.Queue[Any] = _queue_module.Queue()
+            # Simulate a log record put by QueueHandler in the subprocess.
+            record = logging.LogRecord(
+                name="tune_shifter.bandcamp",
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg="Fetched fan_id=12345",
+                args=(),
+                exc_info=None,
+            )
+            log_q.put(record)
+            result_q.put(("ok", []))
+            return _FakeProc(), status_q, log_q, result_q
+
+        handler = logging.handlers.MemoryHandler(
+            capacity=100, flushLevel=logging.CRITICAL
+        )
+        logging.getLogger("tune_shifter.bandcamp").addHandler(handler)
+        logging.getLogger("tune_shifter.bandcamp").setLevel(logging.DEBUG)
+        try:
+            with patch(
+                "tune_shifter.syncer._spawn_worker", side_effect=_worker_with_log
+            ):
+                with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+                    syncer = Syncer(_make_config(tmp_path))
+                    syncer.sync_once()
+        finally:
+            logging.getLogger("tune_shifter.bandcamp").removeHandler(handler)
+
+        assert any(r.getMessage() == "Fetched fan_id=12345" for r in handler.buffer)
 
 
 class TestMarkSynced:
