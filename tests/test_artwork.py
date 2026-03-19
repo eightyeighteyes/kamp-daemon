@@ -316,6 +316,74 @@ class TestLocalArtwork:
 
         assert mock_get.called
 
+    def test_skips_caa_fetch_when_all_files_have_qualifying_embedded_art(
+        self, tmp_path: Path
+    ) -> None:
+        """No network call is made when every file already has qualifying embedded art."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3)
+        # Embed qualifying art directly into the file
+        import mutagen.id3 as id3_
+
+        tags = id3_.ID3(str(mp3))
+        tags["APIC:Cover"] = id3_.APIC(
+            encoding=3,
+            mime="image/jpeg",
+            type=3,
+            desc="Cover",
+            data=_make_jpeg(1200, 1200),
+        )
+        tags.save(str(mp3))
+
+        with patch("tune_shifter.artwork.requests.get") as mock_get:
+            fetch_and_embed(
+                "abc-123",
+                [mp3],
+                min_dimension=1000,
+                max_bytes=5_000_000,
+                directory=tmp_path,
+            )
+
+        mock_get.assert_not_called()
+
+    def test_still_fetches_caa_when_any_file_lacks_qualifying_art(
+        self, tmp_path: Path
+    ) -> None:
+        """If even one file has no qualifying embedded art, the CAA fetch still runs."""
+        mp3_good = tmp_path / "01.mp3"
+        mp3_bare = tmp_path / "02.mp3"
+        # 01.mp3 has qualifying art
+        _make_mp3(mp3_good)
+        import mutagen.id3 as id3_
+
+        tags = id3_.ID3(str(mp3_good))
+        tags["APIC:Cover"] = id3_.APIC(
+            encoding=3,
+            mime="image/jpeg",
+            type=3,
+            desc="Cover",
+            data=_make_jpeg(1200, 1200),
+        )
+        tags.save(str(mp3_good))
+        # 02.mp3 has no art at all
+        _make_mp3(mp3_bare)
+
+        with patch("tune_shifter.artwork.requests.get") as mock_get:
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = {"images": []}
+            mock_get.return_value = resp
+
+            fetch_and_embed(
+                "abc-123",
+                [mp3_good, mp3_bare],
+                min_dimension=1000,
+                max_bytes=5_000_000,
+                directory=tmp_path,
+            )
+
+        assert mock_get.called
+
 
 class TestFindLocalArtworkFallback:
     def test_returns_first_alphabetically_when_no_preferred_name(

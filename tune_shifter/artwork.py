@@ -194,6 +194,18 @@ def fetch_and_embed(
                 logger.info("Using bundled artwork from %s", local)
 
     if image_bytes is None:
+        # Skip the Cover Art Archive network call when every file already has
+        # qualifying embedded art — no local image was found, so the online
+        # fetch is the only remaining source, and the embedded art already
+        # satisfies the quality threshold.
+        if audio_files and all(
+            has_embedded_art(f, min_dimension, max_bytes) for f in audio_files
+        ):
+            logger.info(
+                "All %d file(s) have qualifying embedded art — skipping Cover Art Archive fetch",
+                len(audio_files),
+            )
+            return
         image_bytes = _fetch_cover(
             COVER_ART_ARCHIVE_URL.format(mbid=mbid), min_dimension, max_bytes
         )
