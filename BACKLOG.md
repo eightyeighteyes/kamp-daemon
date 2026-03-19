@@ -3,8 +3,8 @@
 > Estimates use the vinyl scale: Single (<0.5), Side (0.5–1), LP (2), 2xLP (4), Box Set (4–8), Discography (>8)
 > ⚠️ = needs scoping before work can start
 
-## Pipeline subprocess isolation: run each album ingest in an isolated process
-*Side* — same pattern as Bandcamp sync isolation: `watcher.py` spawns a subprocess per album drop, passes `path`/`config` as arguments, receives stage updates via a queue for the menu bar status item, and re-emits log records into the parent stream. Main process stays near 40 MB permanently regardless of how many albums have been processed (mutagen, musicbrainzngs, requests, Pillow are never resident in the parent). Key scoping question: stage-callback timing — the menu bar polls every 5 s so a small queue-drain latency is acceptable.
+## Investigate: main process inflates ~50 MB when Bandcamp sync starts and never recovers
+*⚠️ LP* — subprocess isolation is implemented (syncer and pipeline both spawn via `multiprocessing.get_context("spawn")`) but the main process grows from ~35 MB to ~83 MB when sync starts and stays there after sync ends. An additional ~8 MB subprocess also lingers after sync completes. The subprocess workers themselves are not the resident cost — something in the parent or in the IPC setup is loading heavy modules or retaining allocations. Requires profiling (e.g. `tracemalloc`, `psutil` RSS snapshots before/after sync, `sys.modules` diff) to identify what is inflating memory in the parent and why it is not released. Scoping question: is the 50 MB growth from the queues / pickling overhead of passing `Config` objects, from a remaining import triggered at IPC setup time, or from OS-level page retention after multiprocessing fork-related copy-on-write?
 
 ## Error Handling: when there's an error in the pipeline, send a system level notification
 *Single* — hook points already exist (`ExtractionError`, `TaggingError`, `ArtworkError`, `MoveError` in `pipeline.py`, bare `except Exception` in `watcher.py`); wire `rumps.notification()` to each failure site.
