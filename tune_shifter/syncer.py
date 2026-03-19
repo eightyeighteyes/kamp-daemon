@@ -3,31 +3,84 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
+import queue
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from .config import Config, _state_dir
+from .config import BandcampConfig, Config, _state_dir
 
 logger = logging.getLogger(__name__)
 
 
-def _evict_bandcamp_modules() -> None:
-    """Remove bandcamp and playwright modules from sys.modules after sync.
+# ------------------------------------------------------------------
+# Subprocess worker functions
+#
+# These run inside an isolated child process spawned by _spawn_worker.
+# Playwright and the bandcamp module are imported only inside the
+# subprocess — when the process exits the OS reclaims all of their
+# memory, which the parent process's pymalloc allocator would not
+# release even after sys.modules eviction.
+# ------------------------------------------------------------------
 
-    Evicting drops the module objects' reference counts so the GC can reclaim
-    their memory once all local references are gone.  The next sync re-imports
-    cleanly.  This keeps playwright out of memory while the daemon is idle.
+
+def _sync_worker(
+    bc_config: BandcampConfig,
+    staging_dir: Path,
+    state_file: Path,
+    status_q: Any,
+    result_q: Any,
+) -> None:
+    """Entry point for the sync subprocess."""
+    try:
+        from .bandcamp import sync_new_purchases
+
+        paths = sync_new_purchases(
+            bc_config=bc_config,
+            staging_dir=staging_dir,
+            state_file=state_file,
+            status_callback=lambda msg: status_q.put(msg),
+        )
+        result_q.put(("ok", paths))
+    except Exception as exc:  # noqa: BLE001
+        result_q.put(("error", str(exc)))
+
+
+def _mark_synced_worker(
+    bc_config: BandcampConfig,
+    state_file: Path,
+    status_q: Any,
+    result_q: Any,
+) -> None:
+    """Entry point for the mark-synced subprocess."""
+    try:
+        from .bandcamp import mark_collection_synced
+
+        mark_collection_synced(bc_config=bc_config, state_file=state_file)
+        result_q.put(("ok", None))
+    except Exception as exc:  # noqa: BLE001
+        result_q.put(("error", str(exc)))
+
+
+def _spawn_worker(  # pragma: no cover
+    target: Any,
+    args: tuple[Any, ...],
+) -> tuple[Any, Any, Any]:
+    """Spawn an isolated subprocess running target(*args, status_q, result_q).
+
+    Uses 'spawn' (not 'fork') so the child starts with a clean interpreter —
+    no inherited file descriptors, threads, or loaded modules.
+
+    Returns (proc, status_q, result_q).
     """
-    import sys
-
-    to_evict = [
-        k
-        for k in sys.modules
-        if k == "tune_shifter.bandcamp" or k.startswith("playwright")
-    ]
-    for key in to_evict:
-        sys.modules.pop(key, None)
+    ctx = multiprocessing.get_context("spawn")
+    status_q: Any = ctx.Queue()
+    result_q: Any = ctx.Queue()
+    proc = ctx.Process(target=target, args=(*args, status_q, result_q), daemon=True)
+    proc.start()
+    return proc, status_q, result_q
 
 
 class Syncer:
@@ -112,7 +165,11 @@ class Syncer:
         logger.info("Syncer resumed")
 
     def sync_once(self) -> None:
-        """Download any new purchases immediately (one-shot, blocking)."""
+        """Download any new purchases in an isolated subprocess.
+
+        Playwright and bandcamp modules are loaded only inside the child
+        process; when it exits the OS reclaims all of their memory.
+        """
         bc = self._config.bandcamp
         if bc is None:
             logger.warning("No [bandcamp] section in config — nothing to sync.")
@@ -120,17 +177,42 @@ class Syncer:
 
         state_file = _state_dir() / "bandcamp_state.json"
         logger.info("Starting Bandcamp sync…")
-        try:
-            from .bandcamp import sync_new_purchases
 
-            paths = sync_new_purchases(
-                bc_config=bc,
-                staging_dir=self._config.paths.staging,
-                state_file=state_file,
-                status_callback=self.status_callback,
-            )
-        finally:
-            _evict_bandcamp_modules()
+        proc, status_q, result_q = _spawn_worker(
+            _sync_worker,
+            (bc, self._config.paths.staging, state_file),
+        )
+
+        # Drain status messages while the subprocess runs, forwarding each
+        # to the caller's callback so the menu bar can update in real time.
+        while proc.is_alive():  # pragma: no cover
+            try:
+                msg = status_q.get(timeout=0.5)
+                if self.status_callback is not None:
+                    self.status_callback(msg)
+            except queue.Empty:
+                pass
+
+        # Drain any messages that arrived just before the process exited.
+        while True:
+            try:
+                msg = status_q.get_nowait()
+                if self.status_callback is not None:
+                    self.status_callback(msg)
+            except queue.Empty:
+                break
+
+        proc.join(timeout=10)
+
+        try:
+            status, value = result_q.get_nowait()
+        except queue.Empty:  # pragma: no cover
+            raise RuntimeError("Sync subprocess exited without returning a result")
+
+        if status == "error":
+            raise RuntimeError(f"Bandcamp sync failed: {value}")
+
+        paths = value or []
         if paths:
             logger.info("Sync complete: %d file(s) downloaded to staging.", len(paths))
         else:
@@ -143,12 +225,22 @@ class Syncer:
             logger.warning("No [bandcamp] section in config — nothing to mark.")
             return
         state_file = _state_dir() / "bandcamp_state.json"
-        try:
-            from .bandcamp import mark_collection_synced
 
-            mark_collection_synced(bc_config=bc, state_file=state_file)
-        finally:
-            _evict_bandcamp_modules()
+        proc, _status_q, result_q = _spawn_worker(
+            _mark_synced_worker,
+            (bc, state_file),
+        )
+        proc.join(timeout=30)
+
+        try:
+            status, value = result_q.get_nowait()
+        except queue.Empty:  # pragma: no cover
+            raise RuntimeError(
+                "Mark-synced subprocess exited without returning a result"
+            )
+
+        if status == "error":
+            raise RuntimeError(f"Bandcamp mark-synced failed: {value}")
 
     # ------------------------------------------------------------------
     # Internal
