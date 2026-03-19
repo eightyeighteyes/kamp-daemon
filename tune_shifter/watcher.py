@@ -17,6 +17,7 @@ from watchdog.events import (
 from watchdog.observers import Observer
 
 from .config import Config
+from .extractor import AUDIO_EXTENSIONS
 from .pipeline import run
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class _StagingHandler(FileSystemEventHandler):
             self._schedule(path)
         elif isinstance(event, FileCreatedEvent):
             path = Path(str(event.src_path))
-            if path.suffix.lower() == ".zip":
+            if path.suffix.lower() == ".zip" or path.suffix.lower() in AUDIO_EXTENSIONS:
                 self._schedule(path)
 
     def on_modified(self, event: FileSystemEvent) -> None:
@@ -75,7 +76,10 @@ class _StagingHandler(FileSystemEventHandler):
                 continue
             if child.is_dir() and child.name != "errors":
                 self._schedule(child)
-            elif child.is_file() and child.suffix.lower() == ".zip":
+            elif child.is_file() and (
+                child.suffix.lower() == ".zip"
+                or child.suffix.lower() in AUDIO_EXTENSIONS
+            ):
                 self._schedule(child)
 
     def on_moved(self, event: FileSystemMovedEvent) -> None:
@@ -87,7 +91,9 @@ class _StagingHandler(FileSystemEventHandler):
             return
         if event.is_directory and dest.name != "errors":
             self._schedule(dest)
-        elif not event.is_directory and dest.suffix.lower() == ".zip":
+        elif not event.is_directory and (
+            dest.suffix.lower() == ".zip" or dest.suffix.lower() in AUDIO_EXTENSIONS
+        ):
             self._schedule(dest)
 
     def _schedule(self, path: Path) -> None:

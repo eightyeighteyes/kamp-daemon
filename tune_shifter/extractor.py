@@ -28,6 +28,16 @@ def extract(path: Path) -> Path:
         logger.info("Staging item is already a directory: %s", path)
         return path
 
+    if path.suffix.lower() in AUDIO_EXTENSIONS:
+        # A lone audio file: move it into a sibling directory so the rest of
+        # the pipeline (find_audio_files, tagger, mover) operates on a folder
+        # as expected.
+        dest = path.parent / path.stem
+        dest.mkdir(exist_ok=True)
+        shutil.move(str(path), dest / path.name)
+        logger.info("Moved single audio file %s → %s/", path.name, dest)
+        return dest
+
     if not path.suffix.lower() == ".zip":
         raise ExtractionError(f"Unsupported staging item (not a ZIP or folder): {path}")
 
@@ -51,7 +61,10 @@ def extract(path: Path) -> Path:
     return dest
 
 
-_AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg"}
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg"}
+
+# Keep the private alias so internal helpers don't need updating
+_AUDIO_EXTENSIONS = AUDIO_EXTENSIONS
 
 
 def _has_audio(directory: Path) -> bool:

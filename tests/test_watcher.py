@@ -104,12 +104,22 @@ class TestOnMoved:
 
         mock_schedule.assert_not_called()
 
-    def test_non_zip_file_moved_in_is_ignored(self, config: Config) -> None:
+    def test_audio_file_moved_into_staging_is_scheduled(self, config: Config) -> None:
+        """Dragging a single audio file into staging fires a moved event; it must be scheduled."""
         handler = _make_handler(config)
         dest = str(config.paths.staging / "track.mp3")
 
         with patch.object(handler, "_schedule") as mock_schedule:
             handler.on_moved(_file_moved_event("/tmp/track.mp3", dest))
+
+        mock_schedule.assert_called_once_with(Path(dest))
+
+    def test_non_audio_non_zip_file_moved_in_is_ignored(self, config: Config) -> None:
+        handler = _make_handler(config)
+        dest = str(config.paths.staging / "cover.jpg")
+
+        with patch.object(handler, "_schedule") as mock_schedule:
+            handler.on_moved(_file_moved_event("/tmp/cover.jpg", dest))
 
         mock_schedule.assert_not_called()
 
@@ -208,6 +218,25 @@ class TestStartupScan:
 
         assert any(p.name == "album.zip" for p in scheduled)
 
+    def test_existing_audio_file_is_scheduled_on_start(
+        self, config: Config, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A lone audio file already in staging when the daemon starts gets scheduled."""
+        config.paths.staging.mkdir(parents=True, exist_ok=True)
+        (config.paths.staging / "track.mp3").write_bytes(b"fake mp3")
+
+        scheduled: list[Path] = []
+        monkeypatch.setattr(
+            _StagingHandler, "_schedule", lambda self, p: scheduled.append(p)
+        )
+
+        watcher = Watcher(config)
+        monkeypatch.setattr(watcher._observer, "start", lambda: None)
+        monkeypatch.setattr(watcher._observer, "schedule", lambda *a, **kw: None)
+        watcher.start()
+
+        assert any(p.name == "track.mp3" for p in scheduled)
+
     def test_errors_directory_is_not_scheduled_on_start(
         self, config: Config, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -303,6 +332,18 @@ class TestOnCreated:
         """A ZIP file created in staging is scheduled for processing."""
         handler = _make_handler(config)
         path = str(config.paths.staging / "album.zip")
+
+        with patch.object(handler, "_schedule") as mock_schedule:
+            from watchdog.events import FileCreatedEvent
+
+            handler.on_created(FileCreatedEvent(path))
+
+        mock_schedule.assert_called_once_with(Path(path))
+
+    def test_audio_file_created_in_staging_is_scheduled(self, config: Config) -> None:
+        """A single audio file created in staging is scheduled for processing."""
+        handler = _make_handler(config)
+        path = str(config.paths.staging / "track.mp3")
 
         with patch.object(handler, "_schedule") as mock_schedule:
             from watchdog.events import FileCreatedEvent

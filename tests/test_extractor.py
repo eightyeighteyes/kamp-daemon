@@ -44,6 +44,27 @@ class TestExtract:
         with pytest.raises(ExtractionError, match="not a ZIP or folder"):
             extract(bad)
 
+    def test_single_audio_file_is_moved_to_sibling_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """A lone audio file is moved into a new sibling directory of the same stem."""
+        mp3 = tmp_path / "01 - Track.mp3"
+        mp3.write_bytes(b"fake mp3")
+
+        result = extract(mp3)
+
+        assert result == tmp_path / "01 - Track"
+        assert (result / "01 - Track.mp3").exists()
+
+    def test_single_audio_file_original_is_removed(self, tmp_path: Path) -> None:
+        """The original audio file is no longer at its source path after extract."""
+        mp3 = tmp_path / "track.mp3"
+        mp3.write_bytes(b"fake mp3")
+
+        extract(mp3)
+
+        assert not mp3.exists()
+
     def test_zip_with_no_audio_raises(self, tmp_path: Path) -> None:
         zip_path = tmp_path / "empty.zip"
         _make_zip(zip_path, {"cover.jpg": b"fake image"})

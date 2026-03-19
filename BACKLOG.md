@@ -3,12 +3,6 @@
 > Estimates use the vinyl scale: Single (<0.5), Side (0.5–1), LP (2), 2xLP (4), Box Set (4–8), Discography (>8)
 > ⚠️ = needs scoping before work can start
 
-## Tagging: Skip artwork fetch when existing art meets quality requirements
-*Single* — add a guard in `artwork.py` (or `pipeline.py`) that checks embedded art dimensions before making a Cover Art Archive request; saves a few seconds per ingest when Bandcamp art already meets the threshold
-
-## Pipeline: One File At A Time
-*Single* — watcher already handles ZIPs; extend to schedule individual audio files (`.mp3`, `.m4a`, etc.) dropped directly into staging
-
 ## Memory Optimization
 *Side* — profile the running daemon to identify the dominant allocation (likely Playwright loaded at startup via `bandcamp.py` even when not syncing); implement targeted fix (lazy import or subprocess isolation). Could stretch to LP if Playwright requires architectural isolation.
 
