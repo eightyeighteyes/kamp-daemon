@@ -274,7 +274,8 @@ class TestStatusCallback:
                 syncer.status_callback = received.append
                 syncer.sync_once()
 
-        assert received == ["Downloading: Album A", "Downloading: Album B"]
+        # sync_once() appends "" at the end to signal completion to the menu bar.
+        assert received == ["Downloading: Album A", "Downloading: Album B", ""]
 
 
 class TestLazyImport:

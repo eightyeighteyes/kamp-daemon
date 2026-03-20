@@ -42,6 +42,11 @@ def _pipeline_worker(
     _root.setLevel(logging.DEBUG)
     _queue_handler = logging.handlers.QueueHandler(log_q)
     _root.addHandler(_queue_handler)
+    # Suppress chatty third-party library loggers — the root is at DEBUG so
+    # tune_shifter logs are captured, but urllib3 and musicbrainzngs generate
+    # substantial noise at DEBUG/INFO that is not useful in the parent stream.
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("musicbrainzngs").setLevel(logging.WARNING)
     try:
         import importlib.metadata
 

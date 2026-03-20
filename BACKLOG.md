@@ -2,9 +2,6 @@
 ## Bug: macOS status bar doesn't show download/pipeline status
 *Side* — regression from 0.16.0 subprocess isolation. Stage/status callbacks now cross the process boundary via IPC queues; something in the wiring between the drain loop and the rumps menu update is broken in the real daemon context. Reproducible when running as a service with automatic Bandcamp sync.
 
-## Bug: "MusicBrainz Release Id" tag casing
-*Single* — tag key written with wrong casing; one-line fix in tagger.
-
 ## Bug: Log noise from musicbrainzngs and urllib3
 *Single* — set `musicbrainzngs` and `urllib3` loggers to WARNING inside the subprocess workers so their DEBUG/INFO noise is suppressed. Covers both library loggers in one commit.
 
@@ -74,6 +71,9 @@ Target: Windows 10/11 only. Distribution via Chocolatey.
 *Side* — Linux systemd unit file is straightforward; Windows Task Scheduler adds another side; can ship incrementally
 
 # Needs Refinement
+## Bug: MusicBrainz Release Id tag casing
+⚠️ Needs repro steps — a lowercase tag was observed in the wild but the tagger writes `MusicBrainz Release Id` (mixed case). May be a tag coming from MusicBrainz data rather than a write bug. Needs a concrete example file or log showing the bad tag before scoping a fix.
+
 ## Investigate: main process inflates ~50 MB when Bandcamp sync starts and never recovers
 *⚠️ LP* — subprocess isolation is implemented (syncer and pipeline both spawn via `multiprocessing.get_context("spawn")`) but the main process grows from ~35 MB to ~83 MB when sync starts and stays there after sync ends. An additional ~8 MB subprocess also lingers after sync completes. The subprocess workers themselves are not the resident cost — something in the parent or in the IPC setup is loading heavy modules or retaining allocations. Requires profiling (e.g. `tracemalloc`, `psutil` RSS snapshots before/after sync, `sys.modules` diff) to identify what is inflating memory in the parent and why it is not released. Scoping question: is the 50 MB growth from the queues / pickling overhead of passing `Config` objects, from a remaining import triggered at IPC setup time, or from OS-level page retention after multiprocessing fork-related copy-on-write?
 

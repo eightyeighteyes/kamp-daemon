@@ -111,10 +111,14 @@ class MenuBarApp(rumps.App):
         # Apply initial enabled state for bandcamp-dependent items.
         self._refresh_bandcamp_items()
 
-        # Wire pipeline stage updates.  core.start() is called before
-        # MenuBarApp(core).run(), so the watcher is already running here.
+        # Wire pipeline stage and sync status updates.  core.start() is called
+        # before MenuBarApp(core).run(), so the watcher and syncer are already
+        # running here.  status_callback must be wired at init — not just for
+        # manual syncs — so that automatic (scheduled) syncs also update the bar.
         if self._core.watcher:
             self._core.watcher.stage_callback = self._on_pipeline_stage
+        if self._core.syncer:
+            self._core.syncer.status_callback = self._on_sync_status
 
     # ------------------------------------------------------------------
     # Menu callbacks
@@ -139,12 +143,10 @@ class MenuBarApp(rumps.App):
 
         def _run() -> None:
             try:
-                syncer.status_callback = self._on_sync_status
                 syncer.sync_once()
             except Exception:
                 logger.exception("Unhandled error during manual Bandcamp sync")
             finally:
-                syncer.status_callback = None
                 self._sync_in_progress = False
 
         threading.Thread(target=_run, daemon=True).start()
@@ -201,7 +203,7 @@ class MenuBarApp(rumps.App):
             # takes priority — it's more specific than the sync label.
             self._status_item.title = f"Status: {self._pipeline_status}"
             self._set_pulse(True)
-        elif self._sync_in_progress:
+        elif self._sync_in_progress or self._sync_status:
             label = self._sync_status or "Syncing\u2026"
             self._status_item.title = f"Status: {label}"
             self._set_pulse(True)

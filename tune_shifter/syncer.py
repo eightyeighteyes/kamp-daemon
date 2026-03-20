@@ -40,6 +40,8 @@ def _sync_worker(
     _root = logging.getLogger()
     _root.setLevel(logging.DEBUG)
     _root.addHandler(logging.handlers.QueueHandler(log_q))
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("musicbrainzngs").setLevel(logging.WARNING)
     try:
         from .bandcamp import sync_new_purchases
 
@@ -65,6 +67,8 @@ def _mark_synced_worker(
     _root = logging.getLogger()
     _root.setLevel(logging.DEBUG)
     _root.addHandler(logging.handlers.QueueHandler(log_q))
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("musicbrainzngs").setLevel(logging.WARNING)
     try:
         from .bandcamp import mark_collection_synced
 
@@ -251,6 +255,10 @@ class Syncer:
             logger.info("Sync complete: %d file(s) downloaded to staging.", len(paths))
         else:
             logger.info("Sync complete: nothing new.")
+        # Clear the status display in the menu bar (applies to both automatic
+        # and manual syncs — an empty string signals "no active sync").
+        if self.status_callback is not None:
+            self.status_callback("")
 
     def mark_synced(self) -> None:
         """Mark the entire collection as already downloaded without fetching anything."""
