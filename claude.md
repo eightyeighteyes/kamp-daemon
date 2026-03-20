@@ -13,6 +13,7 @@
 - Use red/green TDD
 - Before opening a PR, run all CI steps (testing, linting, type checks, etc) locally
 - Before opening a PR, scan through README.md to make sure it's still valid (nothing it says has drifted from what the application does)
+- When merging a branch, squash commits.
 - Prefer running single tests, and not the whole test suite, for performance; use `--no-cov` when running a single file to skip the coverage threshold check (e.g. `poetry run pytest tests/test_foo.py -v --no-cov`)
 - Update documentation (README.md) after new features are validated
 - Document rationale in comments: succinctly explain *why* decisions are made
