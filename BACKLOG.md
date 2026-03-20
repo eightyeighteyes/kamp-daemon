@@ -2,6 +2,12 @@
 ## Bug: macOS status bar doesn't show download/pipeline status
 *Side* — regression from 0.16.0 subprocess isolation. Stage/status callbacks now cross the process boundary via IPC queues; something in the wiring between the drain loop and the rumps menu update is broken in the real daemon context. Reproducible when running as a service with automatic Bandcamp sync.
 
+## Bug: "MusicBrainz Release Id" tag casing
+*Single* — tag key written with wrong casing; one-line fix in tagger.
+
+## Bug: Log noise from musicbrainzngs and urllib3
+*Single* — set `musicbrainzngs` and `urllib3` loggers to WARNING inside the subprocess workers so their DEBUG/INFO noise is suppressed. Covers both library loggers in one commit.
+
 # 0.17.0
 
 ## Error Handling: when there's an error in the pipeline, send a system level notification
@@ -21,6 +27,12 @@ Bandcamp Sync
 Sync Status
 Logout
 ```
+
+## Improve Tagging Quality: Per-track lookup using existing tags (light approach)
+*Side* — instead of picking a single MusicBrainz release for the whole album based on the folder name, look up each track individually using its existing `artist`, `title`, and `album` tags, then reconcile to the most common release. Fixes track-count mismatches (e.g. 17-track vs 18-track editions) that cause title offsets. Known mis-tagged albums: De La Soul "Stakes is High", "3 Feet High and Rising" (MBID `0cb69f0f`), Converge "Love is Not Enough" (MBID `0fec265d`). See AcoustID item below for the heavier follow-on approach.
+
+## Improve Image Retrieval: Compress CAA images over size threshold
+*Single* — when a CAA candidate exceeds `max_bytes`, apply the same Pillow downscale/compress logic already used for oversized Bandcamp ZIP art rather than skipping it. Reuses existing compression helper; needs a test covering the compress-then-embed path for CAA images.
 
 ## Add Bandcamp Auto Sync Frequency Options to Menu Bar App
 *Side* — config and syncer already support arbitrary intervals; this adds a submenu with radio-style checkmarks (Off / 5 min / 15 min / 30 min / hourly / daily) that writes the new value via `config set` and triggers a live reload so the running daemon picks it up without a restart.
@@ -70,8 +82,8 @@ Target: Windows 10/11 only. Distribution via Chocolatey.
 
 ⚠️ Needs scoping: what ranking heuristic? (release format field, country, date proximity?) and what's the fallback when no physical release exists? Note: date-based tie-breaking (earliest release wins) is already implemented; remaining work is format/country preference.
 
-## AcoustID Support
-*LP* — fingerprint audio with `fpcalc`/chromaprint, look up recording via AcoustID API, feed MBID into existing tagger
+## AcoustID Support (heavy tagging approach)
+*LP* — fingerprint audio with `fpcalc`/chromaprint, look up recording via AcoustID API, feed MBID into existing tagger. Prerequisite: per-track lookup (light approach) should ship first. Fingerprinting should be its own subprocess pipeline phase.
 
 ⚠️ Needs scoping: how to handle mismatches between AcoustID result and existing MusicBrainz search? Which takes precedence?
 
