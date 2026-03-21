@@ -326,20 +326,30 @@ def _cmd_test_notify(notify_type: str) -> None:
 
     import tempfile as _tmp
 
-    import rumps
+    import rumps as _rumps
     from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
-    from Foundation import NSDate, NSRunLoop
-
-    # Initialize an accessory NSApplication (no dock icon) so the AppKit event
-    # loop can dispatch NSUserNotificationCenter.deliverNotification_ below.
-    # Without this, the notification is queued but the loop never runs to send it.
-    _app = NSApplication.sharedApplication()
-    _app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 
     def _show(title: str, subtitle: str, message: str) -> None:
-        rumps.notification(title, subtitle, message)
-        # Spin the run loop briefly to flush the delivery.
-        NSRunLoop.mainRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.5))
+        """Fire a notification via a short-lived accessory rumps.App.
+
+        rumps.notification() requires a running AppKit event loop to dispatch
+        the delivery — a bare runUntilDate_ spin is not sufficient on macOS 14+.
+        Spinning up a minimal App provides exactly the same context as the daemon.
+        """
+
+        class _Notifier(_rumps.App):
+            def __init__(self) -> None:
+                NSApplication.sharedApplication().setActivationPolicy_(
+                    NSApplicationActivationPolicyAccessory
+                )
+                super().__init__("tune-shifter", icon=None, quit_button=None)
+
+            @_rumps.timer(0.2)
+            def _fire(self, _: object) -> None:
+                _rumps.notification(title, subtitle, message)
+                _rumps.quit_application()
+
+        _Notifier().run()
 
     if notify_type == "download":
         # Download errors go straight to Syncer.error_callback — no IPC path.
