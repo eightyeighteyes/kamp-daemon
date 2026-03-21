@@ -16,7 +16,7 @@ from tune_shifter.config import (
     MusicBrainzConfig,
     PathsConfig,
 )
-from tune_shifter.syncer import Syncer
+from tune_shifter.syncer import Syncer, logout
 
 
 def _make_config(tmp_path: Path, poll_interval: int = 0) -> Config:
@@ -425,3 +425,26 @@ class TestMarkSynced:
                     syncer = Syncer(_make_config(tmp_path))
                     syncer.mark_synced()
         mock_mark.assert_called_once()
+
+
+class TestLogout:
+    def test_deletes_session_and_state_files(self, tmp_path: Path) -> None:
+        """logout() removes both files when both exist."""
+        (tmp_path / "bandcamp_session.json").write_text("{}")
+        (tmp_path / "bandcamp_state.json").write_text("{}")
+        with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            logout()
+        assert not (tmp_path / "bandcamp_session.json").exists()
+        assert not (tmp_path / "bandcamp_state.json").exists()
+
+    def test_noop_when_no_files(self, tmp_path: Path) -> None:
+        """logout() does not raise when neither file exists."""
+        with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            logout()  # must not raise
+
+    def test_deletes_only_existing_file(self, tmp_path: Path) -> None:
+        """logout() removes whichever file(s) exist without erroring on absent ones."""
+        (tmp_path / "bandcamp_session.json").write_text("{}")
+        with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            logout()
+        assert not (tmp_path / "bandcamp_session.json").exists()

@@ -161,6 +161,7 @@ On macOS the daemon shows a `music.note.list` status-bar icon by default. The me
 | **Stop / Play** | Pause or resume the ingest pipeline without stopping the process |
 | **Bandcamp Sync** | Trigger an immediate sync; grayed out if `[bandcamp]` is not configured |
 | **Sync Status** | Read-only: "Status: Idle" or "Status: Syncing…" (icon pulses during sync) |
+| **Bandcamp Logout** | Delete the saved session and sync state; the next sync will re-authenticate |
 | **About Tune-Shifter** | Opens the project GitHub page |
 | **Quit** | Shuts down the daemon and removes the menu bar icon |
 
@@ -234,6 +235,16 @@ tune-shifter sync --mark-synced
 ```
 
 This fetches your full collection and records every item ID in the state file without downloading any files. Subsequent `sync` runs (and the daemon) will only pick up purchases made after this point.
+
+### Log out of Bandcamp
+
+To delete the saved session and force re-authentication on the next sync:
+
+```bash
+tune-shifter logout
+```
+
+This also clears the sync state file, so the next sync will re-examine your full collection. Use this if your session expires or you want to switch accounts.
 
 ### Manual ingest
 

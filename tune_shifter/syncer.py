@@ -313,3 +313,27 @@ class Syncer:
                         str(exc)[:120],
                     )
             self._stop_event.wait(timeout=interval_seconds)
+
+
+def logout() -> None:
+    """Delete the Bandcamp session and sync-state files.
+
+    After logout the next sync will re-authenticate interactively and
+    re-examine the full collection.  Both files are removed together —
+    a session without state (or vice versa) would leave the system in
+    an inconsistent half-logged-in state.
+    """
+    state = _state_dir()
+    session_file = state / "bandcamp_session.json"
+    state_file = state / "bandcamp_state.json"
+
+    removed: list[str] = []
+    for f in (session_file, state_file):
+        if f.exists():
+            f.unlink()
+            removed.append(f.name)
+
+    if removed:
+        logger.info("Bandcamp logout: removed %s.", ", ".join(removed))
+    else:
+        logger.info("Bandcamp logout: no session or state files found.")

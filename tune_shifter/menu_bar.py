@@ -88,6 +88,7 @@ class MenuBarApp(rumps.App):
         self._toggle_item = rumps.MenuItem("Stop", callback=self._on_toggle)
         self._sync_item = rumps.MenuItem("Bandcamp Sync", callback=self._on_sync)
         self._status_item = rumps.MenuItem("Status: Idle")
+        self._logout_item = rumps.MenuItem("Bandcamp Logout", callback=self._on_logout)
 
         # Build the Download Format submenu.
         self._format_menu = rumps.MenuItem("Download Format")
@@ -102,6 +103,7 @@ class MenuBarApp(rumps.App):
             None,  # separator
             self._sync_item,
             self._status_item,
+            self._logout_item,
             self._format_menu,
             None,  # separator
             rumps.MenuItem("About Tune-Shifter", callback=self._on_about),
@@ -150,6 +152,12 @@ class MenuBarApp(rumps.App):
                 self._sync_in_progress = False
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _on_logout(self, sender: rumps.MenuItem) -> None:
+        from .syncer import logout
+
+        logout()
+        self._refresh_bandcamp_items()
 
     def _on_notification(self, title: str, subtitle: str, message: str) -> None:
         """Fire a macOS notification.
@@ -320,10 +328,12 @@ class MenuBarApp(rumps.App):
             _logger.warning("Pulse animation failed: %s", exc)
 
     def _refresh_bandcamp_items(self) -> None:
-        """Disable Bandcamp Sync and Sync Status when config or conditions prevent use."""
+        """Disable Bandcamp items when config or conditions prevent use."""
         bc = self._core._config.bandcamp
         has_bandcamp = bc is not None
         sync_available = has_bandcamp and not self._sync_in_progress
+        # Logout is disabled mid-sync to avoid deleting the session while it's in use.
+        logout_available = has_bandcamp and not self._sync_in_progress
         current_fmt = bc.format if bc is not None else None
 
         if sync_available:
@@ -331,11 +341,17 @@ class MenuBarApp(rumps.App):
         else:
             self._sync_item.set_callback(None)
 
+        if logout_available:
+            self._logout_item.set_callback(self._on_logout)
+        else:
+            self._logout_item.set_callback(None)
+
         # setEnabled_ controls the visual gray-out at the AppKit level;
         # set_callback(None) alone only removes the click handler.
         try:
             self._sync_item._menuitem.setEnabled_(sync_available)
             self._status_item._menuitem.setEnabled_(has_bandcamp)
+            self._logout_item._menuitem.setEnabled_(logout_available)
             self._format_menu._menuitem.setEnabled_(has_bandcamp)
         except Exception:
             pass

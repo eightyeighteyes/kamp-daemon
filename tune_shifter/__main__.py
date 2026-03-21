@@ -146,6 +146,10 @@ def main() -> None:
     subparsers.add_parser("stop", help="Stop the tune-shifter service.")
     subparsers.add_parser("play", help="Start the tune-shifter service.")
     subparsers.add_parser("status", help="Show whether tune-shifter is running.")
+    subparsers.add_parser(
+        "logout",
+        help="Delete saved Bandcamp session and sync state, requiring re-authentication on the next sync.",
+    )
 
     # test-notify subcommand (macOS only, no config file needed)
     test_notify_parser = subparsers.add_parser(
@@ -212,6 +216,10 @@ def main() -> None:
     # Config commands bypass daemon lifecycle (no musicbrainzngs setup needed).
     if command == "config":
         _cmd_config(args, config_parser)
+        return
+
+    if command == "logout":
+        _cmd_logout()
         return
 
     if command == "test-notify":
@@ -294,6 +302,13 @@ def _yn_prompt(question: str, default: bool = True) -> bool:
     if not raw:
         return default
     return raw.startswith("y")
+
+
+def _cmd_logout() -> None:
+    from .syncer import logout
+
+    logout()
+    print("Logged out. The next sync will require re-authentication.")
 
 
 _NOTIFY_SUBTITLES: dict[str, str] = {
