@@ -1,4 +1,4 @@
-"""DaemonCore: lifecycle management for the tune-shifter daemon.
+"""DaemonCore: lifecycle management for the kamp-daemon daemon.
 
 Encapsulates Watcher, Syncer, and ConfigMonitor start/stop/pause/resume,
 signal handler installation, and PID-file management so that __main__.py

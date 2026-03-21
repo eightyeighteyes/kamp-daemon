@@ -1,4 +1,4 @@
-"""Tests for tune_shifter.bandcamp."""
+"""Tests for kamp_daemon.bandcamp."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tune_shifter.bandcamp import (
+from kamp_daemon.bandcamp import (
     BandcampAPIError,
     CookieError,
     _load_state,
@@ -19,7 +19,7 @@ from tune_shifter.bandcamp import (
     mark_collection_synced,
     sync_new_purchases,
 )
-from tune_shifter.config import BandcampConfig
+from kamp_daemon.config import BandcampConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -260,9 +260,9 @@ class TestSyncNewPurchases:
             return path
 
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock),
-            patch("tune_shifter.bandcamp._download_item", side_effect=fake_download),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock),
+            patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
             return sync_new_purchases(config, staging, state_file)
 
@@ -302,9 +302,9 @@ class TestSyncNewPurchases:
             return path
 
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock),
-            patch("tune_shifter.bandcamp._download_item", side_effect=fake_download),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock),
+            patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
             sync_new_purchases(config, staging, state_file)
 
@@ -329,17 +329,17 @@ class TestSyncNewPurchases:
 
         pw_mock1 = _make_playwright_mock([_item(42)])
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock1),
-            patch("tune_shifter.bandcamp._download_item", side_effect=fake_download),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock1),
+            patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
             sync_new_purchases(config, staging, state_file)
 
         pw_mock2 = _make_playwright_mock([_item(42)])
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock2),
-            patch("tune_shifter.bandcamp._download_item", side_effect=fake_download),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock2),
+            patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
             paths = sync_new_purchases(config, staging, state_file)
 
@@ -367,9 +367,9 @@ class TestSyncNewPurchases:
             return path
 
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock),
-            patch("tune_shifter.bandcamp._download_item", side_effect=fake_download),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock),
+            patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
             paths = sync_new_purchases(config, staging, state_file)
 
@@ -412,9 +412,9 @@ class TestSyncNewPurchases:
             return path
 
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock),
-            patch("tune_shifter.bandcamp._download_item", side_effect=fake_download),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock),
+            patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
             paths = sync_new_purchases(config, staging, state_file)
 
@@ -435,8 +435,8 @@ class TestMarkCollectionSynced:
         pw_mock = _make_playwright_mock(items)
 
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock),
         ):
             count = mark_collection_synced(config, state_file)
 
@@ -455,8 +455,8 @@ class TestMarkCollectionSynced:
         pw_mock = _make_playwright_mock(items)
 
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock),
         ):
             count = mark_collection_synced(config, state_file)
 
@@ -472,16 +472,16 @@ class TestMarkCollectionSynced:
 
         pw_mock1 = _make_playwright_mock(items)
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock1),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock1),
         ):
             mark_collection_synced(config, state_file)
 
         pw_mock2 = _make_playwright_mock(items)
         with (
-            patch("tune_shifter.bandcamp._ensure_session", return_value=session_file),
-            patch("tune_shifter.bandcamp.sync_playwright", pw_mock2),
-            patch("tune_shifter.bandcamp._download_item"),
+            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch("kamp_daemon.bandcamp.sync_playwright", pw_mock2),
+            patch("kamp_daemon.bandcamp._download_item"),
         ):
             paths = sync_new_purchases(config, staging, state_file)
 

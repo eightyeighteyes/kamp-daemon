@@ -1,4 +1,4 @@
-"""Configuration loading and defaults for tune-shifter."""
+"""Configuration loading and defaults for kamp-daemon."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ def _state_dir() -> Path:
     if sys.platform == "win32":  # pragma: no cover
         localappdata = os.environ.get("LOCALAPPDATA")
         base = Path(localappdata) if localappdata else Path.home() / "AppData" / "Local"
-        return base / "tune-shifter"
-    return Path("~/.local/share/tune-shifter").expanduser()
+        return base / "kamp-daemon"
+    return Path("~/.local/share/kamp-daemon").expanduser()
 
 
 def _default_config_path() -> Path:
@@ -24,8 +24,8 @@ def _default_config_path() -> Path:
     if sys.platform == "win32":  # pragma: no cover
         appdata = os.environ.get("APPDATA")
         base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-        return base / "tune-shifter" / "config.toml"
-    return Path("~/.config/tune-shifter/config.toml").expanduser()
+        return base / "kamp-daemon" / "config.toml"
+    return Path("~/.config/kamp-daemon/config.toml").expanduser()
 
 
 DEFAULT_CONFIG_PATH = _default_config_path()
@@ -104,7 +104,7 @@ class Config:
         the TOML file (substituting into DEFAULT_CONFIG_CONTENT to preserve
         comments and formatting) and returns the ready-to-use Config.
         """
-        print("\nWelcome to tune-shifter! Let's set up your configuration.")
+        print("\nWelcome to kamp-daemon! Let's set up your configuration.")
         print(f"(Config will be saved to {path})\n")
 
         staging = Path(
@@ -193,7 +193,7 @@ class Config:
             raise FileNotFoundError(
                 f"Config file created at {path}. "
                 "Please edit it with your staging/library paths and contact email, "
-                "then re-run tune-shifter."
+                "then re-run kamp-daemon."
             )
 
         with open(path, "rb") as f:
@@ -329,7 +329,7 @@ def _replace_in_section(text: str, section: str, field: str, toml_value: str) ->
     if not section_match:
         raise KeyError(
             f"Section [{section}] not found in config. "
-            f"Run 'tune-shifter sync' to add [bandcamp], or check your config file."
+            f"Run 'kamp-daemon sync' to add [bandcamp], or check your config file."
         )
 
     # Find where this section ends: the next [header] or EOF

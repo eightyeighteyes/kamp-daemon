@@ -1,4 +1,4 @@
-"""Tests for tune_shifter.syncer."""
+"""Tests for kamp_daemon.syncer."""
 
 import logging.handlers
 import queue as _queue_module
@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tune_shifter.config import (
+from kamp_daemon.config import (
     ArtworkConfig,
     BandcampConfig,
     Config,
@@ -16,7 +16,7 @@ from tune_shifter.config import (
     MusicBrainzConfig,
     PathsConfig,
 )
-from tune_shifter.syncer import Syncer, logout
+from kamp_daemon.syncer import Syncer, logout
 
 
 def _make_config(tmp_path: Path, poll_interval: int = 0) -> Config:
@@ -62,7 +62,7 @@ class _FakeProc:
 def _inline_worker(target: Any, args: tuple[Any, ...]) -> tuple[Any, Any, Any, Any]:
     """Test helper: run the worker synchronously in-process.
 
-    Patches on tune_shifter.bandcamp.* work because the target code runs in
+    Patches on kamp_daemon.bandcamp.* work because the target code runs in
     the same process and the same sys.modules as the test.
     """
     status_q: _queue_module.Queue[str] = _queue_module.Queue()
@@ -100,8 +100,8 @@ class TestStart:
 
     def test_launches_thread_when_interval_set(self, tmp_path: Path) -> None:
         """start() spawns a daemon thread when poll_interval_minutes > 0."""
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
                 assert syncer._thread is not None
@@ -118,8 +118,8 @@ class TestStop:
 
     def test_stop_joins_thread(self, tmp_path: Path) -> None:
         """stop() waits for the polling thread to finish."""
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
                 syncer.stop()
@@ -131,7 +131,7 @@ class TestSyncOnce:
     def test_warns_when_no_bandcamp(self, tmp_path: Path) -> None:
         """sync_once() logs a warning and returns when [bandcamp] is absent."""
         syncer = Syncer(_make_config_no_bandcamp(tmp_path))
-        with patch("tune_shifter.syncer._spawn_worker") as mock_spawn:
+        with patch("kamp_daemon.syncer._spawn_worker") as mock_spawn:
             syncer.sync_once()
         mock_spawn.assert_not_called()
 
@@ -139,18 +139,18 @@ class TestSyncOnce:
         """sync_once() reports the number of downloaded files."""
         (tmp_path / "bandcamp_state.json").write_text("{}")
         fake_paths = [tmp_path / "a.mp3", tmp_path / "b.mp3"]
-        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=fake_paths):
-            with patch("tune_shifter.syncer._spawn_worker", side_effect=_inline_worker):
-                with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.bandcamp.sync_new_purchases", return_value=fake_paths):
+            with patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker):
+                with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                     syncer = Syncer(_make_config(tmp_path))
                     syncer.sync_once()
 
     def test_logs_nothing_new(self, tmp_path: Path) -> None:
         """sync_once() handles an empty result without error."""
         (tmp_path / "bandcamp_state.json").write_text("{}")
-        with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
-            with patch("tune_shifter.syncer._spawn_worker", side_effect=_inline_worker):
-                with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.bandcamp.sync_new_purchases", return_value=[]):
+            with patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker):
+                with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                     syncer = Syncer(_make_config(tmp_path))
                     syncer.sync_once()
 
@@ -166,8 +166,8 @@ class TestReload:
 
     def test_reload_changed_interval_no_existing_thread(self, tmp_path: Path) -> None:
         """reload() with interval change when no thread was running starts one."""
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 # interval=0 means no thread is started initially
                 syncer = Syncer(_make_config(tmp_path, poll_interval=0))
                 assert syncer._thread is None
@@ -178,8 +178,8 @@ class TestReload:
 
     def test_reload_same_interval_does_not_restart_thread(self, tmp_path: Path) -> None:
         """reload() with unchanged poll_interval leaves the thread running."""
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
                 original_thread = syncer._thread
@@ -189,8 +189,8 @@ class TestReload:
 
     def test_reload_changed_interval_restarts_thread(self, tmp_path: Path) -> None:
         """reload() with a new poll_interval stops and restarts the thread."""
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
                 original_thread = syncer._thread
@@ -202,8 +202,8 @@ class TestReload:
 
     def test_reload_interval_to_zero_stops_thread(self, tmp_path: Path) -> None:
         """reload() with interval=0 stops the polling thread."""
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
                 assert syncer._thread is not None
@@ -214,8 +214,8 @@ class TestReload:
 class TestPauseResume:
     def test_pause_stops_polling_thread(self, tmp_path: Path) -> None:
         """pause() stops the polling thread."""
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
                 assert syncer._thread is not None and syncer._thread.is_alive()
@@ -229,8 +229,8 @@ class TestPauseResume:
 
     def test_resume_restarts_polling_thread(self, tmp_path: Path) -> None:
         """resume() starts a new polling thread after a pause."""
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
                 syncer.pause()
@@ -270,9 +270,9 @@ class TestStatusCallback:
 
         (tmp_path / "bandcamp_state.json").write_text("{}")
         with patch(
-            "tune_shifter.syncer._spawn_worker", side_effect=_worker_with_two_messages
+            "kamp_daemon.syncer._spawn_worker", side_effect=_worker_with_two_messages
         ):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path))
                 syncer.status_callback = received.append
                 syncer.sync_once()
@@ -292,9 +292,9 @@ class TestLazyImport:
         """Constructing a Syncer must not load bandcamp (and by extension playwright)."""
         import sys
 
-        sys.modules.pop("tune_shifter.bandcamp", None)
+        sys.modules.pop("kamp_daemon.bandcamp", None)
         _ = Syncer(_make_config(tmp_path))
-        assert "tune_shifter.bandcamp" not in sys.modules
+        assert "kamp_daemon.bandcamp" not in sys.modules
 
     def test_bandcamp_not_imported_in_parent_after_sync(self, tmp_path: Path) -> None:
         """sync_once() never imports bandcamp into the parent process.
@@ -305,12 +305,12 @@ class TestLazyImport:
         import sys
 
         (tmp_path / "bandcamp_state.json").write_text("{}")
-        sys.modules.pop("tune_shifter.bandcamp", None)
+        sys.modules.pop("kamp_daemon.bandcamp", None)
         syncer = Syncer(_make_config(tmp_path))
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer.sync_once()
-        assert "tune_shifter.bandcamp" not in sys.modules
+        assert "kamp_daemon.bandcamp" not in sys.modules
 
 
 class TestWorkerExceptions:
@@ -318,11 +318,11 @@ class TestWorkerExceptions:
         """Exceptions raised inside the sync worker are re-raised by sync_once()."""
         (tmp_path / "bandcamp_state.json").write_text("{}")
         with patch(
-            "tune_shifter.bandcamp.sync_new_purchases",
+            "kamp_daemon.bandcamp.sync_new_purchases",
             side_effect=RuntimeError("network failure"),
         ):
-            with patch("tune_shifter.syncer._spawn_worker", side_effect=_inline_worker):
-                with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            with patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker):
+                with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                     syncer = Syncer(_make_config(tmp_path))
                     with pytest.raises(RuntimeError, match="network failure"):
                         syncer.sync_once()
@@ -330,11 +330,11 @@ class TestWorkerExceptions:
     def test_mark_synced_worker_exception_propagates(self, tmp_path: Path) -> None:
         """Exceptions raised inside the mark-synced worker are re-raised."""
         with patch(
-            "tune_shifter.bandcamp.mark_collection_synced",
+            "kamp_daemon.bandcamp.mark_collection_synced",
             side_effect=RuntimeError("auth error"),
         ):
-            with patch("tune_shifter.syncer._spawn_worker", side_effect=_inline_worker):
-                with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            with patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker):
+                with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                     syncer = Syncer(_make_config(tmp_path))
                     with pytest.raises(RuntimeError, match="auth error"):
                         syncer.mark_synced()
@@ -356,10 +356,10 @@ class TestWorkerExceptions:
 
         (tmp_path / "bandcamp_state.json").write_text("{}")
         with patch(
-            "tune_shifter.syncer._spawn_worker",
+            "kamp_daemon.syncer._spawn_worker",
             side_effect=_failing_then_stopping_worker,
         ):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path, poll_interval=60))
                 syncer.start()
                 import time
@@ -385,7 +385,7 @@ class TestLogReplay:
             result_q: _queue_module.Queue[Any] = _queue_module.Queue()
             # Simulate a log record put by QueueHandler in the subprocess.
             record = logging.LogRecord(
-                name="tune_shifter.bandcamp",
+                name="kamp_daemon.bandcamp",
                 level=logging.INFO,
                 pathname="",
                 lineno=0,
@@ -401,17 +401,17 @@ class TestLogReplay:
         handler = logging.handlers.MemoryHandler(
             capacity=100, flushLevel=logging.CRITICAL
         )
-        logging.getLogger("tune_shifter.bandcamp").addHandler(handler)
-        logging.getLogger("tune_shifter.bandcamp").setLevel(logging.DEBUG)
+        logging.getLogger("kamp_daemon.bandcamp").addHandler(handler)
+        logging.getLogger("kamp_daemon.bandcamp").setLevel(logging.DEBUG)
         try:
             with patch(
-                "tune_shifter.syncer._spawn_worker", side_effect=_worker_with_log
+                "kamp_daemon.syncer._spawn_worker", side_effect=_worker_with_log
             ):
-                with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+                with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                     syncer = Syncer(_make_config(tmp_path))
                     syncer.sync_once()
         finally:
-            logging.getLogger("tune_shifter.bandcamp").removeHandler(handler)
+            logging.getLogger("kamp_daemon.bandcamp").removeHandler(handler)
 
         assert any(r.getMessage() == "Fetched fan_id=12345" for r in handler.buffer)
 
@@ -432,9 +432,9 @@ class TestAutoMarkOnFirstSync:
             return _FakeProc(), status_q, log_q, result_q
 
         with patch(
-            "tune_shifter.syncer._spawn_worker", side_effect=_recording_noop_worker
+            "kamp_daemon.syncer._spawn_worker", side_effect=_recording_noop_worker
         ):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path))
                 syncer.sync_once()
 
@@ -457,9 +457,9 @@ class TestAutoMarkOnFirstSync:
             return _FakeProc(), status_q, log_q, result_q
 
         with patch(
-            "tune_shifter.syncer._spawn_worker", side_effect=_recording_noop_worker
+            "kamp_daemon.syncer._spawn_worker", side_effect=_recording_noop_worker
         ):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path))
                 syncer.sync_once()
 
@@ -480,9 +480,9 @@ class TestAutoMarkOnFirstSync:
             return _FakeProc(), status_q, log_q, result_q
 
         with patch(
-            "tune_shifter.syncer._spawn_worker", side_effect=_recording_noop_worker
+            "kamp_daemon.syncer._spawn_worker", side_effect=_recording_noop_worker
         ):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer = Syncer(_make_config(tmp_path))
                 syncer.sync_once(skip_auto_mark=True)
 
@@ -493,15 +493,15 @@ class TestMarkSynced:
     def test_warns_when_no_bandcamp(self, tmp_path: Path) -> None:
         """mark_synced() warns and returns when [bandcamp] is absent."""
         syncer = Syncer(_make_config_no_bandcamp(tmp_path))
-        with patch("tune_shifter.syncer._spawn_worker") as mock_spawn:
+        with patch("kamp_daemon.syncer._spawn_worker") as mock_spawn:
             syncer.mark_synced()
         mock_spawn.assert_not_called()
 
     def test_calls_mark_collection_synced(self, tmp_path: Path) -> None:
         """mark_synced() delegates to mark_collection_synced with correct args."""
-        with patch("tune_shifter.bandcamp.mark_collection_synced") as mock_mark:
-            with patch("tune_shifter.syncer._spawn_worker", side_effect=_inline_worker):
-                with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.bandcamp.mark_collection_synced") as mock_mark:
+            with patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker):
+                with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                     syncer = Syncer(_make_config(tmp_path))
                     syncer.mark_synced()
         mock_mark.assert_called_once()
@@ -512,19 +512,19 @@ class TestLogout:
         """logout() removes both files when both exist."""
         (tmp_path / "bandcamp_session.json").write_text("{}")
         (tmp_path / "bandcamp_state.json").write_text("{}")
-        with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
             logout()
         assert not (tmp_path / "bandcamp_session.json").exists()
         assert not (tmp_path / "bandcamp_state.json").exists()
 
     def test_noop_when_no_files(self, tmp_path: Path) -> None:
         """logout() does not raise when neither file exists."""
-        with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
             logout()  # must not raise
 
     def test_deletes_only_existing_file(self, tmp_path: Path) -> None:
         """logout() removes whichever file(s) exist without erroring on absent ones."""
         (tmp_path / "bandcamp_session.json").write_text("{}")
-        with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
             logout()
         assert not (tmp_path / "bandcamp_session.json").exists()

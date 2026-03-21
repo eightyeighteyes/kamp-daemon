@@ -1,4 +1,4 @@
-"""Tests for tune_shifter.tagger."""
+"""Tests for kamp_daemon.tagger."""
 
 from pathlib import Path
 from typing import Any
@@ -9,7 +9,7 @@ import mutagen.id3 as id3
 import mutagen.mp4
 import pytest
 
-from tune_shifter.tagger import (
+from kamp_daemon.tagger import (
     ReleaseInfo,
     TaggingError,
     TrackInfo,
@@ -158,7 +158,7 @@ class TestTagDirectory:
             "search_releases",
             side_effect=musicbrainzngs.WebServiceError("network error"),
         ):
-            with patch("tune_shifter.tagger.time.sleep"):
+            with patch("kamp_daemon.tagger.time.sleep"):
                 with pytest.raises(TaggingError, match="after 3 retries"):
                     tag_directory(tmp_path, [mp3])
 
@@ -488,7 +488,7 @@ class TestTagDirectoryM4a:
         mock_mp4 = MagicMock()
         mock_mp4.tags = initial_tags
 
-        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
             with patch("musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE):
                 with patch(
                     "musicbrainzngs.get_release_by_id",
@@ -520,7 +520,7 @@ class TestRetry:
             with patch(
                 "musicbrainzngs.get_release_by_id", return_value=SAMPLE_RELEASE_DETAIL
             ):
-                with patch("tune_shifter.tagger.time.sleep"):
+                with patch("kamp_daemon.tagger.time.sleep"):
                     result = _search_release("Cool Artist", "Great Album")
 
         assert call_count == 3
@@ -533,7 +533,7 @@ class TestRetry:
             raise musicbrainzngs.WebServiceError("503")
 
         with patch.object(musicbrainzngs, "search_releases", side_effect=always_fail):
-            with patch("tune_shifter.tagger.time.sleep"):
+            with patch("kamp_daemon.tagger.time.sleep"):
                 with pytest.raises(TaggingError, match="after 3 retries"):
                     _search_release("Cool Artist", "Great Album")
 
@@ -541,7 +541,7 @@ class TestRetry:
 class TestConfigureMusicbrainz:
     def test_sets_useragent(self) -> None:
         """configure_musicbrainz delegates to musicbrainzngs.set_useragent."""
-        with patch("tune_shifter.tagger.musicbrainzngs.set_useragent") as mock_ua:
+        with patch("kamp_daemon.tagger.musicbrainzngs.set_useragent") as mock_ua:
             configure_musicbrainz("my-app", "1.0", "test@example.com")
         mock_ua.assert_called_once_with("my-app", "1.0", "test@example.com")
 
@@ -569,7 +569,7 @@ class TestReadExistingMetadataEdgeCases:
         mock_mp4 = MagicMock()
         mock_mp4.tags = None
 
-        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
             artist, album = _read_existing_metadata(m4a)
 
         assert artist == "Artist"
@@ -583,7 +583,7 @@ class TestReadExistingMetadataEdgeCases:
         m4a.write_bytes(b"\x00" * 32)
 
         with patch(
-            "tune_shifter.tagger.mutagen.mp4.MP4", side_effect=Exception("corrupt")
+            "kamp_daemon.tagger.mutagen.mp4.MP4", side_effect=Exception("corrupt")
         ):
             artist, album = _read_existing_metadata(m4a)
 
@@ -649,7 +649,7 @@ class TestIsTagged:
         mock_mp4 = MagicMock()
         mock_mp4.tags = {"----:com.apple.iTunes:MusicBrainz Release Id": [b"abc-123"]}
 
-        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
             assert is_tagged(m4a) is True
 
     def test_m4a_without_mbid_returns_false(self, tmp_path: Path) -> None:
@@ -660,7 +660,7 @@ class TestIsTagged:
         mock_mp4 = MagicMock()
         mock_mp4.tags = {}
 
-        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
             assert is_tagged(m4a) is False
 
     def test_m4a_with_none_tags_returns_false(self, tmp_path: Path) -> None:
@@ -671,7 +671,7 @@ class TestIsTagged:
         mock_mp4 = MagicMock()
         mock_mp4.tags = None
 
-        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
             assert is_tagged(m4a) is False
 
     def test_unsupported_format_returns_false(self, tmp_path: Path) -> None:
@@ -686,7 +686,7 @@ class TestIsTagged:
         mp3 = tmp_path / "01.mp3"
         mp3.write_bytes(b"\xff\xfb" * 64)
 
-        with patch("tune_shifter.tagger.id3.ID3", side_effect=Exception("corrupt")):
+        with patch("kamp_daemon.tagger.id3.ID3", side_effect=Exception("corrupt")):
             assert is_tagged(mp3) is False
 
 
@@ -729,7 +729,7 @@ class TestReadReleaseMbids:
             "----:com.apple.iTunes:MusicBrainz Release Group Id": [b"rg-222"],
         }
 
-        with patch("tune_shifter.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
             rel, rg = read_release_mbids(m4a)
 
         assert rel == "rel-111"
@@ -740,7 +740,7 @@ class TestReadReleaseMbids:
         mp3 = tmp_path / "01.mp3"
         mp3.write_bytes(b"\xff\xfb" * 64)
 
-        with patch("tune_shifter.tagger.id3.ID3", side_effect=Exception("io error")):
+        with patch("kamp_daemon.tagger.id3.ID3", side_effect=Exception("io error")):
             rel, rg = read_release_mbids(mp3)
 
         assert rel == ""
@@ -757,7 +757,7 @@ class TestReadReleaseMbids:
             "MUSICBRAINZ_RELEASEGROUPID": ["rg-flac"],
         }
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             rel, rg = read_release_mbids(flac)
 
         assert rel == "rel-flac"
@@ -773,7 +773,7 @@ class TestIsTaggedFlac:
         mock_flac = MagicMock()
         mock_flac.tags = {"MUSICBRAINZ_ALBUMID": ["rel-123"]}
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             assert is_tagged(flac) is True
 
     def test_flac_without_mbid_returns_false(self, tmp_path: Path) -> None:
@@ -784,7 +784,7 @@ class TestIsTaggedFlac:
         mock_flac = MagicMock()
         mock_flac.tags = {}
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             assert is_tagged(flac) is False
 
     def test_flac_with_none_tags_returns_false(self, tmp_path: Path) -> None:
@@ -795,7 +795,7 @@ class TestIsTaggedFlac:
         mock_flac = MagicMock()
         mock_flac.tags = None
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             assert is_tagged(flac) is False
 
 
@@ -813,7 +813,7 @@ class TestTagDirectoryFlac:
         mock_flac = MagicMock()
         mock_flac.tags = initial_tags
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             with patch("musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE):
                 with patch(
                     "musicbrainzngs.get_release_by_id",
@@ -850,7 +850,7 @@ class TestTagDirectoryFlac:
             "DISCNUMBER": ["1"],
         }
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             with patch("musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE):
                 with patch(
                     "musicbrainzngs.get_release_by_id",
@@ -886,7 +886,7 @@ class TestTagDirectoryFlac:
             tracks={},
         )
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             _write_flac_tags(flac, release, None)
 
         mock_flac.add_tags.assert_called_once()
@@ -913,7 +913,7 @@ class TestTagDirectoryFlac:
             # all optional fields left at defaults (empty strings / empty lists)
         )
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             _write_flac_tags(flac, release, None)
 
         # Core fields are always written
@@ -961,7 +961,7 @@ class TestTagDirectoryFlac:
         )
         track = TrackInfo(number=1, disc=1, title="Track One", recording_mbid="")
 
-        with patch("tune_shifter.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
             _write_flac_tags(flac, release, track)
 
         assert tags["TITLE"] == ["Track One"]
@@ -981,7 +981,7 @@ class TestIsTaggedOgg:
         mock_ogg.tags = {"MUSICBRAINZ_ALBUMID": ["rel-123"]}
 
         with patch(
-            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             assert is_tagged(ogg) is True
 
@@ -994,7 +994,7 @@ class TestIsTaggedOgg:
         mock_ogg.tags = {}
 
         with patch(
-            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             assert is_tagged(ogg) is False
 
@@ -1007,7 +1007,7 @@ class TestIsTaggedOgg:
         mock_ogg.tags = None
 
         with patch(
-            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             assert is_tagged(ogg) is False
 
@@ -1025,7 +1025,7 @@ class TestReadReleaseMbidsOgg:
         }
 
         with patch(
-            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             rel, rg = read_release_mbids(ogg)
 
@@ -1041,7 +1041,7 @@ class TestReadReleaseMbidsOgg:
         mock_ogg.tags = {}
 
         with patch(
-            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             rel, rg = read_release_mbids(ogg)
 
@@ -1064,7 +1064,7 @@ class TestTagDirectoryOgg:
         mock_ogg.tags = initial_tags
 
         with patch(
-            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             with patch("musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE):
                 with patch(
@@ -1101,7 +1101,7 @@ class TestTagDirectoryOgg:
         }
 
         with patch(
-            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             with patch("musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE):
                 with patch(
@@ -1133,7 +1133,7 @@ class TestTagDirectoryOgg:
         )
 
         with patch(
-            "tune_shifter.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             _write_ogg_tags(ogg, release, None)
 
@@ -1189,7 +1189,7 @@ class TestReadTrackMetadata:
         mp3 = tmp_path / "01.mp3"
         mp3.write_bytes(b"\xff\xfb" * 64)
 
-        with patch("tune_shifter.tagger.id3.ID3", side_effect=Exception("corrupt")):
+        with patch("kamp_daemon.tagger.id3.ID3", side_effect=Exception("corrupt")):
             artist, title, album = _read_track_metadata(mp3)
 
         assert artist == ""

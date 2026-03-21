@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tune_shifter.config import (
+from kamp_daemon.config import (
     ArtworkConfig,
     BandcampConfig,
     Config,
@@ -18,12 +18,12 @@ from tune_shifter.config import (
     MusicBrainzConfig,
     PathsConfig,
 )
-from tune_shifter.pipeline import (
+from kamp_daemon.pipeline import (
     _NOTIFY_SENTINEL,
     _handle_stage_msg,
     run_in_subprocess,
 )
-from tune_shifter.syncer import Syncer
+from kamp_daemon.syncer import Syncer
 
 
 def _make_config(tmp_path: Path) -> Config:
@@ -150,20 +150,20 @@ class TestPipelineImplNotifications:
     def _patches(self) -> list[Any]:
         """Common patches needed to run _pipeline_worker in-process."""
         return [
-            patch("tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker),
+            patch("kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker),
             patch("musicbrainzngs.set_useragent"),
         ]
 
     def test_extraction_error_emits_notify(self, tmp_path: Path) -> None:
-        from tune_shifter.extractor import ExtractionError
+        from kamp_daemon.extractor import ExtractionError
 
         path, config = self._run(tmp_path)
         received: list[tuple[str, str, str]] = []
 
-        with patch("tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker):
+        with patch("kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker):
             with patch("musicbrainzngs.set_useragent"):
                 with patch(
-                    "tune_shifter.pipeline_impl.extract",
+                    "kamp_daemon.pipeline_impl.extract",
                     side_effect=ExtractionError("bad zip"),
                 ):
                     run_in_subprocess(
@@ -178,7 +178,7 @@ class TestPipelineImplNotifications:
         assert received[0][1] == "Extraction failed"
 
     def test_tagging_error_emits_notify(self, tmp_path: Path) -> None:
-        from tune_shifter.tagger import TaggingError
+        from kamp_daemon.tagger import TaggingError
 
         path, config = self._run(tmp_path)
         received: list[tuple[str, str, str]] = []
@@ -188,18 +188,18 @@ class TestPipelineImplNotifications:
         release.release_group_mbid = "rg-1"
         release.title = "Test Album"
 
-        with patch("tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker):
+        with patch("kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker):
             with patch("musicbrainzngs.set_useragent"):
-                with patch("tune_shifter.pipeline_impl.extract", return_value=path):
+                with patch("kamp_daemon.pipeline_impl.extract", return_value=path):
                     with patch(
-                        "tune_shifter.pipeline_impl.find_audio_files",
+                        "kamp_daemon.pipeline_impl.find_audio_files",
                         return_value=[path / "track.mp3"],
                     ):
                         with patch(
-                            "tune_shifter.pipeline_impl.is_tagged", return_value=False
+                            "kamp_daemon.pipeline_impl.is_tagged", return_value=False
                         ):
                             with patch(
-                                "tune_shifter.pipeline_impl.tag_directory",
+                                "kamp_daemon.pipeline_impl.tag_directory",
                                 side_effect=TaggingError("no match"),
                             ):
                                 run_in_subprocess(
@@ -214,7 +214,7 @@ class TestPipelineImplNotifications:
         assert received[0][1] == "Tagging failed"
 
     def test_artwork_error_emits_notify(self, tmp_path: Path) -> None:
-        from tune_shifter.artwork import ArtworkError
+        from kamp_daemon.artwork import ArtworkError
 
         path, config = self._run(tmp_path)
         received: list[tuple[str, str, str]] = []
@@ -224,26 +224,26 @@ class TestPipelineImplNotifications:
         release.release_group_mbid = "rg-1"
         release.title = "Test Album"
 
-        with patch("tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker):
+        with patch("kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker):
             with patch("musicbrainzngs.set_useragent"):
-                with patch("tune_shifter.pipeline_impl.extract", return_value=path):
+                with patch("kamp_daemon.pipeline_impl.extract", return_value=path):
                     with patch(
-                        "tune_shifter.pipeline_impl.find_audio_files",
+                        "kamp_daemon.pipeline_impl.find_audio_files",
                         return_value=[path / "track.mp3"],
                     ):
                         with patch(
-                            "tune_shifter.pipeline_impl.is_tagged", return_value=False
+                            "kamp_daemon.pipeline_impl.is_tagged", return_value=False
                         ):
                             with patch(
-                                "tune_shifter.pipeline_impl.tag_directory",
+                                "kamp_daemon.pipeline_impl.tag_directory",
                                 return_value=release,
                             ):
                                 with patch(
-                                    "tune_shifter.pipeline_impl.fetch_and_embed",
+                                    "kamp_daemon.pipeline_impl.fetch_and_embed",
                                     side_effect=ArtworkError("no image"),
                                 ):
                                     with patch(
-                                        "tune_shifter.pipeline_impl.move_to_library",
+                                        "kamp_daemon.pipeline_impl.move_to_library",
                                         return_value=[],
                                     ):
                                         run_in_subprocess(
@@ -259,7 +259,7 @@ class TestPipelineImplNotifications:
         assert received[0][1] == "Artwork warning"
 
     def test_move_error_emits_notify(self, tmp_path: Path) -> None:
-        from tune_shifter.mover import MoveError
+        from kamp_daemon.mover import MoveError
 
         path, config = self._run(tmp_path)
         received: list[tuple[str, str, str]] = []
@@ -269,25 +269,23 @@ class TestPipelineImplNotifications:
         release.release_group_mbid = "rg-1"
         release.title = "Test Album"
 
-        with patch("tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker):
+        with patch("kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker):
             with patch("musicbrainzngs.set_useragent"):
-                with patch("tune_shifter.pipeline_impl.extract", return_value=path):
+                with patch("kamp_daemon.pipeline_impl.extract", return_value=path):
                     with patch(
-                        "tune_shifter.pipeline_impl.find_audio_files",
+                        "kamp_daemon.pipeline_impl.find_audio_files",
                         return_value=[path / "track.mp3"],
                     ):
                         with patch(
-                            "tune_shifter.pipeline_impl.is_tagged", return_value=False
+                            "kamp_daemon.pipeline_impl.is_tagged", return_value=False
                         ):
                             with patch(
-                                "tune_shifter.pipeline_impl.tag_directory",
+                                "kamp_daemon.pipeline_impl.tag_directory",
                                 return_value=release,
                             ):
-                                with patch(
-                                    "tune_shifter.pipeline_impl.fetch_and_embed"
-                                ):
+                                with patch("kamp_daemon.pipeline_impl.fetch_and_embed"):
                                     with patch(
-                                        "tune_shifter.pipeline_impl.move_to_library",
+                                        "kamp_daemon.pipeline_impl.move_to_library",
                                         side_effect=MoveError("no dest"),
                                     ):
                                         run_in_subprocess(
@@ -310,25 +308,23 @@ class TestPipelineImplNotifications:
         release.release_group_mbid = "rg-1"
         release.title = "Test Album"
 
-        with patch("tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker):
+        with patch("kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker):
             with patch("musicbrainzngs.set_useragent"):
-                with patch("tune_shifter.pipeline_impl.extract", return_value=path):
+                with patch("kamp_daemon.pipeline_impl.extract", return_value=path):
                     with patch(
-                        "tune_shifter.pipeline_impl.find_audio_files",
+                        "kamp_daemon.pipeline_impl.find_audio_files",
                         return_value=[path / "track.mp3"],
                     ):
                         with patch(
-                            "tune_shifter.pipeline_impl.is_tagged", return_value=False
+                            "kamp_daemon.pipeline_impl.is_tagged", return_value=False
                         ):
                             with patch(
-                                "tune_shifter.pipeline_impl.tag_directory",
+                                "kamp_daemon.pipeline_impl.tag_directory",
                                 return_value=release,
                             ):
-                                with patch(
-                                    "tune_shifter.pipeline_impl.fetch_and_embed"
-                                ):
+                                with patch("kamp_daemon.pipeline_impl.fetch_and_embed"):
                                     with patch(
-                                        "tune_shifter.pipeline_impl.move_to_library",
+                                        "kamp_daemon.pipeline_impl.move_to_library",
                                         return_value=[],
                                     ):
                                         run_in_subprocess(
@@ -360,8 +356,8 @@ class TestSyncerErrorCallback:
 
         syncer.error_callback = _cb
 
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker_error):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker_error):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 syncer._run()
 
         assert len(received) == 1
@@ -373,7 +369,7 @@ class TestSyncerErrorCallback:
         syncer = Syncer(_make_config(tmp_path))
         assert syncer.error_callback is None
 
-        with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker_error):
-            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+        with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker_error):
+            with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 with pytest.raises(RuntimeError):
                     syncer.sync_once()

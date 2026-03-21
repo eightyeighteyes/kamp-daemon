@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from tune_shifter.config import Config
-from tune_shifter.daemon_core import DaemonCore, _PID_PATH
+from kamp_daemon.config import Config
+from kamp_daemon.daemon_core import DaemonCore, _PID_PATH
 
 
 @pytest.fixture
@@ -26,26 +26,26 @@ def config_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def mock_watcher():
-    with patch("tune_shifter.daemon_core.Watcher") as cls:
+    with patch("kamp_daemon.daemon_core.Watcher") as cls:
         yield cls
 
 
 @pytest.fixture
 def mock_syncer():
-    with patch("tune_shifter.daemon_core.Syncer") as cls:
+    with patch("kamp_daemon.daemon_core.Syncer") as cls:
         yield cls
 
 
 @pytest.fixture
 def mock_monitor():
-    with patch("tune_shifter.daemon_core.ConfigMonitor") as cls:
+    with patch("kamp_daemon.daemon_core.ConfigMonitor") as cls:
         yield cls
 
 
 @pytest.fixture
 def mock_pid(tmp_path: Path):
     pid_path = tmp_path / "daemon.pid"
-    with patch("tune_shifter.daemon_core._PID_PATH", pid_path):
+    with patch("kamp_daemon.daemon_core._PID_PATH", pid_path):
         yield pid_path
 
 
@@ -262,7 +262,7 @@ class TestSignalHandlers:
         def capture(sig: int, handler: object) -> None:
             installed[sig] = handler
 
-        with patch("tune_shifter.daemon_core.signal.signal", side_effect=capture):
+        with patch("kamp_daemon.daemon_core.signal.signal", side_effect=capture):
             with patch.object(core, "start", wraps=core.start):
                 # Call _install_signal_handlers directly to avoid real signal changes
                 core._install_signal_handlers()
@@ -279,7 +279,7 @@ class TestSignalHandlers:
         installed: dict[int, object] = {}
 
         with patch(
-            "tune_shifter.daemon_core.signal.signal",
+            "kamp_daemon.daemon_core.signal.signal",
             side_effect=lambda s, h: installed.update({s: h}),
         ):
             core._install_signal_handlers()
@@ -295,7 +295,7 @@ class TestSignalHandlers:
         installed: dict[int, object] = {}
 
         with patch(
-            "tune_shifter.daemon_core.signal.signal",
+            "kamp_daemon.daemon_core.signal.signal",
             side_effect=lambda s, h: installed.update({s: h}),
         ):
             core._install_signal_handlers()

@@ -1,9 +1,9 @@
-#compdef tune-shifter
+#compdef kamp-daemon
 
-# zsh completion for tune-shifter
+# zsh completion for kamp-daemon
 # Installed to share/zsh/site-functions/ via the Homebrew formula.
 
-_tune_shifter() {
+_kamp_daemon() {
   local state line
   typeset -A opt_args
 
@@ -25,11 +25,11 @@ _tune_shifter() {
       subcommands=(
         'daemon:Watch staging directory and poll Bandcamp (default)'
         'sync:One-shot Bandcamp download, then exit'
-        'install-service:Register tune-shifter as a launchd user agent (macOS)'
+        'install-service:Register kamp-daemon as a launchd user agent (macOS)'
         'uninstall-service:Remove the launchd user agent registration'
-        'stop:Stop the tune-shifter service'
-        'play:Start the tune-shifter service'
-        'status:Show whether tune-shifter is running'
+        'stop:Stop the kamp-daemon service'
+        'play:Start the kamp-daemon service'
+        'status:Show whether kamp-daemon is running'
         'config:Read or update configuration values'
       )
       _describe 'subcommand' subcommands
@@ -106,4 +106,4 @@ _tune_shifter() {
   esac
 }
 
-_tune_shifter "$@"
+_kamp_daemon "$@"

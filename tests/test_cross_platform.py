@@ -16,17 +16,17 @@ class TestDefaultConfigPath:
     def test_posix_uses_xdg_config(self) -> None:
         with patch.object(sys, "platform", "linux"):
             # Re-run the function directly to avoid module-level caching
-            from tune_shifter.config import _default_config_path
+            from kamp_daemon.config import _default_config_path
 
             path = _default_config_path()
-        assert path == Path.home() / ".config" / "tune-shifter" / "config.toml"
+        assert path == Path.home() / ".config" / "kamp-daemon" / "config.toml"
 
     def test_macos_uses_xdg_config(self) -> None:
         with patch.object(sys, "platform", "darwin"):
-            from tune_shifter.config import _default_config_path
+            from kamp_daemon.config import _default_config_path
 
             path = _default_config_path()
-        assert path == Path.home() / ".config" / "tune-shifter" / "config.toml"
+        assert path == Path.home() / ".config" / "kamp-daemon" / "config.toml"
 
     def test_windows_uses_appdata(self) -> None:
         fake_appdata = r"C:\Users\User\AppData\Roaming"
@@ -34,21 +34,21 @@ class TestDefaultConfigPath:
             patch.object(sys, "platform", "win32"),
             patch.dict("os.environ", {"APPDATA": fake_appdata}),
         ):
-            from tune_shifter.config import _default_config_path
+            from kamp_daemon.config import _default_config_path
 
             path = _default_config_path()
-        assert path == Path(fake_appdata) / "tune-shifter" / "config.toml"
+        assert path == Path(fake_appdata) / "kamp-daemon" / "config.toml"
 
     def test_windows_fallback_without_appdata(self) -> None:
         with (
             patch.object(sys, "platform", "win32"),
             patch.dict("os.environ", {}, clear=True),
         ):
-            from tune_shifter.config import _default_config_path
+            from kamp_daemon.config import _default_config_path
 
             path = _default_config_path()
         assert (
-            path == Path.home() / "AppData" / "Roaming" / "tune-shifter" / "config.toml"
+            path == Path.home() / "AppData" / "Roaming" / "kamp-daemon" / "config.toml"
         )
 
 
@@ -66,7 +66,7 @@ class TestSignalHandling:
 
         sigterm_value = getattr(signal, "SIGTERM", None)
 
-        with patch("tune_shifter.__main__.signal") as mock_signal_mod:
+        with patch("kamp_daemon.__main__.signal") as mock_signal_mod:
             mock_signal_mod.SIGINT = signal.SIGINT
             if has_sigterm:
                 mock_signal_mod.SIGTERM = sigterm_value or 15
