@@ -3,17 +3,6 @@
 ## Improve Image Retrieval: Compress CAA images over size threshold
 *Single* — when a CAA candidate exceeds `max_bytes`, apply the same Pillow downscale/compress logic already used for oversized Bandcamp ZIP art rather than skipping it. Reuses existing compression helper; needs a test covering the compress-then-embed path for CAA images.
 
-## Add Bandcamp Auto Sync Frequency Options to Menu Bar App
-*Side* — config and syncer already support arbitrary intervals; this adds a submenu with radio-style checkmarks (Off / 5 min / 15 min / 30 min / hourly / daily) that writes the new value via `config set` and triggers a live reload so the running daemon picks it up without a restart.
-
-Options:
-- Off
-- 5 minutes
-- 15 minutes
-- 30 minutes
-- hourly
-- daily
-
 # 1.0.0
 
 ## Rebrand to "kamp-daemon"
