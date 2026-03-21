@@ -22,6 +22,25 @@
 #include <Python.h>
 #include <stdlib.h>
 
+/*
+ * Embed an Info.plist so UNUserNotificationCenter can find CFBundleIdentifier.
+ * Without this, currentNotificationCenter() crashes with
+ * "bundleProxyForCurrentProcess is nil" on macOS 14+ because the binary has
+ * no bundle identity.  The launcher stays alive as the top-level process (no
+ * exec), so NSBundle.mainBundle() IS this binary's bundle — Python code
+ * running inside Py_Main() sees the same bundle identifier.
+ */
+__attribute__((used, section("__TEXT,__info_plist")))
+static const char _info_plist[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\""
+    " \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">"
+    "<plist version=\"1.0\"><dict>"
+    "<key>CFBundleIdentifier</key><string>com.tune-shifter</string>"
+    "<key>CFBundleName</key><string>tune-shifter</string>"
+    "<key>CFBundleVersion</key><string>1</string>"
+    "</dict></plist>";
+
 #ifndef VENV_PYTHON
 #error "compile with -DVENV_PYTHON='\"<path-to-venv-python3>\"'"
 #endif

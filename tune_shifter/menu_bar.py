@@ -116,7 +116,9 @@ class MenuBarApp(rumps.App):
         # running here.  status_callback must be wired at init — not just for
         # manual syncs — so that automatic (scheduled) syncs also update the bar.
         self._core.watcher.stage_callback = self._on_pipeline_stage
+        self._core.watcher.notification_callback = self._on_notification
         self._core.syncer.status_callback = self._on_sync_status
+        self._core.syncer.error_callback = self._on_notification
 
     # ------------------------------------------------------------------
     # Menu callbacks
@@ -148,6 +150,50 @@ class MenuBarApp(rumps.App):
                 self._sync_in_progress = False
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _on_notification(self, title: str, subtitle: str, message: str) -> None:
+        """Fire a macOS notification.
+
+        Tries UNUserNotificationCenter (required for macOS 14+ delivery).
+        Falls back to rumps.notification() / NSUserNotificationCenter when
+        CFBundleIdentifier is unavailable (e.g. running from a Python venv
+        during development rather than from the compiled Homebrew binary).
+
+        Called from pipeline worker threads and the syncer thread; both APIs
+        are thread-safe so no main-thread hop is required.
+        """
+        try:
+            import uuid
+
+            import objc
+
+            objc.loadBundle(
+                "UserNotifications",
+                bundle_path="/System/Library/Frameworks/UserNotifications.framework",
+                module_globals={},
+            )
+            UNCH = objc.lookUpClass("UNUserNotificationCenter")
+            Content = objc.lookUpClass("UNMutableNotificationContent")
+            Request = objc.lookUpClass("UNNotificationRequest")
+
+            center = UNCH.currentNotificationCenter()
+            # Request auth on first notification; no-op if already decided.
+            center.requestAuthorizationWithOptions_completionHandler_(
+                6,  # alert (4) | sound (2)
+                lambda ok, err: None,
+            )
+            content = Content.new()
+            content.setTitle_(title)
+            content.setSubtitle_(subtitle)
+            content.setBody_(message)
+            request = Request.requestWithIdentifier_content_trigger_(
+                str(uuid.uuid4()), content, None
+            )
+            center.addNotificationRequest_withCompletionHandler_(request, None)
+        except Exception:
+            # No CFBundleIdentifier (dev environment) — fall back to the old API.
+            logger.debug("UNUserNotificationCenter unavailable, using rumps fallback")
+            rumps.notification(title, subtitle, message)
 
     def _on_sync_status(self, msg: str) -> None:
         """Store the current download target for the main-thread _refresh timer.
