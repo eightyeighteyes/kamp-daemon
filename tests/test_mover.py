@@ -1,4 +1,4 @@
-"""Tests for tune_shifter.mover."""
+"""Tests for kamp_daemon.mover."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -8,7 +8,7 @@ import mutagen.id3 as id3
 import mutagen.mp4
 import pytest
 
-from tune_shifter.mover import (
+from kamp_daemon.mover import (
     MoveError,
     _cleanup_staging,
     _destination,
@@ -123,7 +123,7 @@ class TestM4ADestination:
         m4a.write_bytes(b"")  # content doesn't matter — MP4 is mocked
 
         with patch(
-            "tune_shifter.mover.mutagen.mp4.MP4",
+            "kamp_daemon.mover.mutagen.mp4.MP4",
             return_value=self._mock_mp4(
                 artist="Artist",
                 album_artist="Album Artist",
@@ -148,7 +148,7 @@ class TestM4ADestination:
         mock_mp4 = MagicMock()
         mock_mp4.tags = {}  # empty tag dict
 
-        with patch("tune_shifter.mover.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.mover.mutagen.mp4.MP4", return_value=mock_mp4):
             library = tmp_path / "library"
             result = _destination(m4a, library, TEMPLATE)
 
@@ -163,7 +163,7 @@ class TestM4ADestination:
         mock_mp4 = MagicMock()
         mock_mp4.tags = None
 
-        with patch("tune_shifter.mover.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.mover.mutagen.mp4.MP4", return_value=mock_mp4):
             library = tmp_path / "library"
             result = _destination(m4a, library, TEMPLATE)
 
@@ -198,7 +198,7 @@ class TestFlacDestination:
         flac_file.write_bytes(b"")  # content doesn't matter — FLAC is mocked
 
         with patch(
-            "tune_shifter.mover.mutagen.flac.FLAC",
+            "kamp_daemon.mover.mutagen.flac.FLAC",
             return_value=self._mock_flac(
                 artist="Artist",
                 album_artist="Album Artist",
@@ -221,7 +221,7 @@ class TestFlacDestination:
         flac_file.write_bytes(b"")
 
         with patch(
-            "tune_shifter.mover.mutagen.flac.FLAC",
+            "kamp_daemon.mover.mutagen.flac.FLAC",
             return_value=self._mock_flac(
                 album_artist="Band",
                 album="Record",
@@ -243,7 +243,7 @@ class TestFlacDestination:
         mock_flac = MagicMock()
         mock_flac.tags = {}  # empty Vorbis comment dict
 
-        with patch("tune_shifter.mover.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.mover.mutagen.flac.FLAC", return_value=mock_flac):
             library = tmp_path / "library"
             result = _destination(flac_file, library, TEMPLATE)
 
@@ -258,7 +258,7 @@ class TestFlacDestination:
         mock_flac = MagicMock()
         mock_flac.tags = None
 
-        with patch("tune_shifter.mover.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.mover.mutagen.flac.FLAC", return_value=mock_flac):
             library = tmp_path / "library"
             result = _destination(flac_file, library, TEMPLATE)
 
@@ -293,7 +293,7 @@ class TestOggDestination:
         ogg_file.write_bytes(b"")
 
         with patch(
-            "tune_shifter.mover.mutagen.oggvorbis.OggVorbis",
+            "kamp_daemon.mover.mutagen.oggvorbis.OggVorbis",
             return_value=self._mock_ogg(
                 artist="Artist",
                 album_artist="Album Artist",
@@ -316,7 +316,7 @@ class TestOggDestination:
         ogg_file.write_bytes(b"")
 
         with patch(
-            "tune_shifter.mover.mutagen.oggvorbis.OggVorbis",
+            "kamp_daemon.mover.mutagen.oggvorbis.OggVorbis",
             return_value=self._mock_ogg(
                 album_artist="Band",
                 album="Record",
@@ -339,7 +339,7 @@ class TestOggDestination:
         mock_ogg.tags = {}
 
         with patch(
-            "tune_shifter.mover.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.mover.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             library = tmp_path / "library"
             result = _destination(ogg_file, library, TEMPLATE)
@@ -356,7 +356,7 @@ class TestOggDestination:
         mock_ogg.tags = None
 
         with patch(
-            "tune_shifter.mover.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.mover.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             library = tmp_path / "library"
             result = _destination(ogg_file, library, TEMPLATE)
@@ -402,7 +402,7 @@ class TestMoveToLibrary:
         )
         library = tmp_path / "library"
 
-        with patch("tune_shifter.mover.shutil.move", side_effect=OSError("disk full")):
+        with patch("kamp_daemon.mover.shutil.move", side_effect=OSError("disk full")):
             with pytest.raises(MoveError, match="disk full"):
                 move_to_library([mp3], staging, library, TEMPLATE)
 

@@ -5,14 +5,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tune_shifter.config import (
+from kamp_daemon.config import (
     ArtworkConfig,
     Config,
     LibraryConfig,
     MusicBrainzConfig,
     PathsConfig,
 )
-from tune_shifter.watcher import _StagingHandler, Watcher
+from kamp_daemon.watcher import _StagingHandler, Watcher
 
 
 @pytest.fixture
@@ -288,7 +288,7 @@ class TestInFlight:
         album = config.paths.staging / "my-album"
         album.mkdir()
         monkeypatch.setattr(
-            "tune_shifter.watcher.run_in_subprocess", lambda path, cfg, **kw: None
+            "kamp_daemon.watcher.run_in_subprocess", lambda path, cfg, **kw: None
         )
         handler._process(album)
 
@@ -305,7 +305,7 @@ class TestInFlight:
         def _boom(path: Path, cfg: object) -> None:
             raise RuntimeError("boom")
 
-        monkeypatch.setattr("tune_shifter.watcher.run_in_subprocess", _boom)
+        monkeypatch.setattr("kamp_daemon.watcher.run_in_subprocess", _boom)
         handler._process(album)  # exception is caught internally
 
         assert album not in handler._in_flight
@@ -419,17 +419,17 @@ class TestScheduleTimer:
 class TestWaitForStableSize:
     def test_returns_when_size_stable(self, tmp_path: Path) -> None:
         """_wait_for_stable_size returns once the file size stops changing."""
-        from tune_shifter.watcher import _wait_for_stable_size
+        from kamp_daemon.watcher import _wait_for_stable_size
 
         f = tmp_path / "track.mp3"
         f.write_bytes(b"x" * 100)
 
-        with patch("tune_shifter.watcher.time.sleep"):
+        with patch("kamp_daemon.watcher.time.sleep"):
             _wait_for_stable_size(f)  # must not hang
 
     def test_returns_when_file_disappears(self, tmp_path: Path) -> None:
         """_wait_for_stable_size returns if the file is deleted mid-wait."""
-        from tune_shifter.watcher import _wait_for_stable_size
+        from kamp_daemon.watcher import _wait_for_stable_size
 
         f = tmp_path / "track.mp3"
         f.write_bytes(b"x" * 100)
@@ -447,7 +447,7 @@ class TestWaitForStableSize:
 
         # Patch at the class level — PosixPath C-methods can't be patched on instances
         with patch("pathlib.Path.stat", fake_stat):
-            with patch("tune_shifter.watcher.time.sleep"):
+            with patch("kamp_daemon.watcher.time.sleep"):
                 _wait_for_stable_size(f)
 
 
@@ -470,7 +470,7 @@ class TestDuplicateRunPrevention:
         ) -> None:
             received_callbacks.append(_on_directory)
 
-        monkeypatch.setattr("tune_shifter.watcher.run_in_subprocess", _fake_run)
+        monkeypatch.setattr("kamp_daemon.watcher.run_in_subprocess", _fake_run)
         handler._process(album)
 
         assert len(received_callbacks) == 1
@@ -500,7 +500,7 @@ class TestDuplicateRunPrevention:
             if callable(_on_directory):
                 _on_directory(extracted_dir)
 
-        monkeypatch.setattr("tune_shifter.watcher.run_in_subprocess", _fake_run)
+        monkeypatch.setattr("kamp_daemon.watcher.run_in_subprocess", _fake_run)
         handler._process(zip_path)
 
         # The pending timer for the extracted directory must have been cancelled
@@ -525,7 +525,7 @@ class TestDuplicateRunPrevention:
             # Simulate the pipeline still running — try to schedule the directory
             handler._schedule(extracted_dir)
 
-        monkeypatch.setattr("tune_shifter.watcher.run_in_subprocess", _fake_run)
+        monkeypatch.setattr("kamp_daemon.watcher.run_in_subprocess", _fake_run)
         handler._process(zip_path)
 
         # _schedule while in-flight must have been a no-op
@@ -609,7 +609,7 @@ class TestWatcherPauseResume:
         mock_observer = MagicMock()
         mock_observer.start = lambda: start_calls.append(1)
         mock_observer.schedule = lambda *a, **kw: None
-        monkeypatch.setattr("tune_shifter.watcher.Observer", lambda: mock_observer)
+        monkeypatch.setattr("kamp_daemon.watcher.Observer", lambda: mock_observer)
 
         watcher.resume()
 
@@ -626,7 +626,7 @@ class TestWatcherPauseResume:
 
         scheduled: list[Path] = []
         monkeypatch.setattr(
-            "tune_shifter.watcher.Observer",
+            "kamp_daemon.watcher.Observer",
             lambda: MagicMock(start=lambda: None, schedule=lambda *a, **kw: None),
         )
         monkeypatch.setattr(
@@ -644,7 +644,7 @@ class TestWatcherPauseResume:
         watcher = self._patched_watcher(config, monkeypatch)
         start_calls: list[int] = []
         monkeypatch.setattr(
-            "tune_shifter.watcher.Observer",
+            "kamp_daemon.watcher.Observer",
             lambda: MagicMock(
                 start=lambda: start_calls.append(1), schedule=lambda *a, **kw: None
             ),
@@ -754,7 +754,7 @@ class TestStageCallback:
 
         cb = lambda stage: None  # noqa: E731
         handler.stage_callback = cb
-        monkeypatch.setattr("tune_shifter.watcher.run_in_subprocess", _fake_run)
+        monkeypatch.setattr("kamp_daemon.watcher.run_in_subprocess", _fake_run)
         handler._process(album)
 
         assert received["stage_callback"] is cb

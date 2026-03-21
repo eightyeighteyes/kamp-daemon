@@ -9,14 +9,14 @@ from unittest.mock import patch
 
 import pytest
 
-from tune_shifter.config import (
+from kamp_daemon.config import (
     ArtworkConfig,
     Config,
     LibraryConfig,
     MusicBrainzConfig,
     PathsConfig,
 )
-from tune_shifter.pipeline import _DIR_SENTINEL, _handle_stage_msg, run_in_subprocess
+from kamp_daemon.pipeline import _DIR_SENTINEL, _handle_stage_msg, run_in_subprocess
 
 
 def _make_config(tmp_path: Path) -> Config:
@@ -86,9 +86,9 @@ class TestLazyImport:
         for mod in self._HEAVY:
             sys.modules.pop(mod, None)
         try:
-            import tune_shifter.pipeline
+            import kamp_daemon.pipeline
 
-            importlib.reload(tune_shifter.pipeline)
+            importlib.reload(kamp_daemon.pipeline)
 
             for mod in self._HEAVY:
                 assert (
@@ -110,7 +110,7 @@ class TestLazyImport:
         for mod in self._HEAVY:
             sys.modules.pop(mod, None)
         try:
-            with patch("tune_shifter.pipeline._spawn_worker", side_effect=_noop_worker):
+            with patch("kamp_daemon.pipeline._spawn_worker", side_effect=_noop_worker):
                 run_in_subprocess(tmp_path / "album", _make_config(tmp_path))
 
             for mod in self._HEAVY:
@@ -129,9 +129,9 @@ class TestLazyImport:
 class TestRunInSubprocess:
     def test_success_completes_without_error(self, tmp_path: Path) -> None:
         """run_in_subprocess() completes normally when the worker succeeds."""
-        with patch("tune_shifter.pipeline_impl.run") as mock_run:
+        with patch("kamp_daemon.pipeline_impl.run") as mock_run:
             with patch(
-                "tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker
+                "kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker
             ):
                 run_in_subprocess(tmp_path / "album", _make_config(tmp_path))
         mock_run.assert_called_once()
@@ -139,9 +139,9 @@ class TestRunInSubprocess:
     def test_worker_calls_set_useragent(self, tmp_path: Path) -> None:
         """_pipeline_worker calls musicbrainzngs.set_useragent with the config contact."""
         with (
-            patch("tune_shifter.pipeline_impl.run"),
+            patch("kamp_daemon.pipeline_impl.run"),
             patch("musicbrainzngs.set_useragent") as mock_ua,
-            patch("tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker),
+            patch("kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker),
         ):
             run_in_subprocess(tmp_path / "album", _make_config(tmp_path))
 
@@ -152,11 +152,11 @@ class TestRunInSubprocess:
     def test_worker_exception_propagates(self, tmp_path: Path) -> None:
         """Exceptions raised in the worker are re-raised by run_in_subprocess()."""
         with patch(
-            "tune_shifter.pipeline_impl.run",
+            "kamp_daemon.pipeline_impl.run",
             side_effect=RuntimeError("tagging failed"),
         ):
             with patch(
-                "tune_shifter.pipeline._spawn_worker", side_effect=_inline_worker
+                "kamp_daemon.pipeline._spawn_worker", side_effect=_inline_worker
             ):
                 with pytest.raises(RuntimeError, match="tagging failed"):
                     run_in_subprocess(tmp_path / "album", _make_config(tmp_path))
@@ -177,7 +177,7 @@ class TestRunInSubprocess:
             return _FakeProc(), stage_q, log_q, result_q
 
         with patch(
-            "tune_shifter.pipeline._spawn_worker", side_effect=_worker_with_stages
+            "kamp_daemon.pipeline._spawn_worker", side_effect=_worker_with_stages
         ):
             run_in_subprocess(
                 tmp_path / "album",
@@ -201,7 +201,7 @@ class TestRunInSubprocess:
             log_q: _queue_module.Queue[Any] = _queue_module.Queue()
             result_q: _queue_module.Queue[Any] = _queue_module.Queue()
             rec = logging.LogRecord(
-                name="tune_shifter.pipeline_impl",
+                name="kamp_daemon.pipeline_impl",
                 level=logging.INFO,
                 pathname="",
                 lineno=0,
@@ -216,12 +216,12 @@ class TestRunInSubprocess:
         handler = logging.handlers.MemoryHandler(
             capacity=100, flushLevel=logging.CRITICAL
         )
-        target_logger = logging.getLogger("tune_shifter.pipeline_impl")
+        target_logger = logging.getLogger("kamp_daemon.pipeline_impl")
         target_logger.addHandler(handler)
         target_logger.setLevel(logging.DEBUG)
         try:
             with patch(
-                "tune_shifter.pipeline._spawn_worker", side_effect=_worker_with_log
+                "kamp_daemon.pipeline._spawn_worker", side_effect=_worker_with_log
             ):
                 run_in_subprocess(tmp_path / "album", _make_config(tmp_path))
         finally:
@@ -254,7 +254,7 @@ class TestOnDirectorySentinel:
             return _FakeProc(), stage_q, log_q, result_q
 
         with patch(
-            "tune_shifter.pipeline._spawn_worker", side_effect=_worker_sends_sentinel
+            "kamp_daemon.pipeline._spawn_worker", side_effect=_worker_sends_sentinel
         ):
             run_in_subprocess(
                 tmp_path / "album.zip",
@@ -281,7 +281,7 @@ class TestOnDirectorySentinel:
             return _FakeProc(), stage_q, log_q, result_q
 
         with patch(
-            "tune_shifter.pipeline._spawn_worker", side_effect=_worker_sends_sentinel
+            "kamp_daemon.pipeline._spawn_worker", side_effect=_worker_sends_sentinel
         ):
             run_in_subprocess(
                 tmp_path / "album.zip",
@@ -314,8 +314,8 @@ class TestOnDirectorySentinel:
             if _on_directory:
                 _on_directory(extracted)
 
-        with patch("tune_shifter.pipeline_impl.run", side_effect=_fake_run):
-            from tune_shifter.pipeline import _pipeline_worker
+        with patch("kamp_daemon.pipeline_impl.run", side_effect=_fake_run):
+            from kamp_daemon.pipeline import _pipeline_worker
 
             _pipeline_worker(
                 tmp_path / "album.zip", _make_config(tmp_path), stage_q, log_q, result_q

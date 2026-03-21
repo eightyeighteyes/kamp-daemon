@@ -27,7 +27,7 @@ jobs:
         run: poetry run black --check .
 
       - name: Type-check
-        run: poetry run mypy tune_shifter/
+        run: poetry run mypy kamp_daemon/
 
       - name: Run tests
         run: poetry run pytest

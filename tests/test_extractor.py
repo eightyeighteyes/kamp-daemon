@@ -1,11 +1,11 @@
-"""Tests for tune_shifter.extractor."""
+"""Tests for kamp_daemon.extractor."""
 
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from tune_shifter.extractor import ExtractionError, extract, find_audio_files
+from kamp_daemon.extractor import ExtractionError, extract, find_audio_files
 
 
 def _make_zip(dest: Path, members: dict[str, bytes]) -> Path:

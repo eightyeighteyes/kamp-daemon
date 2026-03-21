@@ -1,10 +1,10 @@
-"""Tests for tune_shifter.config."""
+"""Tests for kamp_daemon.config."""
 
 from pathlib import Path
 
 import pytest
 
-from tune_shifter.config import (
+from kamp_daemon.config import (
     DEFAULT_CONFIG_CONTENT,
     Config,
     config_set,

@@ -1,4 +1,4 @@
-"""Entry point for the tune-shifter daemon.
+"""Entry point for the kamp-daemon daemon.
 
 Excluded from coverage (see pyproject.toml [tool.coverage.run] omit list) because
 this module is pure CLI/daemon lifecycle glue: argparse dispatch, launchctl subprocess
@@ -29,7 +29,7 @@ from .config import DEFAULT_CONFIG_PATH, Config, _state_dir, config_set, config_
 from .daemon_core import DaemonCore, _PID_PATH
 from .syncer import Syncer
 
-_SERVICE_LABEL = "com.tune-shifter"
+_SERVICE_LABEL = "com.kamp-daemon"
 _PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{_SERVICE_LABEL}.plist"
 _LOG_PATH = _state_dir() / "daemon.log"
 
@@ -50,13 +50,13 @@ def _get_version() -> str:
         ).get("version")
         return str(version or "unknown") + "-dev"
     try:
-        return importlib.metadata.version("tune-shifter")
+        return importlib.metadata.version("kamp-daemon")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
 
 
 def main() -> None:
-    # Rename the process so `ps` output shows "tune-shifter" instead of
+    # Rename the process so `ps` output shows "kamp-daemon" instead of
     # "Python".  setproctitle updates argv[0] which is sufficient on Linux;
     # on macOS it also helps ps, but Activity Monitor reads the kernel-level
     # p_comm (set from the executable path at exec time and not writable from
@@ -65,12 +65,12 @@ def main() -> None:
     try:
         import setproctitle
 
-        setproctitle.setproctitle("tune-shifter")
+        setproctitle.setproctitle("kamp-daemon")
     except Exception:
         pass
 
     parser = argparse.ArgumentParser(
-        prog="tune-shifter",
+        prog="kamp-daemon",
         description="Automated audio library ingest from Bandcamp.",
     )
     parser.add_argument(
@@ -122,7 +122,7 @@ def main() -> None:
         action="store_true",
         help=(
             "Clear the local sync state and re-download your entire Bandcamp "
-            "collection.  By default, tune-shifter assumes you already have "
+            "collection.  By default, kamp-daemon assumes you already have "
             "your collection on first sync and only downloads new purchases "
             "going forward."
         ),
@@ -131,7 +131,7 @@ def main() -> None:
     # service subcommands (macOS launchd)
     install_parser = subparsers.add_parser(
         "install-service",
-        help="Register tune-shifter as a launchd user agent (macOS). Starts at login, runs in background.",
+        help="Register kamp-daemon as a launchd user agent (macOS). Starts at login, runs in background.",
     )
     install_parser.add_argument(
         "--no-menu-bar",
@@ -143,9 +143,9 @@ def main() -> None:
         "uninstall-service",
         help="Remove the launchd user agent registration.",
     )
-    subparsers.add_parser("stop", help="Stop the tune-shifter service.")
-    subparsers.add_parser("play", help="Start the tune-shifter service.")
-    subparsers.add_parser("status", help="Show whether tune-shifter is running.")
+    subparsers.add_parser("stop", help="Stop the kamp-daemon service.")
+    subparsers.add_parser("play", help="Start the kamp-daemon service.")
+    subparsers.add_parser("status", help="Show whether kamp-daemon is running.")
     subparsers.add_parser(
         "logout",
         help="Delete saved Bandcamp session and sync state, requiring re-authentication on the next sync.",
@@ -237,7 +237,7 @@ def main() -> None:
             print(
                 f"Config file created at {args.config}. "
                 "Edit it with your staging/library paths and contact email, "
-                "then re-run tune-shifter.",
+                "then re-run kamp-daemon.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -245,7 +245,7 @@ def main() -> None:
     # app_name and app_version are not user-configurable — hardcoded here so the
     # User-Agent we send to MusicBrainz always accurately identifies the software.
     musicbrainzngs.set_useragent(
-        "tune-shifter",
+        "kamp-daemon",
         _get_version(),
         config.musicbrainz.contact,
     )
@@ -425,7 +425,7 @@ def _cmd_sync(config: Config, config_path: Path, download_all: bool = False) -> 
         else:
             print(
                 f"No [bandcamp] section in {config_path}. "
-                "Add one manually or run tune-shifter sync interactively.",
+                "Add one manually or run kamp-daemon sync interactively.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -448,7 +448,7 @@ def _cmd_daemon(config: Config, config_path: Path, menu_bar: bool = False) -> No
     pkg_version = _get_version()
     install_path = Path(__file__).resolve().parent
     _logger.info(
-        "tune-shifter %s (Python %s, %s)",
+        "kamp-daemon %s (Python %s, %s)",
         pkg_version,
         sys.version.split()[0],
         install_path,
@@ -474,7 +474,7 @@ def _cmd_daemon_signal(sig: int, action: str) -> None:
     try:
         pid = int(_PID_PATH.read_text().strip())
     except (FileNotFoundError, ValueError):
-        print("No running tune-shifter daemon found.", file=sys.stderr)
+        print("No running kamp-daemon daemon found.", file=sys.stderr)
         sys.exit(1)
     try:
         os.kill(pid, sig)
@@ -506,7 +506,7 @@ def _launchctl_list() -> subprocess.CompletedProcess[str]:
 # Matches simple scalar entries in launchctl list output, e.g.:
 #     "PID" = 12345;
 #     "LastExitStatus" = 256;
-#     "Label" = "com.tune-shifter";
+#     "Label" = "com.kamp-daemon";
 # Skips complex values (arrays, nested dicts) that span multiple lines.
 _LAUNCHCTL_ENTRY_RE = re.compile(r'^\s*"(\w+)"\s*=\s*(?:"([^"]*)"|([\w./\-]+));\s*$')
 
@@ -523,7 +523,7 @@ def _parse_launchctl_info(output: str) -> dict[str, str]:
 
 
 def _service_registered() -> bool:
-    """Return True if tune-shifter is registered in the launchd namespace.
+    """Return True if kamp-daemon is registered in the launchd namespace.
 
     A non-zero exit from `launchctl list` means the label is unknown to launchd.
     Zero exit means the service is registered (running or stopped).
@@ -532,7 +532,7 @@ def _service_registered() -> bool:
 
 
 def _service_pid() -> int | None:
-    """Return the PID of the running tune-shifter service, or None if not running.
+    """Return the PID of the running kamp-daemon service, or None if not running.
 
     Queries launchctl for the service label. A positive PID means the process is
     alive; absent or 0 means the service is registered but not currently running.
@@ -551,28 +551,28 @@ def _service_pid() -> int | None:
 def _cmd_stop() -> None:
     if not _PLIST_PATH.exists():
         print(
-            "tune-shifter is not installed as a service. Run tune-shifter install-service first."
+            "kamp-daemon is not installed as a service. Run kamp-daemon install-service first."
         )
         return
     if _service_pid() is None:
-        print("tune-shifter is already stopped.")
+        print("kamp-daemon is already stopped.")
         return
     # bootout stops and unregisters the service; use check=False so a
     # non-zero exit (e.g. already unloaded) doesn't raise.
     subprocess.run(
         ["launchctl", "bootout", _launchd_domain(), str(_PLIST_PATH)], check=False
     )
-    print("tune-shifter stopped.")
+    print("kamp-daemon stopped.")
 
 
 def _cmd_play() -> None:
     if not _PLIST_PATH.exists():
         print(
-            "tune-shifter is not installed as a service. Run tune-shifter install-service first."
+            "kamp-daemon is not installed as a service. Run kamp-daemon install-service first."
         )
         return
     if _service_pid() is not None:
-        print("tune-shifter is already running.")
+        print("kamp-daemon is already running.")
         return
     if _service_registered():
         # Registered but not running (PID = "-"): bootstrap would fail with EIO
@@ -586,12 +586,12 @@ def _cmd_play() -> None:
         subprocess.run(
             ["launchctl", "bootstrap", _launchd_domain(), str(_PLIST_PATH)], check=True
         )
-    print("tune-shifter started.")
+    print("kamp-daemon started.")
 
 
 def _cmd_status() -> None:
     if not _PLIST_PATH.exists():
-        print("tune-shifter is not installed as a service.")
+        print("kamp-daemon is not installed as a service.")
         return
     pid = _service_pid()
     if pid is None:
@@ -602,10 +602,10 @@ def _cmd_status() -> None:
             info = _parse_launchctl_info(result.stdout)
             last_exit = info.get("LastExitStatus", "0")
             if last_exit != "0":
-                print(f"tune-shifter is not running (crashed, last exit: {last_exit})")
+                print(f"kamp-daemon is not running (crashed, last exit: {last_exit})")
                 print(f"  Logs → {_LOG_PATH}")
                 return
-        print("tune-shifter is not running.")
+        print("kamp-daemon is not running.")
         return
     ps = subprocess.run(
         ["ps", "-p", str(pid), "-o", "etime="],
@@ -613,11 +613,11 @@ def _cmd_status() -> None:
         text=True,
     )
     uptime = ps.stdout.strip() if ps.returncode == 0 else "unknown"
-    print(f"tune-shifter is running (pid {pid}, uptime {uptime})")
+    print(f"kamp-daemon is running (pid {pid}, uptime {uptime})")
 
 
 def _cmd_install_service(config_path: Path, menu_bar: bool = False) -> None:
-    exec_path = shutil.which("tune-shifter") or sys.argv[0]
+    exec_path = shutil.which("kamp-daemon") or sys.argv[0]
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     menu_bar_arg = "" if menu_bar else "\n        <string>--no-menu-bar</string>"
     plist = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -644,13 +644,13 @@ def _cmd_install_service(config_path: Path, menu_bar: bool = False) -> None:
     subprocess.run(
         ["launchctl", "bootstrap", _launchd_domain(), str(_PLIST_PATH)], check=True
     )
-    print("tune-shifter installed and started.")
+    print("kamp-daemon installed and started.")
     print(f"  Logs → {_LOG_PATH}")
     print("\nUseful commands:")
-    print("  tune-shifter stop             # pause the service")
-    print("  tune-shifter play             # resume the service")
-    print("  tune-shifter status           # check if it's running")
-    print("  tune-shifter uninstall-service  # remove it permanently")
+    print("  kamp-daemon stop             # pause the service")
+    print("  kamp-daemon play             # resume the service")
+    print("  kamp-daemon status           # check if it's running")
+    print("  kamp-daemon uninstall-service  # remove it permanently")
 
 
 def _cmd_uninstall_service() -> None:

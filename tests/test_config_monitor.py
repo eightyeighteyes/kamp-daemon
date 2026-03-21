@@ -1,12 +1,12 @@
-"""Tests for tune_shifter.config_monitor."""
+"""Tests for kamp_daemon.config_monitor."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tune_shifter.config import DEFAULT_CONFIG_CONTENT, Config
-from tune_shifter.config_monitor import ConfigMonitor, _ConfigFileHandler
+from kamp_daemon.config import DEFAULT_CONFIG_CONTENT, Config
+from kamp_daemon.config_monitor import ConfigMonitor, _ConfigFileHandler
 
 
 def _make_event(path: str, is_directory: bool = False) -> MagicMock:

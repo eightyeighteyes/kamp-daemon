@@ -1,4 +1,4 @@
-"""Tests for tune_shifter.__main__ helpers."""
+"""Tests for kamp_daemon.__main__ helpers."""
 
 import subprocess
 from pathlib import Path
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tune_shifter.__main__ import (
+from kamp_daemon.__main__ import (
     _SERVICE_LABEL,
     _cmd_play,
     _cmd_status,
@@ -98,19 +98,19 @@ class TestServicePid:
 
 class TestCmdStop:
     def test_not_installed(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
-        with patch("tune_shifter.__main__._PLIST_PATH", plist):
+        plist = tmp_path / "com.kamp-daemon.plist"
+        with patch("kamp_daemon.__main__._PLIST_PATH", plist):
             _cmd_stop()
         assert "not installed" in capsys.readouterr().out
 
     def test_already_stopped(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
+        plist = tmp_path / "com.kamp-daemon.plist"
         plist.touch()
         with (
-            patch("tune_shifter.__main__._PLIST_PATH", plist),
-            patch("tune_shifter.__main__._service_pid", return_value=None),
+            patch("kamp_daemon.__main__._PLIST_PATH", plist),
+            patch("kamp_daemon.__main__._service_pid", return_value=None),
         ):
             _cmd_stop()
         assert "already stopped" in capsys.readouterr().out
@@ -118,11 +118,11 @@ class TestCmdStop:
     def test_stops_running_service(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
+        plist = tmp_path / "com.kamp-daemon.plist"
         plist.touch()
         with (
-            patch("tune_shifter.__main__._PLIST_PATH", plist),
-            patch("tune_shifter.__main__._service_pid", return_value=42),
+            patch("kamp_daemon.__main__._PLIST_PATH", plist),
+            patch("kamp_daemon.__main__._service_pid", return_value=42),
             patch("subprocess.run") as mock_run,
         ):
             _cmd_stop()
@@ -134,8 +134,8 @@ class TestCmdStop:
 
 class TestCmdPlay:
     def test_not_installed(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
-        with patch("tune_shifter.__main__._PLIST_PATH", plist):
+        plist = tmp_path / "com.kamp-daemon.plist"
+        with patch("kamp_daemon.__main__._PLIST_PATH", plist):
             _cmd_play()
         out = capsys.readouterr().out
         assert "not installed" in out
@@ -143,11 +143,11 @@ class TestCmdPlay:
     def test_already_running(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
+        plist = tmp_path / "com.kamp-daemon.plist"
         plist.touch()
         with (
-            patch("tune_shifter.__main__._PLIST_PATH", plist),
-            patch("tune_shifter.__main__._service_pid", return_value=42),
+            patch("kamp_daemon.__main__._PLIST_PATH", plist),
+            patch("kamp_daemon.__main__._service_pid", return_value=42),
         ):
             _cmd_play()
         assert "already running" in capsys.readouterr().out
@@ -155,12 +155,12 @@ class TestCmdPlay:
     def test_starts_unregistered_service(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
+        plist = tmp_path / "com.kamp-daemon.plist"
         plist.touch()
         with (
-            patch("tune_shifter.__main__._PLIST_PATH", plist),
-            patch("tune_shifter.__main__._service_pid", return_value=None),
-            patch("tune_shifter.__main__._service_registered", return_value=False),
+            patch("kamp_daemon.__main__._PLIST_PATH", plist),
+            patch("kamp_daemon.__main__._service_pid", return_value=None),
+            patch("kamp_daemon.__main__._service_registered", return_value=False),
             patch("subprocess.run") as mock_run,
         ):
             _cmd_play()
@@ -172,13 +172,13 @@ class TestCmdPlay:
     def test_kickstarts_registered_but_stopped_service(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
+        plist = tmp_path / "com.kamp-daemon.plist"
         plist.touch()
         domain = _launchd_domain()
         with (
-            patch("tune_shifter.__main__._PLIST_PATH", plist),
-            patch("tune_shifter.__main__._service_pid", return_value=None),
-            patch("tune_shifter.__main__._service_registered", return_value=True),
+            patch("kamp_daemon.__main__._PLIST_PATH", plist),
+            patch("kamp_daemon.__main__._service_pid", return_value=None),
+            patch("kamp_daemon.__main__._service_registered", return_value=True),
             patch("subprocess.run") as mock_run,
         ):
             _cmd_play()
@@ -190,22 +190,22 @@ class TestCmdPlay:
 
 class TestCmdStatus:
     def test_not_installed(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
-        with patch("tune_shifter.__main__._PLIST_PATH", plist):
+        plist = tmp_path / "com.kamp-daemon.plist"
+        with patch("kamp_daemon.__main__._PLIST_PATH", plist):
             _cmd_status()
         assert "not installed" in capsys.readouterr().out
 
     def test_stopped_cleanly(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
+        plist = tmp_path / "com.kamp-daemon.plist"
         plist.touch()
         # returncode=1 → not registered; no crash info, no subprocess needed
         with (
-            patch("tune_shifter.__main__._PLIST_PATH", plist),
-            patch("tune_shifter.__main__._service_pid", return_value=None),
+            patch("kamp_daemon.__main__._PLIST_PATH", plist),
+            patch("kamp_daemon.__main__._service_pid", return_value=None),
             patch(
-                "tune_shifter.__main__._launchctl_list",
+                "kamp_daemon.__main__._launchctl_list",
                 return_value=_launchctl_result("", returncode=1),
             ),
         ):
@@ -215,11 +215,11 @@ class TestCmdStatus:
     def test_crashed_shows_exit_code(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
+        plist = tmp_path / "com.kamp-daemon.plist"
         plist.touch()
         with (
-            patch("tune_shifter.__main__._PLIST_PATH", plist),
-            patch("tune_shifter.__main__._service_pid", return_value=None),
+            patch("kamp_daemon.__main__._PLIST_PATH", plist),
+            patch("kamp_daemon.__main__._service_pid", return_value=None),
             patch(
                 "subprocess.run",
                 return_value=_launchctl_result(_launchctl_output(last_exit=256)),
@@ -233,14 +233,14 @@ class TestCmdStatus:
     def test_running_shows_uptime(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        plist = tmp_path / "com.tune-shifter.plist"
+        plist = tmp_path / "com.kamp-daemon.plist"
         plist.touch()
         ps_result = MagicMock()
         ps_result.returncode = 0
         ps_result.stdout = "  1:23:45\n"
         with (
-            patch("tune_shifter.__main__._PLIST_PATH", plist),
-            patch("tune_shifter.__main__._service_pid", return_value=99),
+            patch("kamp_daemon.__main__._PLIST_PATH", plist),
+            patch("kamp_daemon.__main__._service_pid", return_value=99),
             patch("subprocess.run", return_value=ps_result),
         ):
             _cmd_status()

@@ -1,4 +1,4 @@
-"""macOS menu bar application for the tune-shifter daemon.
+"""macOS menu bar application for the kamp-daemon daemon.
 
 Excluded from coverage: requires AppKit/rumps runtime (macOS only).
 Meaningfully unit-testing this module would require mocking all AppKit
@@ -18,7 +18,7 @@ import threading
 _logger = logging.getLogger(__name__)
 
 if platform.system() != "Darwin":
-    raise ImportError("tune_shifter.menu_bar is only available on macOS")
+    raise ImportError("kamp_daemon.menu_bar is only available on macOS")
 
 import rumps  # noqa: E402 — guarded above
 
@@ -26,7 +26,7 @@ from .daemon_core import DaemonCore, _PID_PATH
 
 logger = logging.getLogger(__name__)
 
-_ABOUT_URL = "https://github.com/eightyeighteyes/tune-shifter"
+_ABOUT_URL = "https://github.com/eightyeighteyes/kamp-daemon"
 _SYMBOL_NAME = "music.note.list"  # music.note.square.stack does not exist in SF Symbols
 
 # Sync frequency options: (poll_interval_minutes, display label).
@@ -53,7 +53,7 @@ _FORMAT_LABELS: list[tuple[str, str]] = [
 
 
 class MenuBarApp(rumps.App):
-    """rumps-based menu bar application for the tune-shifter daemon.
+    """rumps-based menu bar application for the kamp-daemon daemon.
 
     Holds a DaemonCore reference and exposes pipeline start/stop and
     Bandcamp sync controls in the macOS menu bar.
@@ -71,7 +71,7 @@ class MenuBarApp(rumps.App):
 
         # quit_button=None — we supply our own Quit item so we can call
         # DaemonCore.shutdown() before exiting the AppKit run loop.
-        super().__init__("tune-shifter", icon=None, quit_button=None)
+        super().__init__("kamp-daemon", icon=None, quit_button=None)
 
         self._core = core
         self._sync_in_progress = False
@@ -331,7 +331,7 @@ class MenuBarApp(rumps.App):
             from AppKit import NSImage
 
             img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
-                _SYMBOL_NAME, "tune-shifter"
+                _SYMBOL_NAME, "kamp-daemon"
             )
             if img:
                 img.setTemplate_(True)  # adapts to light/dark menu bar

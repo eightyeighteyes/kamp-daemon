@@ -1,4 +1,4 @@
-"""Tests for tune_shifter.artwork."""
+"""Tests for kamp_daemon.artwork."""
 
 import io
 import struct
@@ -12,7 +12,7 @@ import requests as req_lib
 
 import mutagen.id3 as id3
 
-from tune_shifter.artwork import (
+from kamp_daemon.artwork import (
     ArtworkError,
     _compress_to_max_bytes,
     _detect_mime,
@@ -83,7 +83,7 @@ class TestFetchAndEmbed:
         listing = _listing_response("http://example.com/cover.jpg")
         mock_get = _mock_requests_get(listing, image_bytes)
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             fetch_and_embed("abc-123", [mp3], min_dimension=1000, max_bytes=5_000_000)
 
         import mutagen.id3 as id3
@@ -99,7 +99,7 @@ class TestFetchAndEmbed:
         listing = _listing_response("http://example.com/small.jpg")
         mock_get = _mock_requests_get(listing, image_bytes)
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             # Should not raise — just log a warning
             fetch_and_embed("abc-123", [mp3], min_dimension=1000, max_bytes=5_000_000)
 
@@ -119,7 +119,7 @@ class TestFetchAndEmbed:
         listing = _listing_response("http://example.com/big.jpg")
         mock_get = _mock_requests_get(listing, image_bytes)
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             # max_bytes=1 is so small that even maximum compression cannot satisfy
             # it — ArtworkError is raised so the pipeline can surface a notification
             with pytest.raises(ArtworkError, match="could not be compressed"):
@@ -129,7 +129,7 @@ class TestFetchAndEmbed:
         import requests as req_lib
 
         with patch(
-            "tune_shifter.artwork.requests.get",
+            "kamp_daemon.artwork.requests.get",
             side_effect=req_lib.ConnectionError("timeout"),
         ):
             with pytest.raises(ArtworkError, match="Could not fetch cover art listing"):
@@ -165,7 +165,7 @@ class TestFetchAndEmbed:
                 resp.content = image_bytes
             return resp
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             fetch_and_embed(
                 "release-mbid",
                 [mp3],
@@ -189,7 +189,7 @@ class TestFetchAndEmbed:
             resp.json.return_value = {"images": []}
             return resp
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             # Should complete without raising
             fetch_and_embed("abc-123", [mp3], min_dimension=1000, max_bytes=1_000_000)
 
@@ -205,8 +205,8 @@ class TestFetchAndEmbed:
         mock_mp4 = MagicMock()
         mock_mp4.tags = mock_tags
 
-        with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
-            with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
+            with patch("kamp_daemon.artwork.requests.get", mock_get):
                 fetch_and_embed(
                     "abc-123", [m4a], min_dimension=1000, max_bytes=5_000_000
                 )
@@ -223,7 +223,7 @@ class TestLocalArtwork:
         cover = tmp_path / "cover.jpg"
         cover.write_bytes(_make_jpeg(1200, 1200))
 
-        with patch("tune_shifter.artwork.requests.get") as mock_get:
+        with patch("kamp_daemon.artwork.requests.get") as mock_get:
             fetch_and_embed(
                 "abc-123",
                 [mp3],
@@ -245,7 +245,7 @@ class TestLocalArtwork:
         cover = tmp_path / "cover.jpg"
         cover.write_bytes(_make_jpeg(500, 500))
 
-        with patch("tune_shifter.artwork.requests.get") as mock_get:
+        with patch("kamp_daemon.artwork.requests.get") as mock_get:
             resp = MagicMock()
             resp.raise_for_status.return_value = None
             resp.json.return_value = {"images": []}
@@ -271,7 +271,7 @@ class TestLocalArtwork:
         cover.write_bytes(large_jpeg)
         max_bytes = len(large_jpeg) // 2  # force re-encoding
 
-        with patch("tune_shifter.artwork.requests.get") as mock_get:
+        with patch("kamp_daemon.artwork.requests.get") as mock_get:
             fetch_and_embed(
                 "abc-123",
                 [mp3],
@@ -303,7 +303,7 @@ class TestLocalArtwork:
         mp3 = tmp_path / "01.mp3"
         _make_mp3(mp3)
 
-        with patch("tune_shifter.artwork.requests.get") as mock_get:
+        with patch("kamp_daemon.artwork.requests.get") as mock_get:
             resp = MagicMock()
             resp.raise_for_status.return_value = None
             resp.json.return_value = {"images": []}
@@ -338,7 +338,7 @@ class TestLocalArtwork:
         )
         tags.save(str(mp3))
 
-        with patch("tune_shifter.artwork.requests.get") as mock_get:
+        with patch("kamp_daemon.artwork.requests.get") as mock_get:
             fetch_and_embed(
                 "abc-123",
                 [mp3],
@@ -371,7 +371,7 @@ class TestLocalArtwork:
         # 02.mp3 has no art at all
         _make_mp3(mp3_bare)
 
-        with patch("tune_shifter.artwork.requests.get") as mock_get:
+        with patch("kamp_daemon.artwork.requests.get") as mock_get:
             resp = MagicMock()
             resp.raise_for_status.return_value = None
             resp.json.return_value = {"images": []}
@@ -440,7 +440,7 @@ class TestFetchCoverEdgeCases:
             resp.raise_for_status.side_effect = http_err
             return resp
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             with pytest.raises(ArtworkError, match="Could not fetch cover art listing"):
                 fetch_and_embed("mbid-x", [], min_dimension=1000, max_bytes=1_000_000)
 
@@ -454,7 +454,7 @@ class TestFetchCoverEdgeCases:
             resp.json.return_value = listing
             return resp
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             # Should complete without downloading or raising
             fetch_and_embed("mbid-x", [], min_dimension=1000, max_bytes=1_000_000)
 
@@ -475,7 +475,7 @@ class TestFetchCoverEdgeCases:
                 resp.raise_for_status.side_effect = req_lib.ConnectionError("gone")
             return resp
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             fetch_and_embed("mbid-x", [], min_dimension=1000, max_bytes=1_000_000)
 
     def test_unreadable_image_dimensions_are_skipped(self) -> None:
@@ -497,7 +497,7 @@ class TestFetchCoverEdgeCases:
                 resp.content = image_bytes
             return resp
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             fetch_and_embed("mbid-x", [], min_dimension=1000, max_bytes=1_000_000)
 
     def test_oversized_caa_image_is_compressed_and_used(self, tmp_path: Path) -> None:
@@ -527,7 +527,7 @@ class TestFetchCoverEdgeCases:
         mp3.write_bytes(b"\xff\xfb" * 64)
         id3.ID3().save(str(mp3))
 
-        with patch("tune_shifter.artwork.requests.get", mock_get):
+        with patch("kamp_daemon.artwork.requests.get", mock_get):
             fetch_and_embed("mbid-x", [mp3], min_dimension=100, max_bytes=max_bytes)
 
         tags = id3.ID3(str(mp3))
@@ -539,7 +539,7 @@ class TestFetchCoverEdgeCases:
 class TestEmbed:
     def test_unsupported_format_logs_warning(self, tmp_path: Path) -> None:
         """_embed logs a warning for unsupported formats."""
-        from tune_shifter.artwork import _embed
+        from kamp_daemon.artwork import _embed
 
         wav = tmp_path / "track.wav"
         wav.write_bytes(b"RIFF")
@@ -547,7 +547,7 @@ class TestEmbed:
 
     def test_embed_flac_writes_picture_block(self, tmp_path: Path) -> None:
         """_embed_flac clears existing pictures and embeds the new image."""
-        from tune_shifter.artwork import _embed_flac
+        from kamp_daemon.artwork import _embed_flac
 
         flac = tmp_path / "01.flac"
         flac.write_bytes(b"fLaC")
@@ -556,8 +556,8 @@ class TestEmbed:
         mock_pic = MagicMock()
 
         with (
-            patch("tune_shifter.artwork.mutagen.flac.FLAC", return_value=mock_flac),
-            patch("tune_shifter.artwork.mutagen.flac.Picture", return_value=mock_pic),
+            patch("kamp_daemon.artwork.mutagen.flac.FLAC", return_value=mock_flac),
+            patch("kamp_daemon.artwork.mutagen.flac.Picture", return_value=mock_pic),
         ):
             _embed_flac(flac, _make_jpeg(600, 600))
 
@@ -578,10 +578,10 @@ class TestEmbed:
 
         with (
             patch(
-                "tune_shifter.artwork.mutagen.oggvorbis.OggVorbis",
+                "kamp_daemon.artwork.mutagen.oggvorbis.OggVorbis",
                 return_value=mock_ogg,
             ),
-            patch("tune_shifter.artwork.mutagen.flac.Picture", return_value=mock_pic),
+            patch("kamp_daemon.artwork.mutagen.flac.Picture", return_value=mock_pic),
         ):
             _embed_ogg(ogg, _make_jpeg(600, 600))
 
@@ -614,7 +614,7 @@ class TestEmbed:
         mock_tags: dict = {}
         mock_mp4.add_tags.side_effect = lambda: setattr(mock_mp4, "tags", mock_tags)
 
-        with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
             m4a = tmp_path / "01.m4a"
             m4a.write_bytes(b"\x00" * 32)
             _embed_m4a(m4a, _make_jpeg(100, 100))
@@ -698,7 +698,7 @@ class TestHasEmbeddedArt:
         mock_mp4 = MagicMock()
         mock_mp4.tags = {"covr": [_make_jpeg(600, 600)]}
 
-        with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
             assert (
                 has_embedded_art(m4a, min_dimension=self._MIN, max_bytes=self._MAX)
                 is True
@@ -712,7 +712,7 @@ class TestHasEmbeddedArt:
         mock_mp4 = MagicMock()
         mock_mp4.tags = {"covr": [_make_jpeg(200, 200)]}
 
-        with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
             assert (
                 has_embedded_art(m4a, min_dimension=self._MIN, max_bytes=self._MAX)
                 is False
@@ -726,7 +726,7 @@ class TestHasEmbeddedArt:
         mock_mp4 = MagicMock()
         mock_mp4.tags = {}
 
-        with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
             assert (
                 has_embedded_art(m4a, min_dimension=self._MIN, max_bytes=self._MAX)
                 is False
@@ -740,7 +740,7 @@ class TestHasEmbeddedArt:
         mock_mp4 = MagicMock()
         mock_mp4.tags = None
 
-        with patch("tune_shifter.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
+        with patch("kamp_daemon.artwork.mutagen.mp4.MP4", return_value=mock_mp4):
             assert (
                 has_embedded_art(m4a, min_dimension=self._MIN, max_bytes=self._MAX)
                 is False
@@ -765,7 +765,7 @@ class TestHasEmbeddedArt:
         mock_flac = MagicMock()
         mock_flac.pictures = [mock_pic]
 
-        with patch("tune_shifter.artwork.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.artwork.mutagen.flac.FLAC", return_value=mock_flac):
             assert (
                 has_embedded_art(flac, min_dimension=self._MIN, max_bytes=self._MAX)
                 is True
@@ -781,7 +781,7 @@ class TestHasEmbeddedArt:
         mock_flac = MagicMock()
         mock_flac.pictures = [mock_pic]
 
-        with patch("tune_shifter.artwork.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.artwork.mutagen.flac.FLAC", return_value=mock_flac):
             assert (
                 has_embedded_art(flac, min_dimension=self._MIN, max_bytes=self._MAX)
                 is False
@@ -795,7 +795,7 @@ class TestHasEmbeddedArt:
         mock_flac = MagicMock()
         mock_flac.pictures = []
 
-        with patch("tune_shifter.artwork.mutagen.flac.FLAC", return_value=mock_flac):
+        with patch("kamp_daemon.artwork.mutagen.flac.FLAC", return_value=mock_flac):
             assert (
                 has_embedded_art(flac, min_dimension=self._MIN, max_bytes=self._MAX)
                 is False
@@ -817,10 +817,10 @@ class TestHasEmbeddedArt:
 
         with (
             patch(
-                "tune_shifter.artwork.mutagen.oggvorbis.OggVorbis",
+                "kamp_daemon.artwork.mutagen.oggvorbis.OggVorbis",
                 return_value=mock_ogg,
             ),
-            patch("tune_shifter.artwork.mutagen.flac.Picture", return_value=mock_pic),
+            patch("kamp_daemon.artwork.mutagen.flac.Picture", return_value=mock_pic),
         ):
             assert (
                 has_embedded_art(ogg, min_dimension=self._MIN, max_bytes=self._MAX)
@@ -843,10 +843,10 @@ class TestHasEmbeddedArt:
 
         with (
             patch(
-                "tune_shifter.artwork.mutagen.oggvorbis.OggVorbis",
+                "kamp_daemon.artwork.mutagen.oggvorbis.OggVorbis",
                 return_value=mock_ogg,
             ),
-            patch("tune_shifter.artwork.mutagen.flac.Picture", return_value=mock_pic),
+            patch("kamp_daemon.artwork.mutagen.flac.Picture", return_value=mock_pic),
         ):
             assert (
                 has_embedded_art(ogg, min_dimension=self._MIN, max_bytes=self._MAX)
@@ -862,7 +862,7 @@ class TestHasEmbeddedArt:
         mock_ogg.tags = {}
 
         with patch(
-            "tune_shifter.artwork.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.artwork.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             assert (
                 has_embedded_art(ogg, min_dimension=self._MIN, max_bytes=self._MAX)
@@ -878,7 +878,7 @@ class TestHasEmbeddedArt:
         mock_ogg.tags = None
 
         with patch(
-            "tune_shifter.artwork.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+            "kamp_daemon.artwork.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
         ):
             assert (
                 has_embedded_art(ogg, min_dimension=self._MIN, max_bytes=self._MAX)
@@ -890,7 +890,7 @@ class TestHasEmbeddedArt:
         mp3 = tmp_path / "01.mp3"
         mp3.write_bytes(b"\xff\xfb" * 64)
 
-        with patch("tune_shifter.artwork.id3.ID3", side_effect=Exception("corrupt")):
+        with patch("kamp_daemon.artwork.id3.ID3", side_effect=Exception("corrupt")):
             assert (
                 has_embedded_art(mp3, min_dimension=self._MIN, max_bytes=self._MAX)
                 is False

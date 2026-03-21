@@ -8,17 +8,17 @@ from unittest.mock import MagicMock, patch
 import mutagen.id3 as id3
 import pytest
 
-from tune_shifter.config import (
+from kamp_daemon.config import (
     ArtworkConfig,
     Config,
     LibraryConfig,
     MusicBrainzConfig,
     PathsConfig,
 )
-from tune_shifter.artwork import ArtworkError
-from tune_shifter.mover import MoveError
-from tune_shifter.pipeline_impl import _quarantine, run
-from tune_shifter.tagger import ReleaseInfo, TrackInfo
+from kamp_daemon.artwork import ArtworkError
+from kamp_daemon.mover import MoveError
+from kamp_daemon.pipeline_impl import _quarantine, run
+from kamp_daemon.tagger import ReleaseInfo, TrackInfo
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -130,7 +130,7 @@ class TestPipelineRun:
         with (
             patch("musicbrainzngs.search_releases", return_value=MB_SEARCH_RESULT),
             patch("musicbrainzngs.get_release_by_id", return_value=MB_RELEASE_DETAIL),
-            patch("tune_shifter.artwork.requests.get") as mock_get,
+            patch("kamp_daemon.artwork.requests.get") as mock_get,
         ):
             # Make artwork fetch return an empty listing (no art — that's fine)
             resp = MagicMock()
@@ -192,7 +192,7 @@ class TestPipelineRun:
             patch("musicbrainzngs.search_releases", return_value=MB_SEARCH_RESULT),
             patch("musicbrainzngs.get_release_by_id", return_value=MB_RELEASE_DETAIL),
             patch(
-                "tune_shifter.pipeline_impl.fetch_and_embed",
+                "kamp_daemon.pipeline_impl.fetch_and_embed",
                 side_effect=ArtworkError("no art"),
             ),
         ):
@@ -216,12 +216,10 @@ class TestPipelineRun:
         tags.save(str(mp3))
 
         with (
+            patch("kamp_daemon.pipeline_impl.tag_directory", return_value=MOCK_RELEASE),
+            patch("kamp_daemon.pipeline_impl.fetch_and_embed"),
             patch(
-                "tune_shifter.pipeline_impl.tag_directory", return_value=MOCK_RELEASE
-            ),
-            patch("tune_shifter.pipeline_impl.fetch_and_embed"),
-            patch(
-                "tune_shifter.pipeline_impl.move_to_library",
+                "kamp_daemon.pipeline_impl.move_to_library",
                 side_effect=MoveError("disk full"),
             ),
         ):
@@ -236,7 +234,7 @@ class TestPipelineRun:
         item.mkdir()
 
         with patch(
-            "tune_shifter.pipeline_impl.shutil.move", side_effect=OSError("no space")
+            "kamp_daemon.pipeline_impl.shutil.move", side_effect=OSError("no space")
         ):
             _quarantine(item, config.paths.staging)
         # Should not raise; errors/ dir was created even if move failed
@@ -278,12 +276,10 @@ class TestOnDirectoryCallback:
         claimed: list[Path] = []
 
         with (
+            patch("kamp_daemon.pipeline_impl.tag_directory", return_value=MOCK_RELEASE),
+            patch("kamp_daemon.pipeline_impl.fetch_and_embed"),
             patch(
-                "tune_shifter.pipeline_impl.tag_directory", return_value=MOCK_RELEASE
-            ),
-            patch("tune_shifter.pipeline_impl.fetch_and_embed"),
-            patch(
-                "tune_shifter.pipeline_impl.move_to_library",
+                "kamp_daemon.pipeline_impl.move_to_library",
                 return_value=[],
             ),
         ):
@@ -330,14 +326,14 @@ class TestSkipAlreadyTagged:
         album_dir, mp3 = self._setup_dir(config)
 
         with (
-            patch("tune_shifter.pipeline_impl.is_tagged", return_value=True),
+            patch("kamp_daemon.pipeline_impl.is_tagged", return_value=True),
             patch(
-                "tune_shifter.pipeline_impl.read_release_mbids",
+                "kamp_daemon.pipeline_impl.read_release_mbids",
                 return_value=("rel-abc", "rg-abc"),
             ),
-            patch("tune_shifter.pipeline_impl.tag_directory") as mock_tag,
-            patch("tune_shifter.pipeline_impl.fetch_and_embed") as mock_art,
-            patch("tune_shifter.pipeline_impl.move_to_library", return_value=[mp3]),
+            patch("kamp_daemon.pipeline_impl.tag_directory") as mock_tag,
+            patch("kamp_daemon.pipeline_impl.fetch_and_embed") as mock_art,
+            patch("kamp_daemon.pipeline_impl.move_to_library", return_value=[mp3]),
         ):
             run(album_dir, config)
 
@@ -351,12 +347,12 @@ class TestSkipAlreadyTagged:
         album_dir, mp3 = self._setup_dir(config)
 
         with (
-            patch("tune_shifter.pipeline_impl.is_tagged", return_value=False),
+            patch("kamp_daemon.pipeline_impl.is_tagged", return_value=False),
             patch(
-                "tune_shifter.pipeline_impl.tag_directory", return_value=MOCK_RELEASE
+                "kamp_daemon.pipeline_impl.tag_directory", return_value=MOCK_RELEASE
             ) as mock_tag,
-            patch("tune_shifter.pipeline_impl.fetch_and_embed") as mock_art,
-            patch("tune_shifter.pipeline_impl.move_to_library", return_value=[mp3]),
+            patch("kamp_daemon.pipeline_impl.fetch_and_embed") as mock_art,
+            patch("kamp_daemon.pipeline_impl.move_to_library", return_value=[mp3]),
         ):
             run(album_dir, config)
 
@@ -384,15 +380,15 @@ class TestSkipAlreadyTagged:
 
         with (
             patch(
-                "tune_shifter.pipeline_impl.is_tagged",
+                "kamp_daemon.pipeline_impl.is_tagged",
                 side_effect=is_tagged_side_effect,
             ),
             patch(
-                "tune_shifter.pipeline_impl.tag_directory", return_value=MOCK_RELEASE
+                "kamp_daemon.pipeline_impl.tag_directory", return_value=MOCK_RELEASE
             ) as mock_tag,
-            patch("tune_shifter.pipeline_impl.fetch_and_embed"),
+            patch("kamp_daemon.pipeline_impl.fetch_and_embed"),
             patch(
-                "tune_shifter.pipeline_impl.move_to_library",
+                "kamp_daemon.pipeline_impl.move_to_library",
                 return_value=[mp3_a, mp3_b],
             ),
         ):
@@ -422,11 +418,9 @@ class TestStageCallback:
         calls: list[str] = []
 
         with (
-            patch(
-                "tune_shifter.pipeline_impl.tag_directory", return_value=MOCK_RELEASE
-            ),
-            patch("tune_shifter.pipeline_impl.fetch_and_embed"),
-            patch("tune_shifter.pipeline_impl.move_to_library", return_value=[]),
+            patch("kamp_daemon.pipeline_impl.tag_directory", return_value=MOCK_RELEASE),
+            patch("kamp_daemon.pipeline_impl.fetch_and_embed"),
+            patch("kamp_daemon.pipeline_impl.move_to_library", return_value=[]),
         ):
             run(album_dir, config, stage_callback=calls.append)
 

@@ -1,17 +1,17 @@
-# This formula lives in the homebrew-tune-shifter tap repo (Formula/tune-shifter.rb).
+# This formula lives in the homebrew-kamp-daemon tap repo (Formula/kamp-daemon.rb).
 # A copy is kept here as source of truth. The release workflow patches `url` and
 # `sha256` in the tap repo automatically on each tagged release.
 #
 # One-time tap setup:
-#   brew tap GITHUB_USERNAME/tune-shifter
-#   brew install tune-shifter
+#   brew tap GITHUB_USERNAME/kamp-daemon
+#   brew install kamp-daemon
 #
-# (Requires a GitHub repo named `homebrew-tune-shifter` containing this file.)
+# (Requires a GitHub repo named `homebrew-kamp-daemon` containing this file.)
 
-class TuneShifter < Formula
+class KampDaemon < Formula
   desc "Automated audio library ingest daemon for Bandcamp downloads"
-  homepage "https://github.com/eightyeighteyes/tune-shifter"
-  url "https://github.com/eightyeighteyes/tune-shifter/releases/download/v0.1.0/tune_shifter-0.1.0.tar.gz"
+  homepage "https://github.com/eightyeighteyes/kamp-daemon"
+  url "https://github.com/eightyeighteyes/kamp-daemon/releases/download/v0.1.0/kamp_daemon-0.1.0.tar.gz"
   sha256 "PLACEHOLDER"
 
   license "GPL-3.0-only"
@@ -27,11 +27,11 @@ class TuneShifter < Formula
     system venv/"bin/pip", "install", "--upgrade", "pip"
     system venv/"bin/pip", "install", buildpath
 
-    # Compile a native launcher binary so macOS sets p_comm to "tune-shifter"
+    # Compile a native launcher binary so macOS sets p_comm to "kamp-daemon"
     # at exec time.  A symlink to the Python shebang script would leave p_comm
     # as "python3.11", which shows up in Activity Monitor.  The compiled binary
     # embeds Python (Py_SetProgramName + Py_Main) and stays alive as the
-    # top-level process, so the kernel-level name is always "tune-shifter".
+    # top-level process, so the kernel-level name is always "kamp-daemon".
     venv_python = venv/"bin/python3"
     cflags  = Utils.safe_popen_read(venv_python, "-c",
                 "import sysconfig; print(sysconfig.get_config_var('CFLAGS') or '')").chomp
@@ -52,15 +52,15 @@ class TuneShifter < Formula
            "-L#{lib_dir}", "-lpython#{py_ver}",
            *ldflags.split,
            "-Wno-deprecated-declarations",
-           "-o", buildpath/"tune-shifter"
-    bin.install buildpath/"tune-shifter"
+           "-o", buildpath/"kamp-daemon"
+    bin.install buildpath/"kamp-daemon"
 
-    zsh_completion.install "completions/_tune-shifter"
-    (share/"tune-shifter").install "USAGE.md"
+    zsh_completion.install "completions/_kamp-daemon"
+    (share/"kamp-daemon").install "USAGE.md"
   end
 
   def caveats
-    usage = (share/"tune-shifter"/"USAGE.md").read
+    usage = (share/"kamp-daemon"/"USAGE.md").read
     <<~EOS
       #{usage}
       Bandcamp auto-download requires Playwright browser binaries.
@@ -72,6 +72,6 @@ class TuneShifter < Formula
   end
 
   test do
-    system bin/"tune-shifter", "--help"
+    system bin/"kamp-daemon", "--help"
   end
 end
