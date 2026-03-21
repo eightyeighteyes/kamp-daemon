@@ -197,13 +197,20 @@ class Syncer:
         self.start()
         logger.info("Syncer resumed")
 
-    def sync_once(self) -> None:
+    def sync_once(self, *, skip_auto_mark: bool = False) -> None:
         """Download any new purchases in an isolated subprocess.
 
         Playwright and bandcamp modules are loaded only inside the child
         process; when it exits the OS reclaims all of their memory.
         Log records emitted inside the subprocess are replayed into the
         parent's log stream after the process exits.
+
+        If no state file exists and ``skip_auto_mark`` is False, the entire
+        collection is marked as already synced before downloading.  This
+        prevents re-downloading the full collection on a first run where the
+        user already has their Bandcamp purchases locally.  Pass
+        ``skip_auto_mark=True`` (e.g. via ``tune-shifter sync --download-all``)
+        to bypass this behaviour and download everything from scratch.
         """
         bc = self._config.bandcamp
         if bc is None:
@@ -211,6 +218,14 @@ class Syncer:
             return
 
         state_file = _state_dir() / "bandcamp_state.json"
+
+        if not skip_auto_mark and not state_file.exists():
+            logger.info(
+                "No sync state found — marking existing collection as already synced "
+                "before first download.  Use --download-all to re-download everything."
+            )
+            self.mark_synced()
+
         logger.info("Starting Bandcamp sync…")
         # Signal "sync in progress" immediately — the subprocess spends most
         # of its time logging in and fetching the collection before any per-item
@@ -279,7 +294,14 @@ class Syncer:
             _mark_synced_worker,
             (bc, state_file),
         )
-        proc.join(timeout=30)
+
+        # Drain log_q while the subprocess runs — same pattern as sync_once().
+        # Without draining, a verbose subprocess can fill the queue and block
+        # on put(), preventing it from ever writing its result.
+        while proc.is_alive():  # pragma: no cover
+            _replay_log_queue(log_q)
+
+        proc.join(timeout=10)
         _replay_log_queue(log_q)
 
         try:

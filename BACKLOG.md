@@ -1,4 +1,4 @@
-# 0.17.0
+# 0.18.0
 
 ## Improve Tagging Quality: Per-track lookup using existing tags (light approach)
 *Side* — instead of picking a single MusicBrainz release for the whole album based on the folder name, look up each track individually using its existing `artist`, `title`, and `album` tags, then reconcile to the most common release. Fixes track-count mismatches (e.g. 17-track vs 18-track editions) that cause title offsets. Known mis-tagged albums: De La Soul "Stakes is High", "3 Feet High and Rising" (MBID `0cb69f0f`), Converge "Love is Not Enough" (MBID `0fec265d`). See AcoustID item below for the heavier follow-on approach.

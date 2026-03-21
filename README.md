@@ -226,15 +226,17 @@ tune-shifter sync
 
 Downloads any purchases not yet in your local state, places them in staging, and exits. The watcher (if running) picks them up automatically.
 
-### Bootstrap: mark your existing collection as synced
+### First sync behaviour
 
-If you've already downloaded everything in your Bandcamp collection manually, run this once before your first sync to prevent re-downloading it all:
+On the first sync (no state file yet), tune-shifter assumes you already have your Bandcamp purchases in your local library and marks your entire collection as synced before downloading. Only purchases made after that point will be downloaded.
+
+To override this and re-download your entire collection from scratch:
 
 ```bash
-tune-shifter sync --mark-synced
+tune-shifter sync --download-all
 ```
 
-This fetches your full collection and records every item ID in the state file without downloading any files. Subsequent `sync` runs (and the daemon) will only pick up purchases made after this point.
+This clears the local sync state and downloads everything.
 
 ### Log out of Bandcamp
 

@@ -137,6 +137,7 @@ class TestSyncOnce:
 
     def test_logs_downloaded_count(self, tmp_path: Path) -> None:
         """sync_once() reports the number of downloaded files."""
+        (tmp_path / "bandcamp_state.json").write_text("{}")
         fake_paths = [tmp_path / "a.mp3", tmp_path / "b.mp3"]
         with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=fake_paths):
             with patch("tune_shifter.syncer._spawn_worker", side_effect=_inline_worker):
@@ -146,6 +147,7 @@ class TestSyncOnce:
 
     def test_logs_nothing_new(self, tmp_path: Path) -> None:
         """sync_once() handles an empty result without error."""
+        (tmp_path / "bandcamp_state.json").write_text("{}")
         with patch("tune_shifter.bandcamp.sync_new_purchases", return_value=[]):
             with patch("tune_shifter.syncer._spawn_worker", side_effect=_inline_worker):
                 with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
@@ -266,6 +268,7 @@ class TestStatusCallback:
             result_q.put(("ok", []))
             return _FakeProc(), status_q, log_q, result_q
 
+        (tmp_path / "bandcamp_state.json").write_text("{}")
         with patch(
             "tune_shifter.syncer._spawn_worker", side_effect=_worker_with_two_messages
         ):
@@ -301,6 +304,7 @@ class TestLazyImport:
         """
         import sys
 
+        (tmp_path / "bandcamp_state.json").write_text("{}")
         sys.modules.pop("tune_shifter.bandcamp", None)
         syncer = Syncer(_make_config(tmp_path))
         with patch("tune_shifter.syncer._spawn_worker", side_effect=_noop_worker):
@@ -312,6 +316,7 @@ class TestLazyImport:
 class TestWorkerExceptions:
     def test_sync_worker_exception_propagates(self, tmp_path: Path) -> None:
         """Exceptions raised inside the sync worker are re-raised by sync_once()."""
+        (tmp_path / "bandcamp_state.json").write_text("{}")
         with patch(
             "tune_shifter.bandcamp.sync_new_purchases",
             side_effect=RuntimeError("network failure"),
@@ -349,6 +354,7 @@ class TestWorkerExceptions:
             result_q.put(("error", "boom"))
             return _FakeProc(), status_q, log_q, result_q
 
+        (tmp_path / "bandcamp_state.json").write_text("{}")
         with patch(
             "tune_shifter.syncer._spawn_worker",
             side_effect=_failing_then_stopping_worker,
@@ -391,6 +397,7 @@ class TestLogReplay:
             result_q.put(("ok", []))
             return _FakeProc(), status_q, log_q, result_q
 
+        (tmp_path / "bandcamp_state.json").write_text("{}")
         handler = logging.handlers.MemoryHandler(
             capacity=100, flushLevel=logging.CRITICAL
         )
@@ -407,6 +414,79 @@ class TestLogReplay:
             logging.getLogger("tune_shifter.bandcamp").removeHandler(handler)
 
         assert any(r.getMessage() == "Fetched fan_id=12345" for r in handler.buffer)
+
+
+class TestAutoMarkOnFirstSync:
+    def test_auto_marks_when_no_state_file(self, tmp_path: Path) -> None:
+        """sync_once() calls mark_synced() first when the state file is absent."""
+        call_order: list[str] = []
+
+        def _recording_noop_worker(
+            target: Any, args: tuple[Any, ...]
+        ) -> tuple[Any, Any, Any, Any]:
+            call_order.append(target.__name__)
+            status_q: _queue_module.Queue[str] = _queue_module.Queue()
+            log_q: _queue_module.Queue[Any] = _queue_module.Queue()
+            result_q: _queue_module.Queue[Any] = _queue_module.Queue()
+            result_q.put(("ok", []))
+            return _FakeProc(), status_q, log_q, result_q
+
+        with patch(
+            "tune_shifter.syncer._spawn_worker", side_effect=_recording_noop_worker
+        ):
+            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+                syncer = Syncer(_make_config(tmp_path))
+                syncer.sync_once()
+
+        # mark-synced worker runs first, then sync worker
+        assert call_order == ["_mark_synced_worker", "_sync_worker"]
+
+    def test_no_auto_mark_when_state_file_exists(self, tmp_path: Path) -> None:
+        """sync_once() skips auto-mark when the state file already exists."""
+        (tmp_path / "bandcamp_state.json").write_text("{}")
+        call_order: list[str] = []
+
+        def _recording_noop_worker(
+            target: Any, args: tuple[Any, ...]
+        ) -> tuple[Any, Any, Any, Any]:
+            call_order.append(target.__name__)
+            status_q: _queue_module.Queue[str] = _queue_module.Queue()
+            log_q: _queue_module.Queue[Any] = _queue_module.Queue()
+            result_q: _queue_module.Queue[Any] = _queue_module.Queue()
+            result_q.put(("ok", []))
+            return _FakeProc(), status_q, log_q, result_q
+
+        with patch(
+            "tune_shifter.syncer._spawn_worker", side_effect=_recording_noop_worker
+        ):
+            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+                syncer = Syncer(_make_config(tmp_path))
+                syncer.sync_once()
+
+        assert call_order == ["_sync_worker"]
+
+    def test_skip_auto_mark_bypasses_mark_synced(self, tmp_path: Path) -> None:
+        """sync_once(skip_auto_mark=True) skips auto-mark even without a state file."""
+        call_order: list[str] = []
+
+        def _recording_noop_worker(
+            target: Any, args: tuple[Any, ...]
+        ) -> tuple[Any, Any, Any, Any]:
+            call_order.append(target.__name__)
+            status_q: _queue_module.Queue[str] = _queue_module.Queue()
+            log_q: _queue_module.Queue[Any] = _queue_module.Queue()
+            result_q: _queue_module.Queue[Any] = _queue_module.Queue()
+            result_q.put(("ok", []))
+            return _FakeProc(), status_q, log_q, result_q
+
+        with patch(
+            "tune_shifter.syncer._spawn_worker", side_effect=_recording_noop_worker
+        ):
+            with patch("tune_shifter.syncer._state_dir", return_value=tmp_path):
+                syncer = Syncer(_make_config(tmp_path))
+                syncer.sync_once(skip_auto_mark=True)
+
+        assert call_order == ["_sync_worker"]
 
 
 class TestMarkSynced:

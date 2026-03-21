@@ -118,13 +118,13 @@ def main() -> None:
         help="One-shot: download any new Bandcamp purchases to staging, then exit.",
     )
     sync_parser.add_argument(
-        "--mark-synced",
+        "--download-all",
         action="store_true",
         help=(
-            "Record your entire Bandcamp collection as already downloaded "
-            "without fetching any files. Run this once if you have already "
-            "downloaded everything manually, so future syncs only pick up "
-            "new purchases."
+            "Clear the local sync state and re-download your entire Bandcamp "
+            "collection.  By default, tune-shifter assumes you already have "
+            "your collection on first sync and only downloads new purchases "
+            "going forward."
         ),
     )
 
@@ -251,7 +251,9 @@ def main() -> None:
     )
 
     if command == "sync":
-        _cmd_sync(config, args.config, mark_synced=getattr(args, "mark_synced", False))
+        _cmd_sync(
+            config, args.config, download_all=getattr(args, "download_all", False)
+        )
     else:
         daemon_command = getattr(args, "daemon_command", None)
         if daemon_command == "pause":
@@ -292,23 +294,12 @@ def _cmd_config(
         config_parser.print_help()
 
 
-def _yn_prompt(question: str, default: bool = True) -> bool:
-    """Print a yes/no prompt and return the user's answer as a bool."""
-    hint = "[Y/n]" if default else "[y/N]"
-    try:
-        raw = input(f"  {question} {hint}: ").strip().lower()
-    except EOFError:
-        return default
-    if not raw:
-        return default
-    return raw.startswith("y")
-
-
 def _cmd_logout() -> None:
     from .syncer import logout
 
     logout()
     print("Logged out. The next sync will require re-authentication.")
+
 
 
 _NOTIFY_SUBTITLES: dict[str, str] = {
@@ -428,12 +419,10 @@ def _write_test_mp3(path: Path, *, with_mbid: bool = False) -> None:
         tags.save(str(path))
 
 
-def _cmd_sync(config: Config, config_path: Path, mark_synced: bool = False) -> None:
-    first_run = False
+def _cmd_sync(config: Config, config_path: Path, download_all: bool = False) -> None:
     if config.bandcamp is None:
         if sys.stdin.isatty():
             config = Config.bandcamp_setup(config_path)
-            first_run = True
         else:
             print(
                 f"No [bandcamp] section in {config_path}. "
@@ -442,17 +431,15 @@ def _cmd_sync(config: Config, config_path: Path, mark_synced: bool = False) -> N
             )
             sys.exit(1)
 
-    if first_run:
-        # Ask whether the collection is already downloaded so we don't re-download
-        # everything for users who have already fetched their Bandcamp purchases manually.
-        # Default to 'y' — most first-time users have prior downloads.
-        mark_synced = _yn_prompt(
-            "Have you already downloaded your Bandcamp collection?", default=True
-        )
-
     syncer = Syncer(config)
-    if mark_synced:
-        syncer.mark_synced()
+    if download_all:
+        # Clear state so sync_once() downloads everything, bypassing the
+        # first-run auto-mark that would otherwise skip all existing purchases.
+        state_file = _state_dir() / "bandcamp_state.json"
+        if state_file.exists():
+            state_file.unlink()
+            print("Sync state cleared — will re-download entire collection.")
+        syncer.sync_once(skip_auto_mark=True)
     else:
         syncer.sync_once()
 
