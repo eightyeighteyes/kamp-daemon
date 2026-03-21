@@ -13,8 +13,10 @@ from tune_shifter.tagger import (
     ReleaseInfo,
     TaggingError,
     TrackInfo,
+    _lookup_release_by_recordings,
     _parse_release,
     _read_existing_metadata,
+    _read_track_metadata,
     _search_release,
     _write_flac_tags,
     _write_ogg_tags,
@@ -112,13 +114,19 @@ SAMPLE_RELEASE_DETAIL: dict[str, Any] = {
 
 
 def _make_mp3(
-    path: Path, artist: str = "Old Artist", album: str = "Old Album", track: int = 1
+    path: Path,
+    artist: str = "Old Artist",
+    album: str = "Old Album",
+    track: int = 1,
+    title: str = "",
 ) -> None:
     """Write a minimal ID3-tagged MP3 stub."""
     tags = id3.ID3()
     tags["TPE1"] = id3.TPE1(encoding=3, text=artist)
     tags["TALB"] = id3.TALB(encoding=3, text=album)
     tags["TRCK"] = id3.TRCK(encoding=3, text=str(track))
+    if title:
+        tags["TIT2"] = id3.TIT2(encoding=3, text=title)
     # Write tags to a file that looks like an MP3 (just needs the tag header)
     path.write_bytes(b"\xff\xfb" * 64)  # minimal fake MP3 frame
     tags.save(str(path))
@@ -1133,3 +1141,151 @@ class TestTagDirectoryOgg:
         assert tags["ALBUM"] == ["Album"]
         assert tags["MUSICBRAINZ_ALBUMID"] == ["abc-123"]
         mock_ogg.save.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Per-track lookup fixtures and tests
+# ---------------------------------------------------------------------------
+
+SAMPLE_RECORDING_RESULT: dict[str, Any] = {
+    "recording-list": [
+        {
+            "id": "rec-abc",
+            "title": "First Track",
+            "release-list": [
+                {"id": "abc-123"},
+                {"id": "other-release"},
+            ],
+        }
+    ]
+}
+
+
+class TestReadTrackMetadata:
+    def test_mp3_reads_artist_title_album(self, tmp_path: Path) -> None:
+        """_read_track_metadata returns (artist, title, album) from an MP3."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3, artist="De La Soul", album="Stakes Is High", title="Supa Emcees")
+
+        artist, title, album = _read_track_metadata(mp3)
+
+        assert artist == "De La Soul"
+        assert title == "Supa Emcees"
+        assert album == "Stakes Is High"
+
+    def test_mp3_missing_title_returns_empty_title(self, tmp_path: Path) -> None:
+        """_read_track_metadata returns empty title when TIT2 is absent."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3, artist="Artist", album="Album")  # no title
+
+        artist, title, album = _read_track_metadata(mp3)
+
+        assert artist == "Artist"
+        assert title == ""
+        assert album == "Album"
+
+    def test_unreadable_file_returns_empty_tuple(self, tmp_path: Path) -> None:
+        """_read_track_metadata returns ('', '', '') on any read error."""
+        mp3 = tmp_path / "01.mp3"
+        mp3.write_bytes(b"\xff\xfb" * 64)
+
+        with patch("tune_shifter.tagger.id3.ID3", side_effect=Exception("corrupt")):
+            artist, title, album = _read_track_metadata(mp3)
+
+        assert artist == ""
+        assert title == ""
+        assert album == ""
+
+
+class TestLookupReleaseByRecordings:
+    def test_majority_release_wins(self, tmp_path: Path) -> None:
+        """The release MBID appearing most across per-track results is selected."""
+        mp3_1 = tmp_path / "01.mp3"
+        mp3_2 = tmp_path / "02.mp3"
+        mp3_3 = tmp_path / "03.mp3"
+        _make_mp3(mp3_1, title="Track One")
+        _make_mp3(mp3_2, title="Track Two")
+        _make_mp3(mp3_3, title="Track Three")
+
+        # Tracks 1 and 2 vote only for "abc-123"; track 3 votes only for "other-release"
+        recording_majority: dict[str, Any] = {
+            "recording-list": [
+                {"id": "rec-1", "title": "Track", "release-list": [{"id": "abc-123"}]}
+            ]
+        }
+        recording_minority: dict[str, Any] = {
+            "recording-list": [
+                {
+                    "id": "rec-3",
+                    "title": "Track",
+                    "release-list": [{"id": "other-release"}],
+                }
+            ]
+        }
+
+        call_count = 0
+
+        def _mock_search(**kwargs: Any) -> dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+            return recording_majority if call_count <= 2 else recording_minority
+
+        with patch("musicbrainzngs.search_recordings", side_effect=_mock_search):
+            with patch(
+                "musicbrainzngs.get_release_by_id",
+                return_value=SAMPLE_RELEASE_DETAIL,
+            ) as mock_get:
+                result = _lookup_release_by_recordings([mp3_1, mp3_2, mp3_3])
+
+        mock_get.assert_called_once_with(
+            "abc-123",
+            includes=["artists", "recordings", "release-groups", "labels"],
+        )
+        assert result.mbid == "abc-123"
+
+    def test_no_titles_raises_tagging_error(self, tmp_path: Path) -> None:
+        """TaggingError is raised when no files have title tags."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3)  # no title
+
+        with pytest.raises(TaggingError, match="no per-track"):
+            _lookup_release_by_recordings([mp3])
+
+
+class TestTagDirectoryPerTrackPath:
+    def test_uses_per_track_path_when_titles_present(self, tmp_path: Path) -> None:
+        """tag_directory calls search_recordings and skips search_releases when tracks have titles."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3, artist="De La Soul", album="Stakes Is High", title="Supa Emcees")
+
+        with patch(
+            "musicbrainzngs.search_recordings",
+            return_value=SAMPLE_RECORDING_RESULT,
+        ) as mock_rec:
+            with patch(
+                "musicbrainzngs.get_release_by_id",
+                return_value=SAMPLE_RELEASE_DETAIL,
+            ):
+                with patch("musicbrainzngs.search_releases") as mock_search:
+                    release = tag_directory(tmp_path, [mp3])
+
+        mock_rec.assert_called_once()
+        mock_search.assert_not_called()
+        assert release.mbid == "abc-123"
+
+    def test_falls_back_to_album_search_when_no_titles(self, tmp_path: Path) -> None:
+        """tag_directory falls back to search_releases when no track has a title tag."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3)  # no title tag
+
+        with patch(
+            "musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE
+        ) as mock_search:
+            with patch(
+                "musicbrainzngs.get_release_by_id",
+                return_value=SAMPLE_RELEASE_DETAIL,
+            ):
+                release = tag_directory(tmp_path, [mp3])
+
+        mock_search.assert_called_once()
+        assert release.mbid == "abc-123"

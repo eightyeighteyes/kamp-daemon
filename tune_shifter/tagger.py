@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -161,17 +162,35 @@ def tag_directory(
 ) -> ReleaseInfo:
     """Look up the release on MusicBrainz and write tags to all audio files.
 
+    First attempts a per-track lookup: each file's existing artist/title/album tags
+    are used to query MusicBrainz recordings, and the most common release MBID across
+    all tracks is selected.  This resolves track-count mismatches (e.g. 17-track vs
+    18-track editions) that cause title offsets when only the album name is matched.
+
+    Falls back to an album-level search (artist + album from the first file) when no
+    tracks have title tags or the per-track queries yield no results.
+
     Returns the ReleaseInfo (including MBID) for the artwork step.
     Raises TaggingError on lookup failure or no audio files.
     """
     if not audio_files:
         raise TaggingError(f"No audio files found in {directory}")
 
-    artist, album = _read_existing_metadata(audio_files[0])
-    logger.info("Searching MusicBrainz for artist=%r album=%r", artist, album)
-
-    release = _search_release(artist, album)
-    logger.info("Matched release: %r (mbid=%s)", release.title, release.mbid)
+    try:
+        release = _lookup_release_by_recordings(audio_files)
+        logger.info(
+            "Per-track reconciliation matched: %r (mbid=%s)",
+            release.title,
+            release.mbid,
+        )
+    except TaggingError as exc:
+        logger.debug(
+            "Per-track lookup failed (%s); falling back to album-level search", exc
+        )
+        artist, album = _read_existing_metadata(audio_files[0])
+        logger.info("Searching MusicBrainz for artist=%r album=%r", artist, album)
+        release = _search_release(artist, album)
+        logger.info("Matched release: %r (mbid=%s)", release.title, release.mbid)
 
     for audio_file in audio_files:
         _write_tags(audio_file, release)
@@ -235,6 +254,118 @@ def _read_existing_metadata(path: Path) -> tuple[str, str]:
         )
 
     return artist, album
+
+
+def _read_track_metadata(path: Path) -> tuple[str, str, str]:
+    """Extract artist, title, and album from existing file tags.
+
+    Returns ("", "", "") on any read error so callers can safely skip the file.
+    """
+    artist = ""
+    title = ""
+    album = ""
+
+    try:
+        suffix = path.suffix.lower()
+        if suffix == ".mp3":
+            mp3_tags = id3.ID3(str(path))
+            tpe1 = mp3_tags.get("TPE1")
+            tit2 = mp3_tags.get("TIT2")
+            talb = mp3_tags.get("TALB")
+            artist = str(tpe1) if tpe1 else ""
+            title = str(tit2) if tit2 else ""
+            album = str(talb) if talb else ""
+        elif suffix == ".m4a":
+            mp4 = mutagen.mp4.MP4(str(path))
+            if mp4.tags is not None:
+                art_vals = mp4.tags.get("\xa9ART")
+                nam_vals = mp4.tags.get("\xa9nam")
+                alb_vals = mp4.tags.get("\xa9alb")
+                artist = str(art_vals[0]) if art_vals else ""
+                title = str(nam_vals[0]) if nam_vals else ""
+                album = str(alb_vals[0]) if alb_vals else ""
+        elif suffix == ".flac":
+            flac = mutagen.flac.FLAC(str(path))
+            if flac.tags is not None:
+                art_vals = flac.tags.get("ARTIST")
+                tit_vals = flac.tags.get("TITLE")
+                alb_vals = flac.tags.get("ALBUM")
+                artist = art_vals[0] if art_vals else ""
+                title = tit_vals[0] if tit_vals else ""
+                album = alb_vals[0] if alb_vals else ""
+        elif suffix == ".ogg":
+            ogg = mutagen.oggvorbis.OggVorbis(str(path))
+            if ogg.tags is not None:
+                art_vals = ogg.tags.get("ARTIST")
+                tit_vals = ogg.tags.get("TITLE")
+                alb_vals = ogg.tags.get("ALBUM")
+                artist = art_vals[0] if art_vals else ""
+                title = tit_vals[0] if tit_vals else ""
+                album = alb_vals[0] if alb_vals else ""
+    except Exception as exc:
+        logger.debug("Could not read track metadata from %s: %s", path, exc)
+        return "", "", ""
+
+    return artist, title, album
+
+
+def _lookup_release_by_recordings(audio_files: list[Path]) -> ReleaseInfo:
+    """Look up each track via MusicBrainz recordings search, then reconcile to the
+    most common release MBID across all tracks.
+
+    Raises TaggingError if no tracks have title tags or no recording results were found.
+    """
+    votes: Counter[str] = Counter()
+
+    for path in audio_files:
+        artist, title, album = _read_track_metadata(path)
+        if not title:
+            logger.debug("Skipping per-track vote for %s: no title tag", path)
+            continue
+
+        logger.debug(
+            "Per-track MB search: recording=%r artist=%r release=%r",
+            title,
+            artist,
+            album,
+        )
+        result = _mb_call(
+            musicbrainzngs.search_recordings,
+            recording=title,
+            artist=artist,
+            release=album,
+            limit=3,
+        )
+        recordings = result.get("recording-list", [])
+        if not recordings:
+            logger.debug("No recording results for %r by %r", title, artist)
+            continue
+
+        # Use only the top result; accumulate votes for every release it appears on
+        top = recordings[0]
+        for rel in top.get("release-list", []):
+            rel_id = rel.get("id", "")
+            if rel_id:
+                votes[rel_id] += 1
+
+    if not votes:
+        raise TaggingError(
+            "no per-track recording results found — falling back to album-level search"
+        )
+
+    winning_mbid = votes.most_common(1)[0][0]
+    logger.debug(
+        "Per-track reconciliation: winning release=%s (votes=%s)",
+        winning_mbid,
+        dict(votes.most_common(5)),
+    )
+
+    detail = _mb_call(
+        musicbrainzngs.get_release_by_id,
+        winning_mbid,
+        includes=["artists", "recordings", "release-groups", "labels"],
+    )
+    return _parse_release(detail["release"])
 
 
 def _mb_call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
