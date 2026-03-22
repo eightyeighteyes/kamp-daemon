@@ -472,7 +472,10 @@ def _parse_release(raw: dict[str, Any]) -> ReleaseInfo:
     artist_credit = raw.get("artist-credit", [])
     credits = [c for c in artist_credit if isinstance(c, dict)]
     artists = [c.get("name") or c.get("artist", {}).get("name", "") for c in credits]
-    artist = " ".join(a for a in artists if a)
+    # joinphrase is the connector appended after each artist (e.g. " & ", " feat. ")
+    artist = "".join(
+        name + c.get("joinphrase", "") for c, name in zip(credits, artists) if name
+    ).strip()
     album_artist = artist
     artist_sort = " ".join(c.get("artist", {}).get("sort-name", "") for c in credits)
     album_artist_sort = artist_sort
