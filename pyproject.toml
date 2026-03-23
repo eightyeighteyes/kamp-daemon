@@ -71,9 +71,10 @@ module = ["musicbrainzngs", "musicbrainzngs.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# __main__ uses mutagen for _write_test_mp3 and subclasses rumps.App in _cmd_test_notify
+# __main__ uses mutagen for _write_test_mp3 and subclasses rumps.App in _cmd_test_notify;
+# setproctitle ships no stubs so import-not-found is suppressed here as well
 module = ["kamp_daemon.__main__"]
-disable_error_code = ["import-untyped", "no-untyped-call", "attr-defined", "misc", "untyped-decorator"]
+disable_error_code = ["import-untyped", "import-not-found", "no-untyped-call", "attr-defined", "misc", "untyped-decorator"]
 
 [[tool.mypy.overrides]]
 # mutagen has partial stubs that don't cover ID3 frame classes, MP4 methods, or
