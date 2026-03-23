@@ -1483,3 +1483,67 @@ class TestWriteAcoustidId:
         tags = id3.ID3(str(mp3))
         assert tags.get("TXXX:Acoustid Id") is not None
         assert str(tags["TXXX:Acoustid Id"]) == "fp-uuid-1"
+
+    def test_writes_acoustid_id_to_flac(self, tmp_path: Path) -> None:
+        flac = tmp_path / "track.flac"
+        flac.write_bytes(b"fLaC")
+        tags: dict[str, Any] = {}
+        mock_flac = MagicMock()
+        mock_flac.tags = tags
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+            _write_acoustid_id(flac, "fp-uuid-2")
+        assert tags["ACOUSTID_ID"] == ["fp-uuid-2"]
+        mock_flac.save.assert_called_once()
+
+    def test_writes_acoustid_id_to_ogg(self, tmp_path: Path) -> None:
+        ogg = tmp_path / "track.ogg"
+        ogg.write_bytes(b"OggS")
+        tags: dict[str, Any] = {}
+        mock_ogg = MagicMock()
+        mock_ogg.tags = tags
+        with patch(
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+        ):
+            _write_acoustid_id(ogg, "fp-uuid-3")
+        assert tags["ACOUSTID_ID"] == ["fp-uuid-3"]
+        mock_ogg.save.assert_called_once()
+
+    def test_writes_acoustid_id_to_m4a(self, tmp_path: Path) -> None:
+        m4a = tmp_path / "track.m4a"
+        m4a.write_bytes(b"\x00" * 32)
+        tags: dict[str, Any] = {}
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = tags
+        with patch("kamp_daemon.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+            _write_acoustid_id(m4a, "fp-uuid-4")
+        assert b"fp-uuid-4" in tags["----:com.apple.iTunes:Acoustid Id"][0]
+        mock_mp4.save.assert_called_once()
+
+    def test_skips_flac_with_no_tags(self, tmp_path: Path) -> None:
+        flac = tmp_path / "track.flac"
+        flac.write_bytes(b"fLaC")
+        mock_flac = MagicMock()
+        mock_flac.tags = None
+        with patch("kamp_daemon.tagger.mutagen.flac.FLAC", return_value=mock_flac):
+            _write_acoustid_id(flac, "fp-uuid-5")
+        mock_flac.save.assert_not_called()
+
+    def test_skips_ogg_with_no_tags(self, tmp_path: Path) -> None:
+        ogg = tmp_path / "track.ogg"
+        ogg.write_bytes(b"OggS")
+        mock_ogg = MagicMock()
+        mock_ogg.tags = None
+        with patch(
+            "kamp_daemon.tagger.mutagen.oggvorbis.OggVorbis", return_value=mock_ogg
+        ):
+            _write_acoustid_id(ogg, "fp-uuid-6")
+        mock_ogg.save.assert_not_called()
+
+    def test_skips_m4a_with_no_tags(self, tmp_path: Path) -> None:
+        m4a = tmp_path / "track.m4a"
+        m4a.write_bytes(b"\x00" * 32)
+        mock_mp4 = MagicMock()
+        mock_mp4.tags = None
+        with patch("kamp_daemon.tagger.mutagen.mp4.MP4", return_value=mock_mp4):
+            _write_acoustid_id(m4a, "fp-uuid-7")
+        mock_mp4.save.assert_not_called()
