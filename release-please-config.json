@@ -3,8 +3,7 @@
   "release-type": "python",
   "packages": {
     ".": {
-      "changelog-path": "CHANGELOG.md",
-      "release-as": "1.0.0"
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
