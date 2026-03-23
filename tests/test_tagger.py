@@ -413,9 +413,10 @@ class TestParseReleaseMultiArtist:
             "barcode": "",
             "asin": "",
             "text-representation": {"script": "Latn"},
+            # musicbrainzngs returns a flat list: name-credit dicts interleaved with
+            # joinphrase strings (not nested inside the dict as in the raw API JSON).
             "artist-credit": [
                 {
-                    "joinphrase": " & ",
                     "name": "Ali",
                     "artist": {
                         "id": "00a3ced4-16f5-469e-a7b0-c73c2581a42c",
@@ -423,8 +424,8 @@ class TestParseReleaseMultiArtist:
                         "sort-name": "Ali",
                     },
                 },
+                " & ",
                 {
-                    "joinphrase": "",
                     "name": "Charif Megarbane",
                     "artist": {
                         "id": "bb18173b-25b4-443f-adcf-bcd74df831b5",
