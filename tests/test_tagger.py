@@ -13,6 +13,7 @@ from kamp_daemon.tagger import (
     ReleaseInfo,
     TaggingError,
     TrackInfo,
+    _lookup_release_by_acoustid,
     _lookup_release_by_recordings,
     _parse_release,
     _read_existing_metadata,
@@ -1347,3 +1348,107 @@ class TestTagDirectoryPerTrackPath:
 
         mock_search.assert_called_once()
         assert release.mbid == "abc-123"
+
+
+# AcoustID recording detail returned by get_recording_by_id
+SAMPLE_RECORDING_DETAIL: dict[str, Any] = {
+    "recording": {
+        "id": "rec-aaa",
+        "title": "First Track",
+        "release-list": [{"id": "abc-123"}, {"id": "other-release"}],
+    }
+}
+
+
+class TestLookupReleaseByAcoustid:
+    def test_votes_on_releases_and_fetches_winner(self, tmp_path: Path) -> None:
+        mp3_1 = tmp_path / "01.mp3"
+        mp3_2 = tmp_path / "02.mp3"
+        _make_mp3(mp3_1)
+        _make_mp3(mp3_2)
+
+        fp = (287.0, "AQADtEq")
+
+        def _mock_mb_call(fn: Any, *args: Any, **kwargs: Any) -> Any:
+            if fn is musicbrainzngs.get_recording_by_id:
+                return SAMPLE_RECORDING_DETAIL
+            if fn is musicbrainzngs.get_release_by_id:
+                return SAMPLE_RELEASE_DETAIL
+            raise AssertionError(f"Unexpected call: {fn}")
+
+        with (
+            patch("kamp_daemon.acoustid.fingerprint_file", return_value=fp),
+            patch(
+                "kamp_daemon.acoustid.lookup_recording_mbids", return_value=["rec-aaa"]
+            ),
+            patch("kamp_daemon.tagger._mb_call", side_effect=_mock_mb_call),
+        ):
+            result = _lookup_release_by_acoustid([mp3_1, mp3_2])
+
+        assert result.mbid == "abc-123"
+
+    def test_raises_when_no_fingerprints(self, tmp_path: Path) -> None:
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3)
+        with patch("kamp_daemon.acoustid.fingerprint_file", return_value=None):
+            with pytest.raises(
+                TaggingError, match="AcoustID found no matching releases"
+            ):
+                _lookup_release_by_acoustid([mp3])
+
+    def test_raises_when_no_recording_mbids(self, tmp_path: Path) -> None:
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3)
+        with (
+            patch("kamp_daemon.acoustid.fingerprint_file", return_value=(180.0, "abc")),
+            patch("kamp_daemon.acoustid.lookup_recording_mbids", return_value=[]),
+        ):
+            with pytest.raises(
+                TaggingError, match="AcoustID found no matching releases"
+            ):
+                _lookup_release_by_acoustid([mp3])
+
+
+class TestTagDirectoryAcoustidTier:
+    def test_acoustid_attempted_first(self, tmp_path: Path) -> None:
+        """Tier 0 (AcoustID) is tried before per-track recording search."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3, title="Some Track")
+        fake_release = _parse_release(SAMPLE_RELEASE_DETAIL["release"])
+
+        with (
+            patch(
+                "kamp_daemon.tagger._lookup_release_by_acoustid",
+                return_value=fake_release,
+            ) as mock_acoustid,
+            patch("musicbrainzngs.search_recordings") as mock_search_rec,
+        ):
+            result = tag_directory(tmp_path, [mp3])
+
+        mock_acoustid.assert_called_once_with([mp3])
+        mock_search_rec.assert_not_called()
+        assert result.mbid == "abc-123"
+
+    def test_acoustid_falls_back_to_tier1_on_failure(self, tmp_path: Path) -> None:
+        """When AcoustID raises TaggingError, per-track recording search runs."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3, title="Some Track")
+
+        with (
+            patch(
+                "kamp_daemon.tagger._lookup_release_by_acoustid",
+                side_effect=TaggingError("no fingerprint"),
+            ),
+            patch(
+                "musicbrainzngs.search_recordings",
+                return_value=SAMPLE_RECORDING_RESULT,
+            ) as mock_search_rec,
+            patch(
+                "musicbrainzngs.get_release_by_id",
+                return_value=SAMPLE_RELEASE_DETAIL,
+            ),
+        ):
+            result = tag_directory(tmp_path, [mp3])
+
+        mock_search_rec.assert_called_once()
+        assert result.mbid == "abc-123"
