@@ -468,11 +468,21 @@ def _parse_release(raw: dict[str, Any]) -> ReleaseInfo:
     release_type: str = release_group.get("primary-type", "")
     original_date: str = release_group.get("first-release-date", "")
 
-    # Artist credit — each dict entry has .artist.{name, sort-name, id}
+    # Artist credit — musicbrainzngs returns a flat list alternating between name-credit
+    # dicts and joinphrase strings (e.g. [{"name": "Ali"}, " & ", {"name": "Charif..."}]).
     artist_credit = raw.get("artist-credit", [])
     credits = [c for c in artist_credit if isinstance(c, dict)]
     artists = [c.get("name") or c.get("artist", {}).get("name", "") for c in credits]
-    artist = " ".join(a for a in artists if a)
+    # Reconstruct the display string by walking the raw list, taking names from dicts
+    # and joinphrases from interleaved strings.
+    artist = "".join(
+        (
+            item
+            if isinstance(item, str)
+            else (item.get("name") or item.get("artist", {}).get("name", ""))
+        )
+        for item in artist_credit
+    ).strip()
     album_artist = artist
     artist_sort = " ".join(c.get("artist", {}).get("sort-name", "") for c in credits)
     album_artist_sort = artist_sort

@@ -401,6 +401,64 @@ class TestParseReleaseVinyl:
         assert release.tracks["2-1"].title == "Side B Track 1"
 
 
+class TestParseReleaseMultiArtist:
+    def test_joinphrase_used_in_artist_string(self) -> None:
+        """joinphrase connectors from MB artist-credit are preserved in the artist tag."""
+        raw: dict[str, Any] = {
+            "id": "multi-artist-id",
+            "title": "Tirakat",
+            "date": "2026-03-20",
+            "status": "Official",
+            "country": "XW",
+            "barcode": "",
+            "asin": "",
+            "text-representation": {"script": "Latn"},
+            # musicbrainzngs returns a flat list: name-credit dicts interleaved with
+            # joinphrase strings (not nested inside the dict as in the raw API JSON).
+            "artist-credit": [
+                {
+                    "name": "Ali",
+                    "artist": {
+                        "id": "00a3ced4-16f5-469e-a7b0-c73c2581a42c",
+                        "name": "Ali",
+                        "sort-name": "Ali",
+                    },
+                },
+                " & ",
+                {
+                    "name": "Charif Megarbane",
+                    "artist": {
+                        "id": "bb18173b-25b4-443f-adcf-bcd74df831b5",
+                        "name": "Charif Megarbane",
+                        "sort-name": "Megarbane, Charif",
+                    },
+                },
+            ],
+            "release-group": {
+                "id": "rg-multi",
+                "primary-type": "Album",
+                "first-release-date": "2026-03-20",
+            },
+            "label-info-list": [],
+            "medium-list": [
+                {
+                    "position": "1",
+                    "track-list": [
+                        {
+                            "number": "1",
+                            "position": "1",
+                            "recording": {"id": "rec-1", "title": "Silk End"},
+                        }
+                    ],
+                }
+            ],
+        }
+        release = _parse_release(raw)
+
+        assert release.artist == "Ali & Charif Megarbane"
+        assert release.album_artist == "Ali & Charif Megarbane"
+
+
 class TestEditionSuffixRetry:
     def test_retries_with_cleaned_album_name(self, tmp_path: Path) -> None:
         """First search with "(Deluxe Edition)" returns nothing; retry with stripped
