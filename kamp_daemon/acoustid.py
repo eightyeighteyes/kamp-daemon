@@ -21,8 +21,8 @@ import requests
 # Both placeholders are replaced by CI (scripts/encode_acoustid_key.py)
 # before the sdist is built. In dev builds both remain b"", causing
 # _api_key() to return "" and lookup_recording_mbids() to return [].
-_KEY: bytes = b""
-_SALT: bytes = b""
+_KEY: bytes = b"\x11\x38\x3a\x16\x05\x31\x34\x19\x3b\x30"
+_SALT: bytes = b"\x73\x61\x6c\x74"
 
 
 def _api_key() -> str:
@@ -53,11 +53,11 @@ def fingerprint_file(path: Path) -> tuple[float, str] | None:
     return float(data["duration"]), data["fingerprint"]
 
 
-def lookup_recording_mbids(duration: float, fingerprint: str) -> list[str]:
-    """Query the AcoustID API and return recording MBIDs.
+def lookup_matches(duration: float, fingerprint: str) -> list[tuple[str, list[str]]]:
+    """Query the AcoustID API and return (acoustid_id, recording_mbids) pairs.
 
-    Returns an empty list if no key is embedded (dev build) or if the API
-    returns no results for this fingerprint.
+    Results are ordered by score (highest first).  Returns an empty list if no
+    key is embedded (dev build) or if the API returns no results.
     """
     key = _api_key()
     if not key:
@@ -75,7 +75,19 @@ def lookup_recording_mbids(duration: float, fingerprint: str) -> list[str]:
     )
     resp.raise_for_status()
     return [
-        rec["id"]
+        (result["id"], [rec["id"] for rec in result.get("recordings", [])])
         for result in resp.json().get("results", [])
-        for rec in result.get("recordings", [])
+    ]
+
+
+def lookup_recording_mbids(duration: float, fingerprint: str) -> list[str]:
+    """Query the AcoustID API and return recording MBIDs (flattened).
+
+    Convenience wrapper around lookup_matches for callers that only need
+    recording MBIDs and don't require the per-result AcoustID IDs.
+    """
+    return [
+        rec_mbid
+        for _, rec_mbids in lookup_matches(duration, fingerprint)
+        for rec_mbid in rec_mbids
     ]

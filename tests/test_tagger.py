@@ -19,6 +19,7 @@ from kamp_daemon.tagger import (
     _read_existing_metadata,
     _read_track_metadata,
     _search_release,
+    _write_acoustid_id,
     _write_flac_tags,
     _write_ogg_tags,
     _write_tags,
@@ -1379,13 +1380,16 @@ class TestLookupReleaseByAcoustid:
         with (
             patch("kamp_daemon.acoustid.fingerprint_file", return_value=fp),
             patch(
-                "kamp_daemon.acoustid.lookup_recording_mbids", return_value=["rec-aaa"]
+                "kamp_daemon.acoustid.lookup_matches",
+                return_value=[("fp-uuid-1", ["rec-aaa"])],
             ),
             patch("kamp_daemon.tagger._mb_call", side_effect=_mock_mb_call),
         ):
-            result = _lookup_release_by_acoustid([mp3_1, mp3_2])
+            release, acoustid_ids = _lookup_release_by_acoustid([mp3_1, mp3_2])
 
-        assert result.mbid == "abc-123"
+        assert release.mbid == "abc-123"
+        assert acoustid_ids[mp3_1] == "fp-uuid-1"
+        assert acoustid_ids[mp3_2] == "fp-uuid-1"
 
     def test_raises_when_no_fingerprints(self, tmp_path: Path) -> None:
         mp3 = tmp_path / "01.mp3"
@@ -1396,12 +1400,12 @@ class TestLookupReleaseByAcoustid:
             ):
                 _lookup_release_by_acoustid([mp3])
 
-    def test_raises_when_no_recording_mbids(self, tmp_path: Path) -> None:
+    def test_raises_when_no_matches(self, tmp_path: Path) -> None:
         mp3 = tmp_path / "01.mp3"
         _make_mp3(mp3)
         with (
             patch("kamp_daemon.acoustid.fingerprint_file", return_value=(180.0, "abc")),
-            patch("kamp_daemon.acoustid.lookup_recording_mbids", return_value=[]),
+            patch("kamp_daemon.acoustid.lookup_matches", return_value=[]),
         ):
             with pytest.raises(
                 TaggingError, match="AcoustID found no matching releases"
@@ -1419,7 +1423,7 @@ class TestTagDirectoryAcoustidTier:
         with (
             patch(
                 "kamp_daemon.tagger._lookup_release_by_acoustid",
-                return_value=fake_release,
+                return_value=(fake_release, {mp3: "fp-uuid-1"}),
             ) as mock_acoustid,
             patch("musicbrainzngs.search_recordings") as mock_search_rec,
         ):
@@ -1428,6 +1432,23 @@ class TestTagDirectoryAcoustidTier:
         mock_acoustid.assert_called_once_with([mp3])
         mock_search_rec.assert_not_called()
         assert result.mbid == "abc-123"
+
+    def test_acoustid_writes_acoustid_id_tag(self, tmp_path: Path) -> None:
+        """When AcoustID matches, the AcoustID ID is written as a tag."""
+        mp3 = tmp_path / "01.mp3"
+        _make_mp3(mp3, title="Some Track")
+        fake_release = _parse_release(SAMPLE_RELEASE_DETAIL["release"])
+
+        with (
+            patch(
+                "kamp_daemon.tagger._lookup_release_by_acoustid",
+                return_value=(fake_release, {mp3: "fp-uuid-1"}),
+            ),
+            patch("kamp_daemon.tagger._write_acoustid_id") as mock_write_aid,
+        ):
+            tag_directory(tmp_path, [mp3])
+
+        mock_write_aid.assert_called_once_with(mp3, "fp-uuid-1")
 
     def test_acoustid_falls_back_to_tier1_on_failure(self, tmp_path: Path) -> None:
         """When AcoustID raises TaggingError, per-track recording search runs."""
@@ -1452,3 +1473,13 @@ class TestTagDirectoryAcoustidTier:
 
         mock_search_rec.assert_called_once()
         assert result.mbid == "abc-123"
+
+
+class TestWriteAcoustidId:
+    def test_writes_txxx_to_mp3(self, tmp_path: Path) -> None:
+        mp3 = tmp_path / "track.mp3"
+        _make_mp3(mp3)
+        _write_acoustid_id(mp3, "fp-uuid-1")
+        tags = id3.ID3(str(mp3))
+        assert tags.get("TXXX:ACOUSTID_ID") is not None
+        assert str(tags["TXXX:ACOUSTID_ID"]) == "fp-uuid-1"

@@ -7,7 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kamp_daemon.acoustid import fingerprint_file, lookup_recording_mbids
+from kamp_daemon.acoustid import (
+    fingerprint_file,
+    lookup_matches,
+    lookup_recording_mbids,
+)
 
 
 class TestFingerprintFile:
@@ -122,6 +126,45 @@ class TestLookupRecordingMbids:
         ):
             mbids = lookup_recording_mbids(180.0, "AQADtEq")
         assert mbids == ["rec-aaa", "rec-bbb", "rec-ccc"]
+
+
+class TestLookupMatches:
+    _SAMPLE_RESPONSE = {
+        "status": "ok",
+        "results": [
+            {
+                "id": "fp-1",
+                "score": 1.0,
+                "recordings": [{"id": "rec-aaa"}, {"id": "rec-bbb"}],
+            },
+            {
+                "id": "fp-2",
+                "score": 0.8,
+                "recordings": [{"id": "rec-ccc"}],
+            },
+        ],
+    }
+
+    def test_returns_empty_when_no_key(self) -> None:
+        with (
+            patch("kamp_daemon.acoustid._KEY", b""),
+            patch("kamp_daemon.acoustid._SALT", b""),
+        ):
+            assert lookup_matches(180.0, "AQADtEq") == []
+
+    def test_returns_acoustid_id_and_recording_mbids(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = self._SAMPLE_RESPONSE
+        with (
+            patch("kamp_daemon.acoustid._KEY", _TEST_KEY_ENCODED),
+            patch("kamp_daemon.acoustid._SALT", _TEST_SALT),
+            patch("requests.get", return_value=mock_resp),
+        ):
+            matches = lookup_matches(180.0, "AQADtEq")
+        assert matches == [
+            ("fp-1", ["rec-aaa", "rec-bbb"]),
+            ("fp-2", ["rec-ccc"]),
+        ]
 
     def test_calls_acoustid_api_with_correct_params(self) -> None:
         mock_resp = MagicMock()
