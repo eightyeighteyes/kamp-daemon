@@ -3,6 +3,22 @@
 > Estimates use the vinyl scale: Single (<0.5), Side (0.5–1), LP (2), 2xLP (4), Box Set (4–8), Discography (>8)
 > ⚠️ = needs scoping before work can start
 
+## Prepare for creating a GUI
+*LP* — Rebrand installation and packaging from `kamp-daemon` to `kamp` in preparation for an Electron GUI app ("KAMP") that will bundle the daemon. The Python module (`kamp_daemon`) and its internals stay as-is; only the user-facing distribution layer moves. Breakdown:
+
+| Component | Notes |
+|---|---|
+| pyproject.toml: package name + entry point | `kamp-daemon` → `kamp` (name, console script) |
+| CLI command rename | `kamp-daemon` CLI → `kamp`; all help text, arg parser `prog=` |
+| Config + data paths | `~/.config/kamp-daemon/` → `~/.config/kamp/`; needs migration for existing users |
+| macOS service label + CFBundleIdentifier | `com.kamp-daemon` → `com.kamp` in `__main__.py` and `launcher/main.c`; requires uninstall/reinstall for existing users |
+| Homebrew formula | Rename `Formula/kamp-daemon.rb` → `Formula/kamp.rb`; update all internal references |
+| Homebrew tap repo | `homebrew-kamp-daemon` → `homebrew-kamp` (separate GitHub repo rename + CI update) |
+| CI/release workflow | Update tarball URL, tap clone path, commit message in `release.yml` |
+| Docs sweep | README.md, USAGE.md, completions/_kamp-daemon → completions/_kamp |
+
+The GUI details (Electron app, library management) are forthcoming — this ticket is scoped to the packaging rebrand only.
+
 ## Full Windows Support
 *Box Set* — prerequisite: Rebrand must ship first. Breakdown:
 
