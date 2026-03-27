@@ -47,3 +47,9 @@ Target: Windows 10/11 only. Distribution via Chocolatey.
 
 # Needs Estimation
 -- don't discard this section --
+
+## Library scan progress UI
+⚠️ Not scoped — the `LibraryScanner` runs synchronously and returns a `ScanResult`, but there is no UI feedback during a scan. Needs a design pass: progress bar in first-run setup flow, status indicator during background re-scans, and whether large libraries need the scan to run in a worker thread/subprocess to avoid blocking the UI.
+
+## Automatic library watching
+*Side* — `LibraryScanner` is incremental but must be triggered manually. The existing `watchdog` infrastructure in `watcher.py` should be extended to watch the library directory (in addition to staging) and call `LibraryScanner.scan()` on changes. Needs scoping: debounce strategy, whether a full rescan or path-targeted upsert is preferred, and how to avoid re-scanning during an active ingest pipeline run.
