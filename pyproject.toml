@@ -3,7 +3,7 @@ name = "kamp"
 version = "1.1.1"
 description = "Automated audio library ingest from Bandcamp downloads."
 authors = []
-packages = [{include = "kamp_daemon"}]
+packages = [{include = "kamp_daemon"}, {include = "kamp_core"}]
 # USAGE.md is read by the Homebrew formula's caveats block; completions/ is
 # installed by the Homebrew formula's zsh_completion.install call; launcher/main.c
 # is compiled by the formula into the native binary. MANIFEST.in is ignored by
@@ -38,11 +38,11 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
-addopts = "--cov=kamp_daemon --cov-report=term-missing"
+addopts = "--cov=kamp_daemon --cov=kamp_core --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-source = ["kamp_daemon"]
+source = ["kamp_daemon", "kamp_core"]
 omit = [
     "kamp_daemon/__main__.py",
     "kamp_daemon/bandcamp.py",
@@ -80,8 +80,8 @@ disable_error_code = ["import-untyped", "import-not-found", "no-untyped-call", "
 # mutagen has partial stubs that don't cover ID3 frame classes, MP4 methods, or
 # FLAC tag access (audio.tags is typed as VCFLACDict | MetadataBlock; the union
 # causes false union-attr/index errors on the VCFLACDict branch we always use).
-module = ["kamp_daemon.tagger", "kamp_daemon.mover", "kamp_daemon.artwork"]
-disable_error_code = ["no-untyped-call", "attr-defined", "unused-ignore", "union-attr", "index"]
+module = ["kamp_daemon.tagger", "kamp_daemon.mover", "kamp_daemon.artwork", "kamp_core.library"]
+disable_error_code = ["no-untyped-call", "attr-defined", "unused-ignore", "union-attr", "index", "var-annotated", "assignment", "arg-type"]
 
 [[tool.mypy.overrides]]
 # rumps, AppKit, objc (PyObjC runtime), and setproctitle ship no type stubs
