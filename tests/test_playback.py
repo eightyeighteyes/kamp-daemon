@@ -134,6 +134,34 @@ class TestPlaybackQueue:
         q.load([])
         assert q.current() is None
 
+    def test_load_with_shuffle_active_places_track_first(self) -> None:
+        q = PlaybackQueue()
+        tracks = [_track(i) for i in range(5)]
+        q.load(tracks)
+        q.set_shuffle(True)
+        # Load a new set while shuffle is already on; current should be tracks[0]
+        q.load(tracks, start_index=0)
+        assert q.current() == tracks[0]
+
+    def test_next_returns_none_on_empty_queue(self) -> None:
+        assert PlaybackQueue().next() is None
+
+    def test_prev_returns_none_on_empty_queue(self) -> None:
+        assert PlaybackQueue().prev() is None
+
+    def test_set_shuffle_noop_when_same_value(self) -> None:
+        q = PlaybackQueue()
+        tracks = [_track(i) for i in range(3)]
+        q.load(tracks)
+        before = q.current()
+        q.set_shuffle(False)  # already False — should be a no-op
+        assert q.current() == before
+
+    def test_set_shuffle_noop_when_no_tracks(self) -> None:
+        q = PlaybackQueue()
+        q.set_shuffle(True)  # no tracks loaded — should not raise
+        assert q.current() is None
+
 
 # ---------------------------------------------------------------------------
 # MpvPlaybackEngine
@@ -236,3 +264,63 @@ class TestMpvPlaybackEngine:
         engine.shutdown()
 
         mock_proc.terminate.assert_called_once()
+
+    def test_shutdown_closes_socket(self) -> None:
+        with patch("kamp_core.playback.MpvPlaybackEngine._start_mpv"):
+            engine = MpvPlaybackEngine()
+        mock_sock = MagicMock()
+        engine._sock = mock_sock
+        engine.shutdown()
+        mock_sock.close.assert_called_once()
+
+    def test_shutdown_ignores_socket_close_error(self) -> None:
+        with patch("kamp_core.playback.MpvPlaybackEngine._start_mpv"):
+            engine = MpvPlaybackEngine()
+        mock_sock = MagicMock()
+        mock_sock.close.side_effect = OSError("already closed")
+        engine._sock = mock_sock
+        engine.shutdown()  # should not raise
+
+    def test_shutdown_handles_none_proc(self) -> None:
+        with patch("kamp_core.playback.MpvPlaybackEngine._start_mpv"):
+            engine = MpvPlaybackEngine()
+        engine._proc = None
+        engine.shutdown()  # should not raise
+
+    def test_send_command_is_noop_when_no_socket(self) -> None:
+        with patch("kamp_core.playback.MpvPlaybackEngine._start_mpv"):
+            engine = MpvPlaybackEngine()
+        engine._send_command("stop")  # _sock is None — should not raise
+
+    def test_volume_getter_returns_state_volume(self) -> None:
+        engine, _ = _make_engine()
+        assert engine.volume == 100
+
+    def test_send_command_sends_json_over_socket(self) -> None:
+        with patch("kamp_core.playback.MpvPlaybackEngine._start_mpv"):
+            engine = MpvPlaybackEngine()
+        mock_sock = MagicMock()
+        engine._sock = mock_sock
+        engine._send_command("loadfile", "/music/01.mp3", "replace")
+        expected = (
+            json.dumps({"command": ["loadfile", "/music/01.mp3", "replace"]}) + "\n"
+        )
+        mock_sock.sendall.assert_called_once_with(expected.encode())
+
+    def test_send_command_logs_warning_on_oserror(self) -> None:
+        with patch("kamp_core.playback.MpvPlaybackEngine._start_mpv"):
+            engine = MpvPlaybackEngine()
+        mock_sock = MagicMock()
+        mock_sock.sendall.side_effect = OSError("broken pipe")
+        engine._sock = mock_sock
+        engine._send_command("stop")  # should not raise
+
+    def test_handle_event_unknown_event_is_ignored(self) -> None:
+        engine, _ = _make_engine()
+        engine._handle_event({"event": "seek"})
+        assert engine.state == PlaybackState()
+
+    def test_handle_event_pause_with_non_bool_data_is_ignored(self) -> None:
+        engine, _ = _make_engine()
+        engine._handle_event({"event": "property-change", "name": "pause", "data": 1})
+        assert engine.state.playing is False

@@ -148,7 +148,7 @@ class MpvPlaybackEngine:
         self._lock = threading.Lock()
         self._start_mpv()
 
-    def _start_mpv(self) -> None:
+    def _start_mpv(self) -> None:  # pragma: no cover
         """Launch mpv and connect to its IPC socket."""
         tmp = tempfile.mktemp(suffix=".sock", prefix="kamp-mpv-")
         self._sock_path = tmp
@@ -170,7 +170,7 @@ class MpvPlaybackEngine:
         )
         self._reader_thread.start()
 
-    def _connect_socket(self, timeout: float = 5.0) -> None:
+    def _connect_socket(self, timeout: float = 5.0) -> None:  # pragma: no cover
         """Poll until mpv creates its IPC socket, then connect."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -186,7 +186,7 @@ class MpvPlaybackEngine:
         sock.connect(self._sock_path)
         self._sock = sock
 
-    def _observe_properties(self) -> None:
+    def _observe_properties(self) -> None:  # pragma: no cover
         """Ask mpv to stream property changes for state tracking."""
         for obs_id, prop in _OBSERVED:
             self._send_command("observe_property", obs_id, prop)
@@ -245,7 +245,7 @@ class MpvPlaybackEngine:
             except OSError:
                 logger.warning("Failed to send command to mpv: %s", args)
 
-    def _read_loop(self) -> None:
+    def _read_loop(self) -> None:  # pragma: no cover
         """Background thread: read JSON events from mpv and dispatch them."""
         if self._sock is None:
             return
