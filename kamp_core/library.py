@@ -65,6 +65,7 @@ class AlbumInfo:
     album: str
     year: str
     track_count: int
+    has_art: bool = False
 
     # Allow dict-style access so callers can use a["album_artist"] etc.
     def __getitem__(self, key: str) -> Any:
@@ -146,7 +147,8 @@ class LibraryIndex:
     def albums(self) -> list[AlbumInfo]:
         """Return one AlbumInfo per (album_artist, album) pair, sorted."""
         rows = self._conn.execute("""
-            SELECT album_artist, album, year, COUNT(*) AS track_count
+            SELECT album_artist, album, year, COUNT(*) AS track_count,
+                   MAX(embedded_art) AS has_art
             FROM tracks
             GROUP BY album_artist, album
             ORDER BY album_artist COLLATE NOCASE, album COLLATE NOCASE
@@ -157,6 +159,7 @@ class LibraryIndex:
                 album=r["album"],
                 year=r["year"],
                 track_count=r["track_count"],
+                has_art=bool(r["has_art"]),
             )
             for r in rows
         ]
@@ -224,6 +227,56 @@ def _row_to_track(row: sqlite3.Row) -> Track:
         mb_release_id=row["mb_release_id"],
         mb_recording_id=row["mb_recording_id"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Artwork extraction
+# ---------------------------------------------------------------------------
+
+
+def extract_art(path: Path) -> tuple[bytes, str] | None:
+    """Extract the first embedded cover image from an audio file.
+
+    Returns (data, mime_type) or None if no art is found or the file
+    cannot be read.  Supports MP3, M4A, FLAC, and OGG.
+    """
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".mp3":
+            tags = id3.ID3(str(path))
+            for key in tags:
+                if key.startswith("APIC"):
+                    frame = tags[key]
+                    return bytes(frame.data), str(frame.mime)
+        elif suffix == ".m4a":  # pragma: no branch
+            audio = mutagen.mp4.MP4(str(path))
+            covr = (audio.tags or {}).get("covr")
+            if covr:
+                img = covr[0]
+                mime = (
+                    "image/jpeg"
+                    if img.imageformat == mutagen.mp4.MP4Cover.FORMAT_JPEG
+                    else "image/png"
+                )
+                return bytes(img), mime
+        elif suffix == ".flac":
+            audio = mutagen.flac.FLAC(str(path))
+            if audio.pictures:
+                pic = audio.pictures[0]
+                return bytes(pic.data), str(pic.mime)
+        elif suffix == ".ogg":
+            import base64
+
+            from mutagen.flac import Picture
+
+            audio = mutagen.oggvorbis.OggVorbis(str(path))
+            blocks = (audio.tags or {}).get("metadata_block_picture", [])
+            if blocks:
+                pic = Picture(base64.b64decode(blocks[0]))
+                return bytes(pic.data), str(pic.mime)
+    except Exception:
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------

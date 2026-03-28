@@ -15,6 +15,7 @@ from kamp_core.library import (
     LibraryScanner,
     ScanResult,
     Track,
+    extract_art,
     _read_mp3_tags,
     _read_m4a_tags,
     _read_vorbis_tags,
@@ -225,6 +226,74 @@ class TestLibraryIndex:
         index.upsert_track(_sample_track(tmp_path / "01.mp3"))
         assert len(index.all_tracks()) == 1
         index.close()
+
+    def test_albums_has_art_true_when_track_has_embedded_art(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        t = _sample_track(tmp_path / "1.mp3")
+        t.embedded_art = True
+        index.upsert_track(t)
+        albums = index.albums()
+        index.close()
+
+        assert albums[0].has_art is True
+
+    def test_albums_has_art_false_when_no_embedded_art(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_track(_sample_track(tmp_path / "1.mp3"))
+        albums = index.albums()
+        index.close()
+
+        assert albums[0].has_art is False
+
+    def test_albums_has_art_true_when_any_track_has_art(self, tmp_path: Path) -> None:
+        """has_art is True if at least one track in the album has embedded art."""
+        index = LibraryIndex(tmp_path / "library.db")
+        t1 = _sample_track(tmp_path / "1.mp3")
+        t1.track_number = 1
+        t1.embedded_art = False
+        t2 = _sample_track(tmp_path / "2.mp3")
+        t2.track_number = 2
+        t2.embedded_art = True
+        index.upsert_many([t1, t2])
+        albums = index.albums()
+        index.close()
+
+        assert albums[0].has_art is True
+
+
+# ---------------------------------------------------------------------------
+# extract_art
+# ---------------------------------------------------------------------------
+
+
+class TestExtractArt:
+    def test_mp3_with_apic_returns_data_and_mime(self, tmp_path: Path) -> None:
+        path = tmp_path / "track.mp3"
+        path.write_bytes(b"\xff\xfb" * 64)
+        img_data = b"\xff\xd8\xff\xe0" + b"\x00" * 16
+        tags = id3.ID3()
+        tags.add(
+            id3.APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=img_data)
+        )
+        tags.save(str(path))
+
+        result = extract_art(path)
+
+        assert result is not None
+        data, mime = result
+        assert data == img_data
+        assert mime == "image/jpeg"
+
+    def test_mp3_without_art_returns_none(self, tmp_path: Path) -> None:
+        path = tmp_path / "track.mp3"
+        _make_mp3(path, title="No Art")
+
+        assert extract_art(path) is None
+
+    def test_nonexistent_path_returns_none(self, tmp_path: Path) -> None:
+        assert extract_art(tmp_path / "ghost.mp3") is None
 
 
 # ---------------------------------------------------------------------------

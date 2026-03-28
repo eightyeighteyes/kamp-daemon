@@ -15,11 +15,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from kamp_core.library import LibraryIndex, LibraryScanner, Track
+from kamp_core.library import LibraryIndex, LibraryScanner, Track, extract_art
 from kamp_core.playback import MpvPlaybackEngine, PlaybackQueue
 
 # ---------------------------------------------------------------------------
@@ -64,6 +64,7 @@ class AlbumOut(BaseModel):
     album: str
     year: str
     track_count: int
+    has_art: bool
 
 
 class PlayerStateOut(BaseModel):
@@ -152,6 +153,7 @@ def create_app(
                 album=a.album,
                 year=a.year,
                 track_count=a.track_count,
+                has_art=a.has_art,
             )
             for a in index.albums()
         ]
@@ -168,6 +170,17 @@ def create_app(
         return [
             TrackOut.from_track(t) for t in index.tracks_for_album(album_artist, album)
         ]
+
+    @app.get("/api/v1/albums/{album_artist}/{album}/art")
+    def get_album_art(album_artist: str, album: str) -> Response:
+        tracks = index.tracks_for_album(album_artist, album)
+        for track in tracks:
+            if track.embedded_art:
+                result = extract_art(track.file_path)
+                if result:
+                    data, mime = result
+                    return Response(content=data, media_type=mime)
+        raise HTTPException(status_code=404, detail="No art found")
 
     @app.post("/api/v1/library/scan", response_model=ScanResult)
     def scan_library() -> ScanResult:
