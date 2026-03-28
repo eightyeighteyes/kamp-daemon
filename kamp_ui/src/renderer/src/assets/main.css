@@ -259,12 +259,14 @@ body,
   background: var(--surface);
   transition:
     transform 0.1s,
-    background 0.1s;
+    background 0.1s,
+    box-shadow 0.1s;
 }
 
 .album-card:hover {
   background: var(--surface-hover);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .album-card.playing {
