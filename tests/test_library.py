@@ -71,6 +71,37 @@ def _sample_track(file_path: Path) -> Track:
 
 
 class TestLibraryIndex:
+    def test_wal_journal_mode_enabled(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        # _conn is the current thread's connection; WAL is set on every new conn.
+        mode = index._conn.execute("PRAGMA journal_mode").fetchone()[0]
+        index.close()
+
+        assert mode == "wal"
+
+    def test_each_thread_gets_its_own_connection(self, tmp_path: Path) -> None:
+        """Concurrent threads must not share connection objects."""
+        import threading as _threading
+
+        index = LibraryIndex(tmp_path / "library.db")
+        conns: list[sqlite3.Connection] = []
+        lock = _threading.Lock()
+
+        def _capture() -> None:
+            c = index._conn
+            with lock:
+                conns.append(c)
+
+        threads = [_threading.Thread(target=_capture) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        index.close()
+        # All four worker threads plus the main thread each have a unique conn.
+        assert len(set(id(c) for c in conns)) == 4
+
     def test_creates_tables_on_init(self, tmp_path: Path) -> None:
         db_path = tmp_path / "library.db"
         LibraryIndex(db_path).close()
