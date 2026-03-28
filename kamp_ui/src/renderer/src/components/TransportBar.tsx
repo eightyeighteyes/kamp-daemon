@@ -1,3 +1,4 @@
+import React from 'react'
 import { useStore } from '../store'
 
 function formatTime(seconds: number): string {
@@ -6,7 +7,7 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export function TransportBar() {
+export function TransportBar(): React.JSX.Element {
   const player = useStore((s) => s.player)
   const togglePlayPause = useStore((s) => s.togglePlayPause)
   const stop = useStore((s) => s.stop)
@@ -34,7 +35,11 @@ export function TransportBar() {
         <button className="transport-btn" onClick={prev} title="Previous">
           ⏮
         </button>
-        <button className="transport-btn primary" onClick={togglePlayPause} title={playing ? 'Pause' : 'Play'}>
+        <button
+          className="transport-btn primary"
+          onClick={togglePlayPause}
+          title={playing ? 'Pause' : 'Play'}
+        >
           {playing ? '⏸' : '▶'}
         </button>
         <button className="transport-btn" onClick={stop} title="Stop">

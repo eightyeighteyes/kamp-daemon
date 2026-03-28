@@ -2,7 +2,9 @@
    Kamp — main layout
    ------------------------------------------------------------------------- */
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -26,7 +28,9 @@
   -webkit-font-smoothing: antialiased;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
 }
 
@@ -115,7 +119,9 @@ html, body, #root {
   border-radius: 6px;
   overflow: hidden;
   background: var(--surface);
-  transition: transform 0.1s, background 0.1s;
+  transition:
+    transform 0.1s,
+    background 0.1s;
 }
 
 .album-card:hover {
@@ -240,7 +246,9 @@ html, body, #root {
   padding: 4px 6px;
   border-radius: 4px;
   line-height: 1;
-  transition: color 0.1s, background 0.1s;
+  transition:
+    color 0.1s,
+    background 0.1s;
 }
 
 .transport-btn:hover {

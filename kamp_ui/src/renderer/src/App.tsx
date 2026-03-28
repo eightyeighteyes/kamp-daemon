@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { useStore } from './store'
 import { connectStateStream } from './api/client'
 import { ArtistPanel } from './components/ArtistPanel'
@@ -6,7 +6,7 @@ import { AlbumGrid } from './components/AlbumGrid'
 import { TrackList } from './components/TrackList'
 import { TransportBar } from './components/TransportBar'
 
-export default function App() {
+export default function App(): React.JSX.Element {
   const loadLibrary = useStore((s) => s.loadLibrary)
   const applyServerState = useStore((s) => s.applyServerState)
   const selectedAlbum = useStore((s) => s.library.selectedAlbum)
@@ -30,9 +30,7 @@ export default function App() {
     <div className="app">
       <div className="app-body">
         <ArtistPanel />
-        <main className="main-content">
-          {selectedAlbum ? <TrackList /> : <AlbumGrid />}
-        </main>
+        <main className="main-content">{selectedAlbum ? <TrackList /> : <AlbumGrid />}</main>
       </div>
       <TransportBar />
     </div>

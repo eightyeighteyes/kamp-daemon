@@ -1,6 +1,7 @@
+import React from 'react'
 import { useStore } from '../store'
 
-export function TrackList() {
+export function TrackList(): React.JSX.Element | null {
   const album = useStore((s) => s.library.selectedAlbum)
   const tracks = useStore((s) => s.library.tracks)
   const currentTrack = useStore((s) => s.player.current_track)
