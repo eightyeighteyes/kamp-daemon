@@ -144,11 +144,20 @@ body,
   font-size: 28px;
   color: var(--text-dim);
   position: relative;
+  overflow: hidden;
 }
 
-/* Placeholder art — replaced in Phase 2 when artwork embedding is surfaced */
-.album-art::before {
+/* Placeholder glyph — hidden once real art loads */
+.album-art:not(.has-art)::before {
   content: '♪';
+}
+
+.album-art-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .now-playing-badge {
@@ -336,9 +345,25 @@ body,
 
 .track-list-album-info {
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.track-list-album-art {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.track-list-album-text {
+  display: flex;
   flex-direction: column;
   gap: 2px;
-  flex: 1;
   overflow: hidden;
 }
 

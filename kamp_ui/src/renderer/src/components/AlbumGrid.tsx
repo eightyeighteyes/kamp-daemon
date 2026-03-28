@@ -1,18 +1,29 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useStore } from '../store'
+import { artUrl } from '../api/client'
 import type { Album } from '../api/client'
 
 function AlbumCard({ album }: { album: Album }): React.JSX.Element {
   const selectAlbum = useStore((s) => s.selectAlbum)
   const currentTrack = useStore((s) => s.player.current_track)
   const playing = useStore((s) => s.player.playing)
+  const [artLoaded, setArtLoaded] = useState(false)
 
   const isActive =
     currentTrack?.album === album.album && currentTrack?.album_artist === album.album_artist
 
   return (
     <div className={`album-card${isActive ? ' playing' : ''}`} onClick={() => selectAlbum(album)}>
-      <div className="album-art">
+      <div className={`album-art${artLoaded ? ' has-art' : ''}`}>
+        {album.has_art && (
+          <img
+            className="album-art-img"
+            src={artUrl(album.album_artist, album.album)}
+            alt=""
+            onLoad={() => setArtLoaded(true)}
+            onError={() => setArtLoaded(false)}
+          />
+        )}
         {playing && isActive && <div className="now-playing-badge">▶</div>}
       </div>
       <div className="album-info">

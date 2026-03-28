@@ -26,6 +26,7 @@ export type Album = {
   album: string
   year: string
   track_count: number
+  has_art: boolean
 }
 
 export type PlayerState = {
@@ -69,10 +70,17 @@ async function get<T>(path: string): Promise<T> {
 
 export const getAlbums = (): Promise<Album[]> => get('/api/v1/albums')
 
+// Returns the URL for an album's cover art; load it in an <img> src.
+// The server returns 404 when no art is embedded — handle with onError.
+export const artUrl = (albumArtist: string, album: string): string =>
+  `${BASE_URL}/api/v1/album-art?album_artist=${encodeURIComponent(albumArtist)}&album=${encodeURIComponent(album)}`
+
 export const getArtists = (): Promise<string[]> => get('/api/v1/artists')
 
 export const getTracksForAlbum = (albumArtist: string, album: string): Promise<Track[]> =>
-  get(`/api/v1/albums/${encodeURIComponent(albumArtist)}/${encodeURIComponent(album)}/tracks`)
+  get(
+    `/api/v1/tracks?album_artist=${encodeURIComponent(albumArtist)}&album=${encodeURIComponent(album)}`
+  )
 
 export const scanLibrary = (): Promise<ScanResult> => post('/api/v1/library/scan')
 

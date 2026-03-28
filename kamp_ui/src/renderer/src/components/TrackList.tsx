@@ -1,5 +1,6 @@
 import React from 'react'
 import { useStore } from '../store'
+import { artUrl } from '../api/client'
 
 export function TrackList(): React.JSX.Element | null {
   const album = useStore((s) => s.library.selectedAlbum)
@@ -22,9 +23,18 @@ export function TrackList(): React.JSX.Element | null {
           ← Albums
         </button>
         <div className="track-list-album-info">
-          <span className="track-list-album-title">{album.album}</span>
-          <span className="track-list-album-artist">{album.album_artist}</span>
-          <span className="track-list-album-year">{album.year}</span>
+          {album.has_art && (
+            <img
+              className="track-list-album-art"
+              src={artUrl(album.album_artist, album.album)}
+              alt=""
+            />
+          )}
+          <div className="track-list-album-text">
+            <span className="track-list-album-title">{album.album}</span>
+            <span className="track-list-album-artist">{album.album_artist}</span>
+            <span className="track-list-album-year">{album.year}</span>
+          </div>
         </div>
         <button
           className="play-all-btn"
