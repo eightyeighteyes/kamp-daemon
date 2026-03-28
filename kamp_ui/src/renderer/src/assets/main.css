@@ -426,7 +426,6 @@ body,
 
 .seek-bar {
   flex: 1;
-  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -446,8 +445,69 @@ body,
 
 .volume-slider {
   width: 80px;
-  accent-color: var(--accent);
   cursor: pointer;
+}
+
+/* Custom range input styling ----------------------------------------------- */
+
+.seek-bar,
+.volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.seek-bar::-webkit-slider-runnable-track,
+.volume-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--range-progress, 0%),
+    var(--border) var(--range-progress, 0%),
+    var(--border) 100%
+  );
+}
+
+.seek-bar::-webkit-slider-thumb,
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: -5px; /* center on 4px track: (14-4)/2 = 5 */
+  transition: transform 0.1s;
+}
+
+.seek-bar::-webkit-slider-thumb:hover,
+.volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.seek-bar::-moz-range-track,
+.volume-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.seek-bar::-moz-range-progress,
+.volume-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.seek-bar::-moz-range-thumb,
+.volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
 }
 
 .volume-label {
