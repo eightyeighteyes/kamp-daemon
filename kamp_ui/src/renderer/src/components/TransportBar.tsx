@@ -60,6 +60,9 @@ export function TransportBar(): React.JSX.Element {
           step={0.5}
           value={position}
           onChange={(e) => seek(parseFloat(e.target.value))}
+          style={
+            { '--range-progress': `${(position / (duration || 1)) * 100}%` } as React.CSSProperties
+          }
         />
         <span className="time">{formatTime(duration)}</span>
       </div>
@@ -73,6 +76,7 @@ export function TransportBar(): React.JSX.Element {
           max={100}
           value={volume}
           onChange={(e) => setVolume(parseInt(e.target.value, 10))}
+          style={{ '--range-progress': `${volume}%` } as React.CSSProperties}
         />
         <span className="volume-label">{volume}</span>
       </div>
