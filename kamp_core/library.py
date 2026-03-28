@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -84,13 +85,40 @@ class LibraryIndex:
 
     def __init__(self, db_path: Path) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        # check_same_thread=False is safe here: all writes are serialised through
-        # LibraryIndex methods, and SQLite operates in serialized mode by default.
-        # FastAPI dispatches sync handlers to a thread pool, so without this flag
-        # every request would raise ProgrammingError.
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+        self._db_path = db_path
+        self._local = threading.local()
+        # Track every connection opened across threads so close() can shut them
+        # all down cleanly at server shutdown.
+        self._all_conns: list[sqlite3.Connection] = []
+        self._all_conns_lock = threading.Lock()
         self._migrate()
+
+    def _make_conn(self) -> sqlite3.Connection:
+        """Open a new SQLite connection configured for use in this index."""
+        # check_same_thread=False: each connection is only *used* by the thread
+        # that created it (enforced by threading.local), but close() is called
+        # from the main thread at shutdown and needs to reach all connections.
+        conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        # WAL allows concurrent reads from other thread-connections while a
+        # write (e.g. library scan) is in progress.
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """Return the SQLite connection for the current thread.
+
+        Python's sqlite3 wrapper shares internal cursor state on a single
+        connection object, causing InterfaceError when multiple threads call
+        execute() concurrently. One connection per thread eliminates this.
+        """
+        if not hasattr(self._local, "conn"):
+            conn = self._make_conn()
+            self._local.conn = conn
+            with self._all_conns_lock:
+                self._all_conns.append(conn)
+        return self._local.conn  # type: ignore[no-any-return]
 
     def _migrate(self) -> None:
         """Create schema and stamp migration version if not already done."""
@@ -189,7 +217,10 @@ class LibraryIndex:
         return {Path(r["file_path"]) for r in rows}
 
     def close(self) -> None:
-        self._conn.close()
+        with self._all_conns_lock:
+            for conn in self._all_conns:
+                conn.close()
+            self._all_conns.clear()
 
 
 def _track_to_params(
@@ -250,7 +281,7 @@ def extract_art(path: Path) -> tuple[bytes, str] | None:
                     return bytes(frame.data), str(frame.mime)
         elif suffix == ".m4a":  # pragma: no branch
             audio = mutagen.mp4.MP4(str(path))
-            covr = (audio.tags or {}).get("covr")
+            covr = (audio.tags or {}).get("covr")  # type: ignore[call-overload]
             if covr:
                 img = covr[0]
                 mime = (
@@ -270,7 +301,7 @@ def extract_art(path: Path) -> tuple[bytes, str] | None:
             from mutagen.flac import Picture
 
             audio = mutagen.oggvorbis.OggVorbis(str(path))
-            blocks = (audio.tags or {}).get("metadata_block_picture", [])
+            blocks = (audio.tags or {}).get("metadata_block_picture", [])  # type: ignore[call-overload]
             if blocks:
                 pic = Picture(base64.b64decode(blocks[0]))
                 return bytes(pic.data), str(pic.mime)
