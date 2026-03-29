@@ -243,6 +243,11 @@ class LibraryIndex:
         )
         self._conn.commit()
 
+    def clear_player_state(self) -> None:
+        """Remove the persisted player state (e.g. after the queue is exhausted)."""
+        self._conn.execute("DELETE FROM player_state WHERE id = 1")
+        self._conn.commit()
+
     def load_player_state(self) -> "tuple[Path, float] | None":
         """Return (track_path, position) from the last session, or None."""
         row = self._conn.execute(

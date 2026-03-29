@@ -330,6 +330,15 @@ class TestLibraryIndex:
 
         assert result is None
 
+    def test_clear_player_state_removes_saved_state(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.save_player_state(tmp_path / "track.mp3", 42.5)
+        index.clear_player_state()
+        result = index.load_player_state()
+        index.close()
+
+        assert result is None
+
     def test_save_player_state_overwrites_previous(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
         index.save_player_state(tmp_path / "first.mp3", 10.0)

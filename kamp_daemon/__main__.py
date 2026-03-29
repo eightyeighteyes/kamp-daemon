@@ -499,6 +499,9 @@ def _cmd_server(
             engine.play(track.file_path)
         else:
             engine.stop()
+            # Queue exhausted — clear saved state so restart starts fresh
+            # rather than restoring the last track a few seconds from the end.
+            index.clear_player_state()
 
     engine.on_track_end = _on_track_end
 
