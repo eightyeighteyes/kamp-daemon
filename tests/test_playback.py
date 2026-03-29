@@ -215,6 +215,23 @@ class TestMpvPlaybackEngine:
         send.assert_any_call("set_property", "pause", True)
         send.assert_any_call("seek", 0, "absolute")
 
+    def test_load_paused_loads_and_pauses(self) -> None:
+        engine, send = _make_engine()
+        engine.load_paused(Path("/music/track.mp3"))
+        send.assert_any_call("loadfile", "/music/track.mp3", "replace")
+        send.assert_any_call("set_property", "pause", True)
+
+    def test_load_paused_seeks_when_position_nonzero(self) -> None:
+        engine, send = _make_engine()
+        engine.load_paused(Path("/music/track.mp3"), 42.5)
+        send.assert_any_call("seek", 42.5, "absolute")
+
+    def test_load_paused_does_not_seek_when_position_is_zero(self) -> None:
+        engine, send = _make_engine()
+        engine.load_paused(Path("/music/track.mp3"), 0.0)
+        calls = [c.args for c in send.call_args_list]
+        assert ("seek", 0.0, "absolute") not in calls
+
     def test_on_track_end_callback_is_called(self) -> None:
         engine, _ = _make_engine()
         callback = MagicMock()

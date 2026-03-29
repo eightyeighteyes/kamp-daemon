@@ -200,6 +200,17 @@ class MpvPlaybackEngine:
         # Explicitly unpause so calling play() after pause() always starts playback.
         self._send_command("set_property", "pause", False)
 
+    def load_paused(self, path: Path, position: float = 0.0) -> None:
+        """Load *path* into mpv, paused at *position*, without starting playback.
+
+        Used on daemon startup to restore the previous session state without
+        auto-resuming — the user must press play explicitly.
+        """
+        self._send_command("loadfile", str(path), "replace")
+        self._send_command("set_property", "pause", True)
+        if position > 0:
+            self._send_command("seek", position, "absolute")
+
     def pause(self) -> None:
         self._send_command("set_property", "pause", True)
 
