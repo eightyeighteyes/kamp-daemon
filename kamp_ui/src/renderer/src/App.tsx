@@ -10,6 +10,7 @@ import { TransportBar } from './components/TransportBar'
 
 export default function App(): React.JSX.Element {
   const loadLibrary = useStore((s) => s.loadLibrary)
+  const refreshOpenAlbum = useStore((s) => s.refreshOpenAlbum)
   const loadUiState = useStore((s) => s.loadUiState)
   const applyServerState = useStore((s) => s.applyServerState)
   const setServerStatus = useStore((s) => s.setServerStatus)
@@ -53,8 +54,9 @@ export default function App(): React.JSX.Element {
           loadUiState()
         },
         () => {
-          // Background scan completed — refresh the album list.
+          // Background scan completed — refresh album list and open track list.
           void loadLibrary()
+          void refreshOpenAlbum()
         }
       )
     }
