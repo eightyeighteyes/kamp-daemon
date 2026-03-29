@@ -71,6 +71,11 @@ class LibraryConfig:
 
 
 @dataclass
+class UiConfig:
+    active_view: str = "library"  # "library" | "now-playing"
+
+
+@dataclass
 class BandcampConfig:
     username: str
     cookie_file: Path | None  # if set, bypasses interactive login
@@ -94,6 +99,11 @@ class Config:
     artwork: ArtworkConfig
     library: LibraryConfig
     bandcamp: BandcampConfig | None = None
+    ui: UiConfig = None  # type: ignore[assignment]  # set in __post_init__
+
+    def __post_init__(self) -> None:
+        if self.ui is None:
+            self.ui = UiConfig()
 
     @classmethod
     def first_run_setup(cls, path: Path) -> "Config":
@@ -215,6 +225,9 @@ class Config:
                 poll_interval_minutes=int(bc_raw.get("poll_interval_minutes", 0)),
             )
 
+        ui_raw = raw.get("ui", {})
+        ui = UiConfig(active_view=ui_raw.get("active_view", "library"))
+
         return cls(
             paths=PathsConfig(
                 staging=Path(p["staging"]).expanduser(),
@@ -229,6 +242,7 @@ class Config:
                 path_template=lib["path_template"],
             ),
             bandcamp=bandcamp,
+            ui=ui,
         )
 
 
@@ -249,6 +263,7 @@ _CONFIG_KEY_TYPES: dict[str, type] = {
     "bandcamp.cookie_file": str,
     "bandcamp.format": str,
     "bandcamp.poll_interval_minutes": int,
+    "ui.active_view": str,
 }
 
 # Keys whose values must come from a fixed set of choices.
@@ -256,6 +271,7 @@ _CONFIG_KEY_CHOICES: dict[str, frozenset[str]] = {
     "bandcamp.format": frozenset(
         {"mp3-v0", "mp3-320", "flac", "aac-hi", "vorbis", "alac", "wav"}
     ),
+    "ui.active_view": frozenset({"library", "now-playing"}),
 }
 
 

@@ -524,12 +524,17 @@ def _cmd_server(
     def _on_library_path_set(path: Path) -> None:
         _config_set(config_path, "paths.library", str(path))
 
+    def _on_ui_state_set(key: str, value: str) -> None:
+        _config_set(config_path, key, value)
+
     app = create_app(
         index=index,
         engine=engine,
         queue=queue,
         library_path=lib_path,
         on_library_path_set=_on_library_path_set,
+        ui_active_view=config.ui.active_view,
+        on_ui_state_set=_on_ui_state_set,
     )
 
     print(f"Kamp API server starting on http://{host}:{port}")

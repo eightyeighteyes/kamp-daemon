@@ -87,6 +87,12 @@ export const scanLibrary = (): Promise<ScanResult> => post('/api/v1/library/scan
 export const setLibraryPath = (path: string): Promise<{ ok: boolean }> =>
   post('/api/v1/config/library-path', { path })
 
+export type UiState = { active_view: 'library' | 'now-playing' }
+
+export const getUiState = (): Promise<UiState> => get('/api/v1/ui')
+export const setActiveViewApi = (view: 'library' | 'now-playing'): Promise<{ ok: boolean }> =>
+  post('/api/v1/ui/active-view', { view })
+
 export type ScanProgress = { active: boolean; current: number; total: number }
 
 export const getScanProgress = (): Promise<ScanProgress> => get('/api/v1/library/scan/progress')

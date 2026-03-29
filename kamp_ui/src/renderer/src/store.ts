@@ -10,6 +10,7 @@ import { create } from 'zustand'
 import * as api from './api/client'
 import type { Album, PlayerState, ScanProgress, ScanResult, Track } from './api/client'
 
+
 type LibraryState = {
   albums: Album[]
   artists: string[]
@@ -29,13 +30,13 @@ type PlayerStore = {
   scanProgress: ScanProgress | null
 
   configuredLibraryPath: string | null
-  // TODO(TASK-10): move to config.toml via preferences API once DRAFT-8 ships
   activeView: 'library' | 'now-playing'
 
   // Actions
   setServerStatus: (status: 'connected' | 'reconnecting' | 'disconnected') => void
-  setActiveView: (view: 'library' | 'now-playing') => void
+  setActiveView: (view: 'library' | 'now-playing') => Promise<void>
   loadLibrary: () => Promise<void>
+  loadUiState: () => Promise<void>
   selectArtist: (artist: string | null) => void
   selectAlbum: (album: Album | null) => Promise<void>
   loadTracks: (albumArtist: string, album: string) => Promise<void>
@@ -78,13 +79,26 @@ export const useStore = create<PlayerStore>((set, get) => ({
   scanError: null,
   scanProgress: null,
   configuredLibraryPath: null,
-  activeView: (localStorage.getItem('kamp.activeView') as 'library' | 'now-playing') ?? 'library',
+  activeView: 'library',
 
   setServerStatus: (status) => set({ serverStatus: status }),
 
-  setActiveView: (view) => {
-    localStorage.setItem('kamp.activeView', view)
+  setActiveView: async (view) => {
     set({ activeView: view })
+    try {
+      await api.setActiveViewApi(view)
+    } catch {
+      // Best-effort — view is already updated locally; daemon will sync on next connect.
+    }
+  },
+
+  loadUiState: async () => {
+    try {
+      const ui = await api.getUiState()
+      set({ activeView: ui.active_view })
+    } catch {
+      // Server unreachable — keep default.
+    }
   },
 
   applyServerState: (state) => set({ player: state }),

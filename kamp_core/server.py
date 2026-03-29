@@ -120,6 +120,8 @@ def create_app(
     queue: PlaybackQueue,
     library_path: Path | None = None,
     on_library_path_set: Callable[[Path], None] | None = None,
+    ui_active_view: str = "library",
+    on_ui_state_set: Callable[[str, str], None] | None = None,
 ) -> FastAPI:
     """Return a configured FastAPI application.
 
@@ -134,6 +136,7 @@ def create_app(
     _state: dict[str, Any] = {
         "library_path": library_path,
         "scan_progress": {"active": False, "current": 0, "total": 0},
+        "ui_active_view": ui_active_view,
     }
 
     # Allow requests from the Electron renderer (Vite dev server and file://).
@@ -233,6 +236,24 @@ def create_app(
         _state["library_path"] = candidate
         if on_library_path_set is not None:
             on_library_path_set(candidate)
+        return {"ok": True}
+
+    # -----------------------------------------------------------------------
+    # UI state
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/v1/ui")
+    def get_ui_state() -> dict[str, Any]:
+        return {"active_view": _state["ui_active_view"]}
+
+    @app.post("/api/v1/ui/active-view")
+    def set_active_view(req: dict[str, Any]) -> dict[str, Any]:
+        view = req.get("view", "library")
+        if view not in ("library", "now-playing"):
+            raise HTTPException(status_code=422, detail="Invalid view")
+        _state["ui_active_view"] = view
+        if on_ui_state_set is not None:
+            on_ui_state_set("ui.active_view", view)
         return {"ok": True}
 
     # -----------------------------------------------------------------------
