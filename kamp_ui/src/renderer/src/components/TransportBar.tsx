@@ -32,20 +32,20 @@ export function TransportBar(): React.JSX.Element {
       </div>
 
       <div className="transport-controls">
-        <button className="transport-btn" onClick={prev} title="Previous">
+        <button className="transport-btn" onClick={prev} title="Previous (←)">
           ⏮
         </button>
         <button
           className="transport-btn primary"
           onClick={togglePlayPause}
-          title={playing ? 'Pause' : 'Play'}
+          title={playing ? 'Pause (Space)' : 'Play (Space)'}
         >
           {playing ? '⏸' : '▶'}
         </button>
         <button className="transport-btn" onClick={stop} title="Stop">
           ⏹
         </button>
-        <button className="transport-btn" onClick={next} title="Next">
+        <button className="transport-btn" onClick={next} title="Next (→)">
           ⏭
         </button>
       </div>
