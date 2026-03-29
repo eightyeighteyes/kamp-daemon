@@ -10,7 +10,6 @@ import { create } from 'zustand'
 import * as api from './api/client'
 import type { Album, PlayerState, ScanProgress, ScanResult, Track } from './api/client'
 
-
 type LibraryState = {
   albums: Album[]
   artists: string[]
