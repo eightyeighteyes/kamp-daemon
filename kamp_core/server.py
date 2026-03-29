@@ -201,11 +201,17 @@ def create_app(
             raise HTTPException(status_code=503, detail="Library path not configured")
 
         def _on_progress(current: int, total: int) -> None:
-            _state["scan_progress"] = {"active": True, "current": current, "total": total}
+            _state["scan_progress"] = {
+                "active": True,
+                "current": current,
+                "total": total,
+            }
 
         _state["scan_progress"] = {"active": True, "current": 0, "total": 0}
         try:
-            result = LibraryScanner(index).scan(_state["library_path"], on_progress=_on_progress)
+            result = LibraryScanner(index).scan(
+                _state["library_path"], on_progress=_on_progress
+            )
         finally:
             _state["scan_progress"] = {"active": False, "current": 0, "total": 0}
 
