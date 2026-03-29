@@ -51,6 +51,10 @@ export default function App(): React.JSX.Element {
           setServerStatus('connected')
           loadLibrary()
           loadUiState()
+        },
+        () => {
+          // Background scan completed — refresh the album list.
+          void loadLibrary()
         }
       )
     }

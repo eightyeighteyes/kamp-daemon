@@ -519,18 +519,6 @@ def _cmd_server(
 
     threading.Thread(target=_state_saver, daemon=True, name="state-saver").start()
 
-    # Watch the library directory and re-scan when audio files are added or
-    # removed, so the UI stays current without requiring a manual scan trigger.
-    from kamp_daemon.watcher import LibraryWatcher
-
-    def _on_library_change() -> None:
-        from kamp_core.library import LibraryScanner
-
-        LibraryScanner(index).scan(lib_path)
-
-    lib_watcher = LibraryWatcher(lib_path, _on_library_change)
-    lib_watcher.start()
-
     # Persist library path changes back to config.toml so the next server start
     # picks up the user's choice without requiring a manual config edit.
     def _on_library_path_set(path: Path) -> None:
@@ -548,6 +536,21 @@ def _cmd_server(
         ui_active_view=config.ui.active_view,
         on_ui_state_set=_on_ui_state_set,
     )
+
+    # Watch the library directory and re-scan when audio files are added or
+    # removed, so the UI stays current without requiring a manual scan trigger.
+    from kamp_daemon.watcher import LibraryWatcher
+
+    def _on_library_change() -> None:
+        from kamp_core.library import LibraryScanner
+
+        LibraryScanner(index).scan(lib_path)
+        # Bump the server's library version so connected WebSocket clients
+        # receive a "library.changed" push and reload the album list.
+        app.state.notify_library_changed()
+
+    lib_watcher = LibraryWatcher(lib_path, _on_library_change)
+    lib_watcher.start()
 
     print(f"Kamp API server starting on http://{host}:{port}")
     print(f"  Docs  → http://{host}:{port}/docs")
