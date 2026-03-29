@@ -519,6 +519,18 @@ def _cmd_server(
 
     threading.Thread(target=_state_saver, daemon=True, name="state-saver").start()
 
+    # Watch the library directory and re-scan when audio files are added or
+    # removed, so the UI stays current without requiring a manual scan trigger.
+    from kamp_daemon.watcher import LibraryWatcher
+
+    def _on_library_change() -> None:
+        from kamp_core.library import LibraryScanner
+
+        LibraryScanner(index).scan(lib_path)
+
+    lib_watcher = LibraryWatcher(lib_path, _on_library_change)
+    lib_watcher.start()
+
     # Persist library path changes back to config.toml so the next server start
     # picks up the user's choice without requiring a manual config edit.
     def _on_library_path_set(path: Path) -> None:
@@ -542,6 +554,7 @@ def _cmd_server(
     print(f"  Library → {lib_path}")
     uvicorn.run(app, host=host, port=port)
 
+    lib_watcher.stop()
     engine.shutdown()
     index.close()
 
