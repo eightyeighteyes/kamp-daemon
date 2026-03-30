@@ -1,10 +1,10 @@
 ---
 id: TASK-6
 title: Full-text search (backend endpoint + search bar UI)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-29 03:11'
-updated_date: '2026-03-30 11:52'
+updated_date: '2026-03-30 13:10'
 labels:
   - feature
   - search
