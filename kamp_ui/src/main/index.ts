@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, resolve } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { spawn, ChildProcess } from 'child_process'
 import * as http from 'http'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -69,13 +69,38 @@ function stopServer(): void {
   }
 }
 
+type WindowBounds = { x: number; y: number; width: number; height: number }
+
+function loadWindowBounds(): WindowBounds {
+  const defaults: WindowBounds = { x: 0, y: 0, width: 900, height: 670 }
+  try {
+    const file = join(app.getPath('userData'), 'window-state.json')
+    return JSON.parse(readFileSync(file, 'utf8')) as WindowBounds
+  } catch {
+    return defaults
+  }
+}
+
+function saveWindowBounds(win: BrowserWindow): void {
+  try {
+    const file = join(app.getPath('userData'), 'window-state.json')
+    writeFileSync(file, JSON.stringify(win.getBounds()))
+  } catch {
+    // Non-critical — ignore write errors.
+  }
+}
+
 function createWindow(): void {
+  const bounds = loadWindowBounds()
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    ...bounds,
     show: false,
     autoHideMenuBar: true,
+    // Match the app's dark background so the native window surface never
+    // shows through as white gutters during resize or repaint.
+    backgroundColor: '#141414',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -86,6 +111,10 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
+
+  // Persist bounds on every move/resize so the next launch restores them.
+  mainWindow.on('moved', () => saveWindowBounds(mainWindow))
+  mainWindow.on('resized', () => saveWindowBounds(mainWindow))
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
