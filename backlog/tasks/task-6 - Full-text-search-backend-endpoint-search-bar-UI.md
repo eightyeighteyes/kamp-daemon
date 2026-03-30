@@ -1,10 +1,10 @@
 ---
 id: TASK-6
 title: Full-text search (backend endpoint + search bar UI)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-29 03:11'
-updated_date: '2026-03-29 03:15'
+updated_date: '2026-03-30 11:52'
 labels:
   - feature
   - search
@@ -12,7 +12,7 @@ labels:
 milestone: m-0
 dependencies: []
 priority: medium
-ordinal: 2750
+ordinal: 1000
 ---
 
 ## Description
@@ -29,4 +29,5 @@ SQLite FTS5 is the natural fit for the backend index.
 - [ ] #2 Search bar in UI filters results as the user types
 - [ ] #3 Results include album art thumbnails and are clickable to play
 - [ ] #4 Empty query returns no results (not the full library)
+- [ ] #5 Cmd K (mac) / Ctrl K (win/linux) brings user to search bar
 <!-- AC:END -->

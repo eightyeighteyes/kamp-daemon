@@ -4,7 +4,11 @@ title: a user can 'favorite' a track
 status: To Do
 assignee: []
 created_date: '2026-03-30 01:48'
-labels: []
+updated_date: '2026-03-30 11:45'
+labels:
+  - feature
+  - library
+  - 'estimate: side'
 milestone: m-5
 dependencies: []
 ---

@@ -4,7 +4,7 @@ title: 'MediaController: macOS media keys and Now Playing widget'
 status: To Do
 assignee: []
 created_date: '2026-03-29 03:11'
-updated_date: '2026-03-29 03:15'
+updated_date: '2026-03-30 11:43'
 labels:
   - feature
   - macos
@@ -13,7 +13,7 @@ labels:
 milestone: m-0
 dependencies: []
 priority: medium
-ordinal: 2500
+ordinal: 4750
 ---
 
 ## Description
