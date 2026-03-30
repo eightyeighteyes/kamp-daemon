@@ -82,6 +82,14 @@ export const getTracksForAlbum = (albumArtist: string, album: string): Promise<T
     `/api/v1/tracks?album_artist=${encodeURIComponent(albumArtist)}&album=${encodeURIComponent(album)}`
   )
 
+export type SearchResult = {
+  albums: Album[]
+  tracks: Track[]
+}
+
+export const search = (q: string): Promise<SearchResult> =>
+  get(`/api/v1/search?q=${encodeURIComponent(q)}`)
+
 export const scanLibrary = (): Promise<ScanResult> => post('/api/v1/library/scan')
 
 export const setLibraryPath = (path: string): Promise<{ ok: boolean }> =>
