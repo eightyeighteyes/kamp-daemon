@@ -116,14 +116,14 @@ class TestLibraryIndex:
         assert "tracks" in tables
         assert "schema_version" in tables
 
-    def test_migration_version_is_1(self, tmp_path: Path) -> None:
+    def test_migration_version_is_current(self, tmp_path: Path) -> None:
         LibraryIndex(tmp_path / "library.db").close()
 
         conn = sqlite3.connect(str(tmp_path / "library.db"))
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
 
-        assert version == 1
+        assert version == 2
 
     def test_upsert_adds_track(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
@@ -738,3 +738,160 @@ class TestTagReaders:
         wav = tmp_path / "file.wav"
         wav.write_bytes(b"")
         assert _read_tags(wav) is None
+
+
+# ---------------------------------------------------------------------------
+# FTS5 search
+# ---------------------------------------------------------------------------
+
+
+class TestSearch:
+    def _index_with_tracks(self, tmp_path: Path) -> LibraryIndex:
+        index = LibraryIndex(tmp_path / "library.db")
+        tracks = [
+            Track(
+                file_path=tmp_path / "01.mp3",
+                title="Morning Bell",
+                artist="Radiohead",
+                album_artist="Radiohead",
+                album="Kid A",
+                year="2000",
+                track_number=1,
+                disc_number=1,
+                ext="mp3",
+                embedded_art=False,
+                mb_release_id="",
+                mb_recording_id="",
+            ),
+            Track(
+                file_path=tmp_path / "02.mp3",
+                title="Everything in Its Right Place",
+                artist="Radiohead",
+                album_artist="Radiohead",
+                album="Kid A",
+                year="2000",
+                track_number=2,
+                disc_number=1,
+                ext="mp3",
+                embedded_art=False,
+                mb_release_id="",
+                mb_recording_id="",
+            ),
+            Track(
+                file_path=tmp_path / "03.mp3",
+                title="Ocean",
+                artist="Björk",
+                album_artist="Björk",
+                album="Homogenic",
+                year="1997",
+                track_number=1,
+                disc_number=1,
+                ext="mp3",
+                embedded_art=False,
+                mb_release_id="",
+                mb_recording_id="",
+            ),
+        ]
+        index.upsert_many(tracks)
+        return index
+
+    def test_empty_query_returns_no_results(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        results = index.search("")
+        index.close()
+        assert results == []
+
+    def test_whitespace_only_query_returns_no_results(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        results = index.search("   ")
+        index.close()
+        assert results == []
+
+    def test_match_by_artist(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        results = index.search("radiohead")
+        index.close()
+        assert all(t.album_artist == "Radiohead" for t in results)
+        assert len(results) == 2
+
+    def test_match_by_album(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        results = index.search("kid a")
+        index.close()
+        assert len(results) == 2
+
+    def test_match_by_title(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        results = index.search("morning bell")
+        index.close()
+        assert len(results) == 1
+        assert results[0].title == "Morning Bell"
+
+    def test_prefix_match(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        results = index.search("radio")
+        index.close()
+        assert len(results) == 2
+
+    def test_no_match_returns_empty(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        results = index.search("zzznomatch")
+        index.close()
+        assert results == []
+
+    def test_removed_track_excluded_from_search(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        index.remove_track(tmp_path / "01.mp3")
+        results = index.search("morning bell")
+        index.close()
+        assert results == []
+
+    def test_v1_database_migrated_to_v2(self, tmp_path: Path) -> None:
+        """Existing v1 databases gain FTS support after migration."""
+        import sqlite3 as _sqlite3
+
+        db_path = tmp_path / "library.db"
+        # Build a v1-style database without the FTS table.
+        conn = _sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version VALUES (1)")
+        conn.execute("""
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                album_artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                track_number INTEGER NOT NULL DEFAULT 0,
+                disc_number INTEGER NOT NULL DEFAULT 1,
+                ext TEXT NOT NULL DEFAULT '',
+                embedded_art INTEGER NOT NULL DEFAULT 0,
+                mb_release_id TEXT NOT NULL DEFAULT '',
+                mb_recording_id TEXT NOT NULL DEFAULT ''
+            )
+            """)
+        conn.execute(
+            "INSERT INTO tracks VALUES (1, '/a.mp3', 'Title', 'ArtistA', 'ArtistA', "
+            "'RecordA', '2000', 1, 1, 'mp3', 0, '', '')"
+        )
+        conn.execute(
+            "CREATE TABLE player_state ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), "
+            "track_path TEXT NOT NULL, position REAL NOT NULL DEFAULT 0)"
+        )
+        conn.commit()
+        conn.close()
+
+        # Opening with LibraryIndex should migrate v1 → v2.
+        index = LibraryIndex(db_path)
+        results = index.search("ArtistA")
+        version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
+        index.close()
+
+        assert version == 2
+        assert len(results) == 1
+        assert results[0].title == "Title"

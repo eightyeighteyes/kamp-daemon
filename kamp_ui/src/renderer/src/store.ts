@@ -8,7 +8,14 @@
 
 import { create } from 'zustand'
 import * as api from './api/client'
-import type { Album, PlayerState, ScanProgress, ScanResult, Track } from './api/client'
+import type {
+  Album,
+  PlayerState,
+  ScanProgress,
+  ScanResult,
+  SearchResult,
+  Track
+} from './api/client'
 
 type LibraryState = {
   albums: Album[]
@@ -30,9 +37,12 @@ type PlayerStore = {
 
   configuredLibraryPath: string | null
   activeView: 'library' | 'now-playing'
+  searchQuery: string
+  searchResults: SearchResult | null
 
   // Actions
   setServerStatus: (status: 'connected' | 'reconnecting' | 'disconnected') => void
+  setSearchQuery: (q: string) => void
   setActiveView: (view: 'library' | 'now-playing') => Promise<void>
   loadLibrary: () => Promise<void>
   loadUiState: () => Promise<void>
@@ -80,8 +90,27 @@ export const useStore = create<PlayerStore>((set, get) => ({
   scanProgress: null,
   configuredLibraryPath: null,
   activeView: 'library',
+  searchQuery: '',
+  searchResults: null,
 
   setServerStatus: (status) => set({ serverStatus: status }),
+
+  setSearchQuery: async (q) => {
+    set({ searchQuery: q })
+    if (!q.trim()) {
+      set({ searchResults: null })
+      return
+    }
+    try {
+      const results = await api.search(q)
+      // Only apply if the query hasn't changed since we fired the request.
+      if (get().searchQuery === q) {
+        set({ searchResults: results })
+      }
+    } catch {
+      // Ignore transient errors — stale results are better than a broken UI.
+    }
+  },
 
   setActiveView: async (view) => {
     set({ activeView: view })

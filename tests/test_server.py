@@ -590,3 +590,52 @@ class TestSetLibraryPathEndpoint:
         c = self._make_client(mock_index, mock_engine, mock_queue)
         res = c.post("/api/v1/config/library-path", json={"path": str(tmp_path)})
         assert res.status_code == 200
+
+
+class TestSearchEndpoint:
+    def test_empty_query_returns_empty_results(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_index.search.return_value = []
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        res = TestClient(app).get("/api/v1/search?q=")
+        assert res.status_code == 200
+        data = res.json()
+        assert data == {"albums": [], "tracks": []}
+
+    def test_returns_matching_tracks_and_albums(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        t = _track(1, album="Kid A", artist="Radiohead")
+        mock_index.search.return_value = [t]
+        mock_index.tracks_for_album.return_value = [t]
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        res = TestClient(app).get("/api/v1/search?q=radiohead")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data["tracks"]) == 1
+        assert data["tracks"][0]["album"] == "Kid A"
+        assert len(data["albums"]) == 1
+        assert data["albums"][0]["album"] == "Kid A"
+
+    def test_albums_deduplicated_when_multiple_tracks_match(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        t1 = _track(1, album="Kid A", artist="Radiohead")
+        t2 = _track(2, album="Kid A", artist="Radiohead")
+        mock_index.search.return_value = [t1, t2]
+        mock_index.tracks_for_album.return_value = [t1, t2]
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        res = TestClient(app).get("/api/v1/search?q=radiohead")
+        data = res.json()
+        # Two matching tracks → only one album entry
+        assert len(data["albums"]) == 1
+        assert len(data["tracks"]) == 2
+
+    def test_search_called_with_query_param(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_index.search.return_value = []
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        TestClient(app).get("/api/v1/search?q=kid+a")
+        mock_index.search.assert_called_once_with("kid a")

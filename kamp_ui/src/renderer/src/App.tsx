@@ -1,9 +1,11 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useStore } from './store'
 import { connectStateStream } from './api/client'
 import { ArtistPanel } from './components/ArtistPanel'
 import { AlbumGrid } from './components/AlbumGrid'
 import { NowPlayingView } from './components/NowPlayingView'
+import { SearchBar } from './components/SearchBar'
+import { SearchView } from './components/SearchView'
 import { SetupScreen } from './components/SetupScreen'
 import { TrackList } from './components/TrackList'
 import { TransportBar } from './components/TransportBar'
@@ -22,6 +24,9 @@ export default function App(): React.JSX.Element {
   const togglePlayPause = useStore((s) => s.togglePlayPause)
   const next = useStore((s) => s.next)
   const prev = useStore((s) => s.prev)
+  const searchQuery = useStore((s) => s.searchQuery)
+  const setSearchQuery = useStore((s) => s.setSearchQuery)
+  const searchBarRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadLibrary()
@@ -66,9 +71,25 @@ export default function App(): React.JSX.Element {
     return disconnect
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Global keyboard shortcuts — skip when focus is inside a text input.
+  // Global keyboard shortcuts — skip when focus is inside a text input,
+  // except for Cmd/Ctrl+K which focuses the search bar from anywhere.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
+      // Cmd+K (mac) / Ctrl+K (win/linux) focuses the search bar.
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        searchBarRef.current?.focus()
+        searchBarRef.current?.select()
+        return
+      }
+
+      // Escape clears search when the search bar is focused.
+      if (e.key === 'Escape' && searchQuery) {
+        void setSearchQuery('')
+        searchBarRef.current?.blur()
+        return
+      }
+
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
@@ -93,7 +114,7 @@ export default function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [togglePlayPause, next, prev, setActiveView, activeView])
+  }, [togglePlayPause, next, prev, setActiveView, activeView, searchQuery, setSearchQuery])
 
   if (serverStatus === 'disconnected') {
     return (
@@ -128,13 +149,16 @@ export default function App(): React.JSX.Element {
           >
             Now Playing
           </button>
+          <SearchBar ref={searchBarRef} />
         </nav>
       )}
       <div className="app-body">
-        {!showSetup && activeView === 'library' && <ArtistPanel />}
+        {!showSetup && activeView === 'library' && !searchQuery && <ArtistPanel />}
         <main className="main-content">
           {showSetup ? (
             <SetupScreen />
+          ) : searchQuery ? (
+            <SearchView />
           ) : activeView === 'now-playing' ? (
             <NowPlayingView />
           ) : selectedAlbum ? (

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import threading
 from collections.abc import Callable
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -42,12 +43,37 @@ CREATE TABLE IF NOT EXISTS tracks (
     mb_recording_id  TEXT    NOT NULL DEFAULT ''
 );
 
+-- FTS5 virtual table for full-text search across track metadata.
+-- Indexed fields: title, artist, album_artist, album.
+-- rowid maps to tracks.id so we can JOIN back for full track data.
+CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+    title, artist, album_artist, album,
+    tokenize = 'unicode61'
+);
+
 CREATE TABLE IF NOT EXISTS player_state (
     id         INTEGER PRIMARY KEY CHECK (id = 1),  -- single-row table
     track_path TEXT    NOT NULL,
     position   REAL    NOT NULL DEFAULT 0
 );
 """
+
+# Characters that have special meaning in FTS5 MATCH expressions.
+_FTS_SPECIAL = re.compile(r'["*^()]')
+
+
+def _make_fts_query(q: str) -> str:
+    """Convert a plain user query into an FTS5 MATCH expression.
+
+    Each whitespace-delimited token is stripped of FTS5 syntax characters and
+    given a trailing ``*`` for prefix matching, then joined with implicit AND.
+    Returns an empty string when the query contains no usable tokens.
+    """
+    tokens = [_FTS_SPECIAL.sub("", t) for t in q.split()]
+    tokens = [t for t in tokens if t]
+    if not tokens:
+        return ""
+    return " ".join(f"{t}*" for t in tokens)
 
 
 @dataclass
@@ -128,14 +154,32 @@ class LibraryIndex:
         return self._local.conn  # type: ignore[no-any-return]
 
     def _migrate(self) -> None:
-        """Create schema and stamp migration version if not already done."""
+        """Create schema and run any pending version migrations."""
         self._conn.executescript(_DDL)
         row = self._conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
+            # Brand-new database — stamp current version and populate FTS.
+            self._rebuild_fts()
             self._conn.execute(
                 "INSERT INTO schema_version (version) VALUES (?)", (_SCHEMA_VERSION,)
             )
             self._conn.commit()
+            return
+
+        version = row["version"]
+        if version < 2:
+            # v1 → v2: FTS table added; backfill from existing tracks.
+            self._rebuild_fts()
+            self._conn.execute("UPDATE schema_version SET version = 2")
+            self._conn.commit()
+
+    def _rebuild_fts(self) -> None:
+        """Rebuild the FTS index from the current contents of the tracks table."""
+        self._conn.execute("DELETE FROM tracks_fts")
+        self._conn.execute(
+            "INSERT INTO tracks_fts(rowid, title, artist, album_artist, album) "
+            "SELECT id, title, artist, album_artist, album FROM tracks"
+        )
 
     def upsert_track(self, track: Track) -> None:
         """Insert or replace a single track record keyed on file_path."""
@@ -167,11 +211,15 @@ class LibraryIndex:
             """,
             [_track_to_params(t) for t in tracks],
         )
+        # Rebuild the FTS index so new/updated tracks are immediately searchable.
+        self._rebuild_fts()
         self._conn.commit()
 
     def remove_track(self, file_path: Path) -> None:
         """Remove the track with the given file path from the index."""
         self._conn.execute("DELETE FROM tracks WHERE file_path = ?", (str(file_path),))
+        # Sync FTS — rebuilding is simpler than per-row deletes with FTS5 content tables.
+        self._rebuild_fts()
         self._conn.commit()
 
     def all_tracks(self) -> list[Track]:
@@ -229,6 +277,27 @@ class LibraryIndex:
             "SELECT * FROM tracks WHERE file_path = ?", (str(path),)
         ).fetchone()
         return _row_to_track(row) if row else None
+
+    def search(self, query: str) -> list[Track]:
+        """Full-text search across title, artist, album_artist, and album.
+
+        Returns tracks ranked by relevance (best match first).
+        Returns an empty list when *query* is blank.
+        """
+        fts_expr = _make_fts_query(query)
+        if not fts_expr:
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT t.*
+            FROM tracks_fts f
+            JOIN tracks t ON f.rowid = t.id
+            WHERE tracks_fts MATCH ?
+            ORDER BY f.rank
+            """,
+            (fts_expr,),
+        ).fetchall()
+        return [_row_to_track(r) for r in rows]
 
     def save_player_state(self, track_path: Path, position: float) -> None:
         """Persist the current track path and playback position."""

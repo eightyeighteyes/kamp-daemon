@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -106,6 +106,11 @@ class ScanResult(BaseModel):
 
 class LibraryPathRequest(BaseModel):
     path: str
+
+
+class SearchOut(BaseModel):
+    albums: list[AlbumOut]
+    tracks: list[TrackOut]
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +214,30 @@ def create_app(
                     return Response(content=data, media_type=mime)
         raise HTTPException(status_code=404, detail="No art found")
 
+    @app.get("/api/v1/search", response_model=SearchOut)
+    def search_library(q: str = "") -> SearchOut:
+        tracks = index.search(q)
+        # Deduplicate to one AlbumOut per (album_artist, album) pair while
+        # preserving the order in which albums first appear in results.
+        seen: set[tuple[str, str]] = set()
+        albums: list[AlbumOut] = []
+        for t in tracks:
+            key = (t.album_artist, t.album)
+            if key not in seen:
+                seen.add(key)
+                album_tracks = index.tracks_for_album(t.album_artist, t.album)
+                has_art = any(at.embedded_art for at in album_tracks)
+                albums.append(
+                    AlbumOut(
+                        album_artist=t.album_artist,
+                        album=t.album,
+                        year=t.year,
+                        track_count=len(album_tracks),
+                        has_art=has_art,
+                    )
+                )
+        return SearchOut(albums=albums, tracks=[TrackOut.from_track(t) for t in tracks])
+
     @app.post("/api/v1/library/scan", response_model=ScanResult)
     def scan_library() -> ScanResult:
         if _state["library_path"] is None:
@@ -235,7 +264,7 @@ def create_app(
 
     @app.get("/api/v1/library/scan/progress")
     def get_scan_progress() -> dict[str, Any]:
-        return _state["scan_progress"]
+        return cast(dict[str, Any], _state["scan_progress"])
 
     @app.post("/api/v1/config/library-path")
     def set_library_path(req: LibraryPathRequest) -> dict[str, Any]:
