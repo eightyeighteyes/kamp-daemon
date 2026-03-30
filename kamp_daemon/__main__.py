@@ -492,6 +492,37 @@ def _cmd_server(
             queue.load([track], 0)
             engine.load_paused(track.file_path, saved_pos)
 
+    # Wire the macOS Now Playing widget and media key handlers.
+    # Falls back to NullMediaController on non-macOS or if the framework fails.
+    try:
+        from kamp_core.media_controller import CoreAudioMediaController
+
+        def _mc_next() -> None:
+            t = queue.next()
+            if t:
+                engine.play(t.file_path)
+
+        def _mc_prev() -> None:
+            t = queue.prev()
+            if t:
+                engine.play(t.file_path)
+
+        def _mc_play_pause() -> None:
+            if engine.state.playing:
+                engine.pause()
+            else:
+                engine.resume()
+
+        _mc: object = CoreAudioMediaController(
+            on_next=_mc_next, on_prev=_mc_prev, on_play_pause=_mc_play_pause
+        )
+    except ImportError:
+        from kamp_core.media_controller import NullMediaController
+
+        _mc = NullMediaController()
+
+    _mc.start()
+
     # Advance the queue automatically at end-of-track; stop cleanly at the end.
     def _on_track_end() -> None:
         finished = queue.current()
@@ -501,23 +532,46 @@ def _cmd_server(
             index.record_played(finished.file_path)
         if track:
             engine.play(track.file_path)
+            _mc.update(track, True, 0.0, engine.state.duration)
         else:
             engine.stop()
+            _mc.update(None, False, 0.0, 0.0)
             # Queue exhausted — clear saved state so restart starts fresh
             # rather than restoring the last track a few seconds from the end.
             index.clear_player_state()
 
     engine.on_track_end = _on_track_end
 
-    # Persist current track and position every 5 s so restarts can resume.
+    # Push metadata to Now Playing as soon as the file demuxer is ready
+    # (duration becomes accurate at this point).
+    def _on_file_loaded() -> None:
+        t = queue.current()
+        _mc.update(
+            t, engine.state.playing, engine.state.position, engine.state.duration
+        )
+
+    engine.on_file_loaded = _on_file_loaded
+
+    # Persist current track and position every 5 s so restarts can resume;
+    # also push position to the Now Playing widget at ~1 Hz.
     def _state_saver() -> None:
         import time
 
+        tick = 0
         while True:
-            time.sleep(5)
+            time.sleep(1)
             current = queue.current()
             if current:
-                index.save_player_state(current.file_path, engine.state.position)
+                if tick % 5 == 0:
+                    index.save_player_state(current.file_path, engine.state.position)
+                if engine.state.playing:
+                    _mc.update(
+                        current,
+                        True,
+                        engine.state.position,
+                        engine.state.duration,
+                    )
+            tick += 1
 
     import threading
 
@@ -562,6 +616,7 @@ def _cmd_server(
     uvicorn.run(app, host=host, port=port)
 
     lib_watcher.stop()
+    _mc.stop()
     engine.shutdown()
     index.close()
 

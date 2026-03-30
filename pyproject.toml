@@ -88,7 +88,7 @@ disable_error_code = ["no-untyped-call", "attr-defined", "unused-ignore", "union
 
 [[tool.mypy.overrides]]
 # rumps, AppKit, objc (PyObjC runtime), and setproctitle ship no type stubs
-module = ["rumps", "rumps.*", "AppKit", "AppKit.*", "objc", "objc.*", "setproctitle"]
+module = ["rumps", "rumps.*", "AppKit", "AppKit.*", "Foundation", "Foundation.*", "objc", "objc.*", "setproctitle"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -97,6 +97,12 @@ ignore_missing_imports = true
 module = ["kamp_daemon.menu_bar"]
 ignore_missing_imports = true
 disable_error_code = ["misc", "untyped-decorator", "import-untyped"]
+
+[[tool.mypy.overrides]]
+# media_controller imports AppKit/Foundation/objc lazily inside methods
+module = ["kamp_core.media_controller"]
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
 
 [[tool.mypy.overrides]]
 # playwright ships no type stubs
