@@ -1,10 +1,10 @@
 ---
 id: TASK-37
 title: window dimension states aren't serialized / deserialized on app reload
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-29 17:54'
-updated_date: '2026-03-29 17:59'
+updated_date: '2026-03-30 00:35'
 labels:
   - bug
   - electron

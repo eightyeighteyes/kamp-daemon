@@ -4,7 +4,7 @@ title: Re-scan library trigger in main UI
 status: Done
 assignee: []
 created_date: '2026-03-29 14:09'
-updated_date: '2026-03-29 16:27'
+updated_date: '2026-03-30 00:46'
 labels:
   - feature
   - ui
@@ -13,6 +13,7 @@ labels:
 milestone: m-0
 dependencies: []
 priority: low
+ordinal: 5000
 ---
 
 ## Description

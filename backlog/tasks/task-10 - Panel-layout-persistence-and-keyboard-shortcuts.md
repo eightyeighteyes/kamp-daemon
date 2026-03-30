@@ -1,10 +1,10 @@
 ---
 id: TASK-10
 title: Panel layout persistence and keyboard shortcuts
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-29 03:11'
-updated_date: '2026-03-29 03:15'
+updated_date: '2026-03-30 01:30'
 labels:
   - feature
   - ui
@@ -12,7 +12,7 @@ labels:
 milestone: m-0
 dependencies: []
 priority: medium
-ordinal: 1875
+ordinal: 7000
 ---
 
 ## Description

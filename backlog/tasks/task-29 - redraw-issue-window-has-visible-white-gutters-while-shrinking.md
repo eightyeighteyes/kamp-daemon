@@ -1,10 +1,10 @@
 ---
 id: TASK-29
 title: 'redraw issue: window has visible white gutters while shrinking'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-29 17:35'
-updated_date: '2026-03-29 17:50'
+updated_date: '2026-03-30 00:35'
 labels:
   - bug
   - ui
