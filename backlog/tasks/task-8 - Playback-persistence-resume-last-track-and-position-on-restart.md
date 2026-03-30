@@ -1,10 +1,10 @@
 ---
 id: TASK-8
 title: Playback persistence (resume last track and position on restart)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-29 03:11'
-updated_date: '2026-03-29 03:14'
+updated_date: '2026-03-30 01:30'
 labels:
   - feature
   - playback
@@ -12,7 +12,7 @@ labels:
 milestone: m-0
 dependencies: []
 priority: medium
-ordinal: 1750
+ordinal: 8000
 ---
 
 ## Description

@@ -1,10 +1,10 @@
 ---
 id: TASK-7
 title: 'Now Playing view (artwork-centered, view switching)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-29 03:11'
-updated_date: '2026-03-29 16:28'
+updated_date: '2026-03-30 00:46'
 labels:
   - feature
   - ui
@@ -12,7 +12,7 @@ labels:
 milestone: m-0
 dependencies: []
 priority: high
-ordinal: 1500
+ordinal: 6000
 ---
 
 ## Description
