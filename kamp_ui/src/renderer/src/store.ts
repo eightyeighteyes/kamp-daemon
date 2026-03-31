@@ -73,6 +73,7 @@ type PlayerStore = {
   insertIntoQueue: (filePath: string, index: number) => Promise<void>
   playNext: (filePath: string) => Promise<void>
   moveQueueTrack: (fromIndex: number, toIndex: number) => Promise<void>
+  skipToQueueTrack: (position: number) => Promise<void>
   refreshOpenAlbum: () => Promise<void>
   scanLibrary: () => Promise<void>
   setLibraryPath: (path: string) => Promise<void>
@@ -303,6 +304,11 @@ export const useStore = create<PlayerStore>((set, get) => ({
 
   moveQueueTrack: async (fromIndex, toIndex) => {
     await api.moveQueueTrack(fromIndex, toIndex)
+    void get().loadQueue()
+  },
+
+  skipToQueueTrack: async (position) => {
+    await api.skipToQueueTrack(position)
     void get().loadQueue()
   },
 

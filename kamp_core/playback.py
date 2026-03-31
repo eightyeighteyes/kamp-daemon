@@ -92,6 +92,13 @@ class PlaybackQueue:
         self._pos = prev_pos
         return self.current()
 
+    def skip_to(self, position: int) -> Track | None:
+        """Jump directly to *position* in the queue. Returns the track, or None if invalid."""
+        if not self._order or position < 0 or position >= len(self._order):
+            return None
+        self._pos = position
+        return self.current()
+
     def set_shuffle(self, shuffle: bool) -> None:
         if shuffle == self._shuffle:
             return

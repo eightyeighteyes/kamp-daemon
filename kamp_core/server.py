@@ -143,6 +143,10 @@ class InsertAlbumQueueRequest(BaseModel):
     index: int
 
 
+class SkipToRequest(BaseModel):
+    position: int
+
+
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
@@ -384,6 +388,13 @@ def create_app(
     @app.post("/api/v1/player/prev")
     def prev_track() -> dict[str, Any]:
         track = queue.prev()
+        if track:
+            engine.play(track.file_path)
+        return {"ok": True}
+
+    @app.post("/api/v1/player/queue/skip-to")
+    def skip_to_position(req: SkipToRequest) -> dict[str, Any]:
+        track = queue.skip_to(req.position)
         if track:
             engine.play(track.file_path)
         return {"ok": True}
