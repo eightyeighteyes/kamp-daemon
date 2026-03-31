@@ -608,7 +608,7 @@ class TestSearchEndpoint:
     ) -> None:
         t = _track(1, album="Kid A", artist="Radiohead")
         mock_index.search.return_value = [t]
-        mock_index.tracks_for_album.return_value = [t]
+        mock_index.albums.return_value = [_album("Radiohead", "Kid A")]
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
         res = TestClient(app).get("/api/v1/search?q=radiohead")
         assert res.status_code == 200
@@ -624,11 +624,11 @@ class TestSearchEndpoint:
         t1 = _track(1, album="Kid A", artist="Radiohead")
         t2 = _track(2, album="Kid A", artist="Radiohead")
         mock_index.search.return_value = [t1, t2]
-        mock_index.tracks_for_album.return_value = [t1, t2]
+        mock_index.albums.return_value = [_album("Radiohead", "Kid A")]
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
         res = TestClient(app).get("/api/v1/search?q=radiohead")
         data = res.json()
-        # Two matching tracks → only one album entry
+        # Two matching tracks → only one album entry (deduplication via index.albums)
         assert len(data["albums"]) == 1
         assert len(data["tracks"]) == 2
 
@@ -639,3 +639,20 @@ class TestSearchEndpoint:
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
         TestClient(app).get("/api/v1/search?q=kid+a")
         mock_index.search.assert_called_once_with("kid a")
+
+    def test_search_albums_respect_sort_param(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        t1 = _track(1, album="Amnesiac", artist="Radiohead")
+        t2 = _track(2, album="Kid A", artist="Radiohead")
+        mock_index.search.return_value = [t2, t1]  # FTS rank order (Kid A first)
+        # index.albums returns albums in requested sort order (alphabetical by album)
+        mock_index.albums.return_value = [
+            _album("Radiohead", "Amnesiac"),
+            _album("Radiohead", "Kid A"),
+        ]
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        res = TestClient(app).get("/api/v1/search?q=radiohead&sort=album")
+        data = res.json()
+        assert [a["album"] for a in data["albums"]] == ["Amnesiac", "Kid A"]
+        mock_index.albums.assert_called_once_with(sort="album")

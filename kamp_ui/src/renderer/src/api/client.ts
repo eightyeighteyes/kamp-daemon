@@ -88,8 +88,8 @@ export type SearchResult = {
   tracks: Track[]
 }
 
-export const search = (q: string): Promise<SearchResult> =>
-  get(`/api/v1/search?q=${encodeURIComponent(q)}`)
+export const search = (q: string, sort = 'album_artist'): Promise<SearchResult> =>
+  get(`/api/v1/search?q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}`)
 
 export const scanLibrary = (): Promise<ScanResult> => post('/api/v1/library/scan')
 

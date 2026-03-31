@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store'
 import { artUrl } from '../api/client'
 import type { Album, Track } from '../api/client'
+import { SortControl } from './SortControl'
 
 function SearchAlbumCard({ album }: { album: Album }): React.JSX.Element {
   const selectAlbum = useStore((s) => s.selectAlbum)
@@ -82,6 +83,7 @@ export function SearchView(): React.JSX.Element {
 
   return (
     <div className="search-view">
+      {hasAlbums && <SortControl />}
       {hasAlbums && (
         <section className="search-section">
           <h2 className="search-section-title">Albums</h2>
