@@ -381,6 +381,40 @@ class TestPlaybackQueue:
         with pytest.raises(IndexError):
             q.move(0, 10)
 
+    # ------------------------------------------------------------------
+    # insert_at
+    # ------------------------------------------------------------------
+
+    def test_insert_at_places_track_at_given_position(self) -> None:
+        q = PlaybackQueue()
+        ts = [_track(i) for i in range(3)]
+        q.load(ts)
+        extra = _track(99)
+        q.insert_at(extra, 1)
+        tracks, pos = q.queue_tracks()
+        assert tracks[1] == extra
+        assert len(tracks) == 4
+        assert pos == 0  # current position unchanged
+
+    def test_insert_at_before_current_shifts_pos(self) -> None:
+        q = PlaybackQueue()
+        ts = [_track(i) for i in range(3)]
+        q.load(ts)
+        q.next()  # pos=1
+        extra = _track(99)
+        q.insert_at(extra, 0)  # insert before current
+        _, pos = q.queue_tracks()
+        assert pos == 2  # current shifted forward by one
+
+    def test_insert_at_clamps_large_index(self) -> None:
+        q = PlaybackQueue()
+        ts = [_track(i) for i in range(3)]
+        q.load(ts)
+        extra = _track(99)
+        q.insert_at(extra, 100)  # beyond end — should append
+        tracks, _ = q.queue_tracks()
+        assert tracks[-1] == extra
+
 
 # ---------------------------------------------------------------------------
 # MpvPlaybackEngine

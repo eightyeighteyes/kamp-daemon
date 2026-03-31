@@ -6,6 +6,7 @@ export function QueuePanel(): React.JSX.Element {
   const toggleQueuePanel = useStore((s) => s.toggleQueuePanel)
   const moveQueueTrack = useStore((s) => s.moveQueueTrack)
   const addToQueue = useStore((s) => s.addToQueue)
+  const insertIntoQueue = useStore((s) => s.insertIntoQueue)
   const activeRef = useRef<HTMLLIElement>(null)
 
   const tracks = queue?.tracks ?? []
@@ -24,7 +25,7 @@ export function QueuePanel(): React.JSX.Element {
       const from = Number(queueIdx)
       if (from !== dropIdx) void moveQueueTrack(from, dropIdx)
     } else if (trackPath) {
-      void addToQueue(trackPath)
+      void insertIntoQueue(trackPath, dropIdx)
     }
   }
 

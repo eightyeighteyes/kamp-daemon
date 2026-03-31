@@ -127,6 +127,11 @@ class MoveQueueRequest(BaseModel):
     to_index: int
 
 
+class InsertQueueRequest(BaseModel):
+    file_path: str
+    index: int
+
+
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
@@ -386,6 +391,14 @@ def create_app(
         if track is None:
             raise HTTPException(status_code=404, detail="Track not found")
         queue.play_next(track)
+        return {"ok": True}
+
+    @app.post("/api/v1/player/queue/insert")
+    def queue_insert(req: InsertQueueRequest) -> dict[str, Any]:
+        track = index.get_track_by_path(Path(req.file_path))
+        if track is None:
+            raise HTTPException(status_code=404, detail="Track not found")
+        queue.insert_at(track, req.index)
         return {"ok": True}
 
     @app.post("/api/v1/player/queue/move")

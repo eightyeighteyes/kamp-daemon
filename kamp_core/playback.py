@@ -150,6 +150,21 @@ class PlaybackQueue:
         if self._pos < 0:
             self._pos = 0
 
+    def insert_at(self, track: Track, display_idx: int) -> None:
+        """Insert *track* at display position *display_idx* in the queue.
+
+        *display_idx* is clamped to [0, len(_order)] so out-of-range values
+        are safe.  Adjusts _pos if the insertion falls before it.
+        """
+        idx = len(self._tracks)
+        self._tracks.append(track)
+        insert_pos = max(0, min(display_idx, len(self._order)))
+        self._order.insert(insert_pos, idx)
+        if self._pos < 0:
+            self._pos = 0
+        elif insert_pos <= self._pos:
+            self._pos += 1
+
     def play_next(self, track: Track) -> None:
         """Insert *track* immediately after the current position.
 
