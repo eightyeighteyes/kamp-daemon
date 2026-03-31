@@ -101,6 +101,8 @@ export const useStore = create<PlayerStore>((set, get) => ({
   setSortOrder: async (sort) => {
     set({ sortOrder: sort })
     await get().loadLibrary()
+    const q = get().searchQuery
+    if (q.trim()) await get().setSearchQuery(q)
   },
 
   setSearchQuery: async (q) => {
@@ -110,7 +112,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
       return
     }
     try {
-      const results = await api.search(q)
+      const results = await api.search(q, get().sortOrder)
       // Only apply if the query hasn't changed since we fired the request.
       if (get().searchQuery === q) {
         set({ searchResults: results })

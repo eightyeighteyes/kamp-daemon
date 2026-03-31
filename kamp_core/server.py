@@ -215,28 +215,25 @@ def create_app(
         raise HTTPException(status_code=404, detail="No art found")
 
     @app.get("/api/v1/search", response_model=SearchOut)
-    def search_library(q: str = "") -> SearchOut:
-        tracks = index.search(q)
-        # Deduplicate to one AlbumOut per (album_artist, album) pair while
-        # preserving the order in which albums first appear in results.
-        seen: set[tuple[str, str]] = set()
-        albums: list[AlbumOut] = []
-        for t in tracks:
-            key = (t.album_artist, t.album)
-            if key not in seen:
-                seen.add(key)
-                album_tracks = index.tracks_for_album(t.album_artist, t.album)
-                has_art = any(at.embedded_art for at in album_tracks)
-                albums.append(
-                    AlbumOut(
-                        album_artist=t.album_artist,
-                        album=t.album,
-                        year=t.year,
-                        track_count=len(album_tracks),
-                        has_art=has_art,
-                    )
-                )
-        return SearchOut(albums=albums, tracks=[TrackOut.from_track(t) for t in tracks])
+    def search_library(q: str = "", sort: str = "album_artist") -> SearchOut:
+        fts_tracks = index.search(q)
+        # Collect the set of (album_artist, album) keys that appear in FTS results,
+        # then filter the pre-sorted album list so the response respects sort order.
+        fts_keys = {(t.album_artist, t.album) for t in fts_tracks}
+        albums = [
+            AlbumOut(
+                album_artist=a.album_artist,
+                album=a.album,
+                year=a.year,
+                track_count=a.track_count,
+                has_art=a.has_art,
+            )
+            for a in index.albums(sort=sort)
+            if (a.album_artist, a.album) in fts_keys
+        ]
+        return SearchOut(
+            albums=albums, tracks=[TrackOut.from_track(t) for t in fts_tracks]
+        )
 
     @app.post("/api/v1/library/scan", response_model=ScanResult)
     def scan_library() -> ScanResult:
