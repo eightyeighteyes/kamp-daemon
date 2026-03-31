@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0](https://github.com/eightyeighteyes/kamp/compare/v1.2.0...v1.3.0) (2026-03-31)
+
+
+### Features
+
+* auto-scan library after path is selected in setup ([#112](https://github.com/eightyeighteyes/kamp/issues/112)) ([7720741](https://github.com/eightyeighteyes/kamp/commit/7720741a18b88075039701f12d25efd56335b14e))
+* automatic library watching (TASK-5) ([#121](https://github.com/eightyeighteyes/kamp/issues/121)) ([199d5e0](https://github.com/eightyeighteyes/kamp/commit/199d5e05c57c0a454be217ef6d5b30f0779d96a2))
+* full-text search (TASK-6) ([#124](https://github.com/eightyeighteyes/kamp/issues/124)) ([9effbc7](https://github.com/eightyeighteyes/kamp/commit/9effbc75a8794da113e90215c84e2475af469564))
+* library sort by artist, album, date added, last played (TASK-43) ([#125](https://github.com/eightyeighteyes/kamp/issues/125)) ([31f7724](https://github.com/eightyeighteyes/kamp/commit/31f7724d172f458b3bf8fe100c6a184e40af9860))
+* Now Playing view (TASK-7) ([#117](https://github.com/eightyeighteyes/kamp/issues/117)) ([a6d2ed1](https://github.com/eightyeighteyes/kamp/commit/a6d2ed12e7447815d0fe5c82cb745d8fac3f5a23))
+* panel layout persistence and keyboard shortcuts (TASK-10) ([#120](https://github.com/eightyeighteyes/kamp/issues/120)) ([f28a2cb](https://github.com/eightyeighteyes/kamp/commit/f28a2cbfb77d2d8127c532ae640fa2d033a51376))
+* Phase 2 onboarding — native library picker and scan progress bar ([#110](https://github.com/eightyeighteyes/kamp/issues/110)) ([a84b4f0](https://github.com/eightyeighteyes/kamp/commit/a84b4f0ab09d1e16203176b19311f93eb0a3755d))
+* re-scan trigger in panel footer; style library picker ([#116](https://github.com/eightyeighteyes/kamp/issues/116)) ([aa19a82](https://github.com/eightyeighteyes/kamp/commit/aa19a82217ad68b785a937cb7781716d5883da0f))
+* restore last track and position on daemon restart (TASK-8) ([#119](https://github.com/eightyeighteyes/kamp/issues/119)) ([f92f131](https://github.com/eightyeighteyes/kamp/commit/f92f131ab68fa6d04c3e90e8e7c5407074ac795d))
+* sort order in search results (TASK-44) ([#127](https://github.com/eightyeighteyes/kamp/issues/127)) ([2a8ee9d](https://github.com/eightyeighteyes/kamp/commit/2a8ee9d30eb216add663d7ca86c4e805bb2ec150))
+* UI polish, library picker, and Backlog.md setup ([#113](https://github.com/eightyeighteyes/kamp/issues/113)) ([6617187](https://github.com/eightyeighteyes/kamp/commit/66171877f23d222c0a4ba6c1ac6f94a441fcce6e))
+
+
+### Bug Fixes
+
+* reconnect WebSocket with backoff after sleep/wake ([#114](https://github.com/eightyeighteyes/kamp/issues/114)) ([920b8e4](https://github.com/eightyeighteyes/kamp/commit/920b8e482e4cd9db85705581381def4f7ccb5ec4))
+* rename Tune-Shifter to Kamp in menu bar and notifications ([#115](https://github.com/eightyeighteyes/kamp/issues/115)) ([2879ae4](https://github.com/eightyeighteyes/kamp/commit/2879ae426996eecc96649f91fbd7cb8b99143cbf))
+* stop pauses and seeks to start instead of unloading file (TASK-38) ([#118](https://github.com/eightyeighteyes/kamp/issues/118)) ([3593547](https://github.com/eightyeighteyes/kamp/commit/3593547af6e5d264a63e9cbdcdf5e3d0da97b7ac))
+* window bounds persistence and white gutter on resize (TASK-29, TASK-37) ([#122](https://github.com/eightyeighteyes/kamp/issues/122)) ([b0a4c50](https://github.com/eightyeighteyes/kamp/commit/b0a4c50aafacbf3f1743b86b655d6305a257ec04))
+
 ## [1.2.0](https://github.com/eightyeighteyes/kamp/compare/v1.1.1...v1.2.0) (2026-03-28)
 
 
