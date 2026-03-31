@@ -231,7 +231,9 @@ def create_app(
             for a in index.albums(sort=sort)
             if (a.album_artist, a.album) in fts_keys
         ]
-        return SearchOut(albums=albums, tracks=[TrackOut.from_track(t) for t in fts_tracks])
+        return SearchOut(
+            albums=albums, tracks=[TrackOut.from_track(t) for t in fts_tracks]
+        )
 
     @app.post("/api/v1/library/scan", response_model=ScanResult)
     def scan_library() -> ScanResult:
