@@ -1,10 +1,10 @@
 ---
 id: TASK-56
 title: double-clicking on a track in the queue advances the queue to that track
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 17:39'
-updated_date: '2026-03-31 19:44'
+updated_date: '2026-03-31 21:32'
 labels:
   - feature
   - ui
@@ -12,6 +12,7 @@ labels:
 milestone: m-8
 dependencies: []
 priority: medium
+ordinal: 1000
 ---
 
 ## Implementation Notes

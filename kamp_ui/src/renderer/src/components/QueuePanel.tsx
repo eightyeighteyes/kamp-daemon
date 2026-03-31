@@ -5,6 +5,7 @@ export function QueuePanel(): React.JSX.Element {
   const queue = useStore((s) => s.queue)
   const toggleQueuePanel = useStore((s) => s.toggleQueuePanel)
   const moveQueueTrack = useStore((s) => s.moveQueueTrack)
+  const skipToQueueTrack = useStore((s) => s.skipToQueueTrack)
   const addToQueue = useStore((s) => s.addToQueue)
   const insertIntoQueue = useStore((s) => s.insertIntoQueue)
   const insertAlbumAt = useStore((s) => s.insertAlbumAt)
@@ -97,6 +98,7 @@ export function QueuePanel(): React.JSX.Element {
                   e.currentTarget.classList.remove('drag-over')
                 }}
                 onDrop={(e) => handleDrop(e, idx)}
+                onDoubleClick={() => void skipToQueueTrack(idx)}
               >
                 <span className="queue-track-num">{idx + 1}</span>
                 <span className="queue-track-title">{track.title}</span>

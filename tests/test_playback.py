@@ -100,6 +100,30 @@ class TestPlaybackQueue:
         q.set_repeat(True)
         assert q.prev() == tracks[2]
 
+    def test_skip_to_valid_position(self) -> None:
+        q = PlaybackQueue()
+        tracks = [_track(i) for i in range(5)]
+        q.load(tracks)
+        assert q.skip_to(3) == tracks[3]
+        assert q.current() == tracks[3]
+
+    def test_skip_to_out_of_bounds_returns_none(self) -> None:
+        q = PlaybackQueue()
+        tracks = [_track(i) for i in range(3)]
+        q.load(tracks)
+        assert q.skip_to(5) is None
+        assert q.current() == tracks[0]  # _pos unchanged
+
+    def test_skip_to_negative_returns_none(self) -> None:
+        q = PlaybackQueue()
+        tracks = [_track(i) for i in range(3)]
+        q.load(tracks)
+        assert q.skip_to(-1) is None
+
+    def test_skip_to_empty_queue_returns_none(self) -> None:
+        q = PlaybackQueue()
+        assert q.skip_to(0) is None
+
     def test_shuffle_randomises_order(self) -> None:
         q = PlaybackQueue()
         tracks = [_track(i) for i in range(20)]

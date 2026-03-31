@@ -535,6 +535,24 @@ class TestQueueMutationEndpoints:
         )
         assert resp.status_code == 400
 
+    def test_skip_to_calls_engine_play(
+        self, client: TestClient, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        t = _track(3)
+        mock_queue.skip_to.return_value = t
+        resp = client.post("/api/v1/player/queue/skip-to", json={"position": 3})
+        assert resp.status_code == 200
+        mock_queue.skip_to.assert_called_once_with(3)
+        mock_engine.play.assert_called_once_with(t.file_path)
+
+    def test_skip_to_invalid_position_does_not_play(
+        self, client: TestClient, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_queue.skip_to.return_value = None
+        resp = client.post("/api/v1/player/queue/skip-to", json={"position": 99})
+        assert resp.status_code == 200
+        mock_engine.play.assert_not_called()
+
 
 class TestAlbumQueueEndpoints:
     def test_add_album_to_queue_calls_queue_method(
