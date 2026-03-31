@@ -492,6 +492,23 @@ def _cmd_server(
             queue.load([track], 0)
             engine.load_paused(track.file_path, saved_pos)
 
+    # Wire the macOS Now Playing widget.
+    # make_media_controller() returns NullMediaController on non-macOS.
+    # start() is best-effort — a failure here must never crash the server.
+    from kamp_core.media_controller import MediaController, make_media_controller
+
+    _mc: MediaController = make_media_controller()
+    try:
+        _mc.start()
+    except Exception as exc:
+        import logging as _logging
+        from kamp_core.media_controller import NullMediaController
+
+        _logging.getLogger(__name__).warning(
+            "MediaController failed to start (%s); Now Playing disabled.", exc
+        )
+        _mc = NullMediaController()
+
     # Advance the queue automatically at end-of-track; stop cleanly at the end.
     def _on_track_end() -> None:
         finished = queue.current()
@@ -501,23 +518,46 @@ def _cmd_server(
             index.record_played(finished.file_path)
         if track:
             engine.play(track.file_path)
+            _mc.update(track, True, 0.0, engine.state.duration)
         else:
             engine.stop()
+            _mc.update(None, False, 0.0, 0.0)
             # Queue exhausted — clear saved state so restart starts fresh
             # rather than restoring the last track a few seconds from the end.
             index.clear_player_state()
 
     engine.on_track_end = _on_track_end
 
-    # Persist current track and position every 5 s so restarts can resume.
+    # Push metadata to Now Playing as soon as the file demuxer is ready
+    # (duration becomes accurate at this point).
+    def _on_file_loaded() -> None:
+        t = queue.current()
+        _mc.update(
+            t, engine.state.playing, engine.state.position, engine.state.duration
+        )
+
+    engine.on_file_loaded = _on_file_loaded
+
+    # Persist current track and position every 5 s so restarts can resume;
+    # also push position to the Now Playing widget at ~1 Hz.
     def _state_saver() -> None:
         import time
 
+        tick = 0
         while True:
-            time.sleep(5)
+            time.sleep(1)
             current = queue.current()
             if current:
-                index.save_player_state(current.file_path, engine.state.position)
+                if tick % 5 == 0:
+                    index.save_player_state(current.file_path, engine.state.position)
+                if engine.state.playing:
+                    _mc.update(
+                        current,
+                        True,
+                        engine.state.position,
+                        engine.state.duration,
+                    )
+            tick += 1
 
     import threading
 
@@ -562,6 +602,7 @@ def _cmd_server(
     uvicorn.run(app, host=host, port=port)
 
     lib_watcher.stop()
+    _mc.stop()
     engine.shutdown()
     index.close()
 
