@@ -1,10 +1,10 @@
 ---
 id: TASK-54
 title: the queue can be rearranged
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 03:25'
-updated_date: '2026-03-31 03:44'
+updated_date: '2026-03-31 17:12'
 labels:
   - feature
   - ui

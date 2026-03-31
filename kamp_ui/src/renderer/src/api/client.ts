@@ -135,6 +135,12 @@ export const setShuffle = (shuffle: boolean): Promise<unknown> =>
   post('/api/v1/player/shuffle', { shuffle })
 export const setRepeat = (repeat: boolean): Promise<unknown> =>
   post('/api/v1/player/repeat', { repeat })
+export const addToQueue = (filePath: string): Promise<unknown> =>
+  post('/api/v1/player/queue/add', { file_path: filePath })
+export const playNext = (filePath: string): Promise<unknown> =>
+  post('/api/v1/player/queue/play-next', { file_path: filePath })
+export const moveQueueTrack = (fromIndex: number, toIndex: number): Promise<unknown> =>
+  post('/api/v1/player/queue/move', { from_index: fromIndex, to_index: toIndex })
 
 // ---------------------------------------------------------------------------
 // WebSocket state stream
