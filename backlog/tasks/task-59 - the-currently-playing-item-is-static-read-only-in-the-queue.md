@@ -1,10 +1,10 @@
 ---
 id: TASK-59
 title: the currently playing item is static / read-only in the queue
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-31 19:29'
-updated_date: '2026-03-31 19:44'
+updated_date: '2026-04-01 02:17'
 labels:
   - feature
   - ui
