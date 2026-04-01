@@ -1297,9 +1297,13 @@ body,
   color: var(--accent);
 }
 
-/* Drag-to-reorder drop target indicator */
-.queue-track-row[draggable] {
+/* Drag-to-reorder: grab cursor for draggable rows, locked cursor for current */
+.queue-track-row[draggable='true'] {
   cursor: grab;
+}
+
+.queue-track-row.current {
+  cursor: default;
 }
 
 .queue-track-row.drag-over {

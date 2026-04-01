@@ -110,8 +110,9 @@ export function QueuePanel(): React.JSX.Element {
                 key={track.file_path}
                 ref={isCurrent ? activeRef : null}
                 className={`queue-track-row${isCurrent ? ' current' : ''}${isPlayed ? ' played' : ''}`}
-                draggable
+                draggable={!isCurrent}
                 onDragStart={(e) => {
+                  if (isCurrent) return
                   e.dataTransfer.setData('text/kamp-queue-idx', String(idx))
                   e.dataTransfer.effectAllowed = 'move'
                 }}
