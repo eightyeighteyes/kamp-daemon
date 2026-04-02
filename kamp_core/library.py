@@ -506,7 +506,22 @@ class LibraryIndex:
 
 def _track_to_params(
     t: Track,
-) -> tuple[str, str, str, str, str, str, int, int, str, int, str, str, float | None, float | None]:
+) -> tuple[
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    int,
+    int,
+    str,
+    int,
+    str,
+    str,
+    float | None,
+    float | None,
+]:
     return (
         str(t.file_path),
         t.title,
@@ -806,4 +821,6 @@ class LibraryScanner:
 
         unchanged = len(on_disk & in_index) - len(to_update)
 
-        return ScanResult(added=added, removed=removed, unchanged=unchanged, updated=updated)
+        return ScanResult(
+            added=added, removed=removed, unchanged=unchanged, updated=updated
+        )
