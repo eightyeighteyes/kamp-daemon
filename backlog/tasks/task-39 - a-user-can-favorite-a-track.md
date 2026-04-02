@@ -1,10 +1,10 @@
 ---
 id: TASK-39
 title: a user can 'favorite' a track
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 01:48'
-updated_date: '2026-03-31 03:21'
+updated_date: '2026-04-02 13:10'
 labels:
   - feature
   - library
