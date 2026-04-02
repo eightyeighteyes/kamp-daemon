@@ -282,12 +282,64 @@ The session file (`bandcamp_session.json`) is written with owner-only permission
 
 ## Development
 
+### Prerequisites
+
+| Tool | Version | Notes |
+|---|---|---|
+| Python | 3.11+ | [python.org](https://www.python.org/downloads/) — check "Add to PATH" on Windows |
+| Poetry | latest | `pip install poetry` or see [python-poetry.org](https://python-poetry.org/docs/#installation) |
+| Node.js | 18+ (LTS) | [nodejs.org](https://nodejs.org/) — includes npm |
+| mpv | latest | [mpv.io](https://mpv.io/) — must be on `PATH` for the player server to run |
+| Git | any | [git-scm.com](https://git-scm.com/) |
+
+### Bootstrap
+
 ```bash
+# 1. Clone
+git clone https://github.com/eightyeighteyes/kamp
+cd kamp
+
+# 2. Enable the pre-commit hook (black + mypy)
+git config core.hooksPath .githooks
+
+# 3. Install Python dependencies (creates a .venv in the project root)
 poetry install
-playwright install chromium
-poetry run pytest      # run tests
-poetry run mypy kamp_daemon/     # type check
-poetry run black kamp_daemon/ tests/  # format
+
+# 4. Install Playwright browser binaries (required for Bandcamp auto-download)
+poetry run playwright install chromium
+
+# 5. Install UI dependencies
+cd kamp_ui
+npm install
+```
+
+### Run in development
+
+```bash
+# Start the Python server (from repo root)
+poetry run kamp server
+
+# In a second terminal, start the Electron UI with hot-reload (from kamp_ui/)
+cd kamp_ui
+npm run dev
+```
+
+`npm run dev` launches Electron and the Vite dev server. The renderer reconnects automatically whenever the Python server starts or restarts.
+
+### Tests and linting
+
+```bash
+# Run all tests (from repo root)
+poetry run pytest
+
+# Run a single test file without the coverage threshold check
+poetry run pytest tests/test_server.py -v --no-cov
+
+# Type check
+poetry run mypy kamp_daemon/ kamp_core/
+
+# Format
+poetry run black kamp_daemon/ kamp_core/ tests/
 ```
 
 

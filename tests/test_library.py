@@ -123,7 +123,7 @@ class TestLibraryIndex:
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
 
-        assert version == 4
+        assert version == 5
 
     def test_upsert_adds_track(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
@@ -938,7 +938,7 @@ class TestSearch:
         ]
         index.close()
 
-        assert version == 4
+        assert version == 5
         assert len(results) == 1
         assert results[0].title == "Title"
 
@@ -995,7 +995,7 @@ class TestSearch:
         ).fetchone()
         index.close()
 
-        assert version == 4
+        assert version == 5
         assert row is not None
         # date_added will be NULL since the file path is fake; that is expected.
         assert row[0] is None
@@ -1179,6 +1179,119 @@ class TestRecordPlayed:
         index.record_played(tmp_path / "ghost.mp3")  # should not raise
         index.close()
 
+    def test_play_count_defaults_to_zero(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        p = tmp_path / "track.mp3"
+        _make_mp3(p, artist="A", album_artist="A", album="B", title="T")
+        index.upsert_many(
+            [
+                Track(
+                    file_path=p,
+                    title="T",
+                    artist="A",
+                    album_artist="A",
+                    album="B",
+                    year="",
+                    track_number=1,
+                    disc_number=1,
+                    ext="mp3",
+                    embedded_art=False,
+                    mb_release_id="",
+                    mb_recording_id="",
+                )
+            ]
+        )
+        track = index.get_track_by_path(p)
+        index.close()
+        assert track is not None
+        assert track.play_count == 0
+
+    def test_record_played_increments_play_count(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        p = tmp_path / "track.mp3"
+        _make_mp3(p, artist="A", album_artist="A", album="B", title="T")
+        index.upsert_many(
+            [
+                Track(
+                    file_path=p,
+                    title="T",
+                    artist="A",
+                    album_artist="A",
+                    album="B",
+                    year="",
+                    track_number=1,
+                    disc_number=1,
+                    ext="mp3",
+                    embedded_art=False,
+                    mb_release_id="",
+                    mb_recording_id="",
+                )
+            ]
+        )
+        index.record_played(p)
+        index.record_played(p)
+        track = index.get_track_by_path(p)
+        index.close()
+        assert track is not None
+        assert track.play_count == 2
+
+    def test_migration_v4_to_v5_adds_play_count_column(self, tmp_path: Path) -> None:
+        """Existing v4 databases gain the play_count column on open."""
+        import sqlite3 as _sqlite3
+
+        db_path = tmp_path / "library.db"
+        conn = _sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version VALUES (4)")
+        conn.execute("""
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                album_artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                track_number INTEGER NOT NULL DEFAULT 0,
+                disc_number INTEGER NOT NULL DEFAULT 1,
+                ext TEXT NOT NULL DEFAULT '',
+                embedded_art INTEGER NOT NULL DEFAULT 0,
+                mb_release_id TEXT NOT NULL DEFAULT '',
+                mb_recording_id TEXT NOT NULL DEFAULT '',
+                date_added REAL,
+                last_played REAL,
+                favorite INTEGER NOT NULL DEFAULT 0
+            )
+            """)
+        conn.execute(
+            "INSERT INTO tracks VALUES (1, '/d.mp3', 'Song', 'Band', 'Band', "
+            "'Album', '2000', 1, 1, 'mp3', 0, '', '', NULL, NULL, 0)"
+        )
+        conn.execute(
+            "CREATE VIRTUAL TABLE tracks_fts USING fts5("
+            "title, artist, album_artist, album, tokenize='unicode61')"
+        )
+        conn.execute(
+            "CREATE TABLE player_state ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), "
+            "track_path TEXT NOT NULL, position REAL NOT NULL DEFAULT 0)"
+        )
+        conn.commit()
+        conn.close()
+
+        index = LibraryIndex(db_path)
+        version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
+        row = index._conn.execute(
+            "SELECT play_count FROM tracks WHERE id = 1"
+        ).fetchone()
+        index.close()
+
+        assert version == 5
+        assert row is not None
+        assert row[0] == 0
+
 
 # ---------------------------------------------------------------------------
 # Favorite
@@ -1288,6 +1401,6 @@ class TestFavorite:
         row = index._conn.execute("SELECT favorite FROM tracks WHERE id = 1").fetchone()
         index.close()
 
-        assert version == 4
+        assert version == 5
         assert row is not None
         assert row[0] == 0  # existing tracks default to not-favorited
