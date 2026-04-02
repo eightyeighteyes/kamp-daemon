@@ -41,6 +41,7 @@ class TrackOut(BaseModel):
     embedded_art: bool
     mb_release_id: str
     mb_recording_id: str
+    favorite: bool
 
     @classmethod
     def from_track(cls, t: Track) -> "TrackOut":
@@ -57,6 +58,7 @@ class TrackOut(BaseModel):
             embedded_art=t.embedded_art,
             mb_release_id=t.mb_release_id,
             mb_recording_id=t.mb_recording_id,
+            favorite=t.favorite,
         )
 
 
@@ -106,6 +108,11 @@ class ScanResult(BaseModel):
 
 class LibraryPathRequest(BaseModel):
     path: str
+
+
+class FavoriteRequest(BaseModel):
+    file_path: str
+    favorite: bool
 
 
 class SearchOut(BaseModel):
@@ -240,6 +247,17 @@ def create_app(
         return [
             TrackOut.from_track(t) for t in index.tracks_for_album(album_artist, album)
         ]
+
+    @app.post("/api/v1/tracks/favorite")
+    def set_track_favorite(req: FavoriteRequest) -> dict[str, Any]:
+        track = index.get_track_by_path(Path(req.file_path))
+        if track is None:
+            raise HTTPException(status_code=404, detail="Track not found")
+        index.set_favorite(Path(req.file_path), req.favorite)
+        # Keep the in-memory queue in sync so the next player-state snapshot
+        # reflects the new favorite value without requiring a queue reload.
+        queue.update_favorite(Path(req.file_path), req.favorite)
+        return {"ok": True}
 
     @app.get("/api/v1/album-art")
     def get_album_art(album_artist: str, album: str) -> Response:

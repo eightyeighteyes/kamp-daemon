@@ -62,6 +62,16 @@ class PlaybackQueue:
         else:
             self._pos = start_index if tracks else -1
 
+    def update_favorite(self, file_path: Path, favorite: bool) -> None:
+        """Update the favorite flag on any queued tracks matching *file_path*.
+
+        Called after a favorite is toggled so that the next player-state
+        snapshot reflects the new value without requiring a queue reload.
+        """
+        for t in self._tracks:
+            if t.file_path == file_path:
+                t.favorite = favorite
+
     def current(self) -> Track | None:
         if not self._tracks or self._pos < 0:
             return None

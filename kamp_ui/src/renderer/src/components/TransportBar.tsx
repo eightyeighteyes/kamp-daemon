@@ -17,6 +17,7 @@ export function TransportBar(): React.JSX.Element {
   const setVolume = useStore((s) => s.setVolume)
   const queueVisible = useStore((s) => s.queueVisible)
   const toggleQueuePanel = useStore((s) => s.toggleQueuePanel)
+  const setFavorite = useStore((s) => s.setFavorite)
 
   const { playing, position, duration, volume, current_track } = player
   return (
@@ -32,6 +33,18 @@ export function TransportBar(): React.JSX.Element {
           <span className="track-idle">No track loaded</span>
         )}
       </div>
+
+      <button
+        className={`transport-btn favorite-btn${current_track?.favorite ? ' active' : ''}`}
+        onClick={() =>
+          current_track && void setFavorite(current_track.file_path, !current_track.favorite)
+        }
+        disabled={!current_track}
+        title={current_track?.favorite ? 'Remove from favorites' : 'Add to favorites'}
+        aria-pressed={current_track?.favorite ?? false}
+      >
+        ♥
+      </button>
 
       <div className="transport-controls">
         <button className="transport-btn" onClick={prev} title="Previous (←)">

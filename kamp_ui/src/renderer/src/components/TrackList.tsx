@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { artUrl } from '../api/client'
 
-type ContextMenu = { x: number; y: number; filePath: string }
+type ContextMenu = { x: number; y: number; filePath: string; favorite: boolean }
 
 export function TrackList(): React.JSX.Element | null {
   const album = useStore((s) => s.library.selectedAlbum)
@@ -14,6 +14,7 @@ export function TrackList(): React.JSX.Element | null {
   const togglePlayPause = useStore((s) => s.togglePlayPause)
   const addToQueue = useStore((s) => s.addToQueue)
   const playNext = useStore((s) => s.playNext)
+  const setFavorite = useStore((s) => s.setFavorite)
 
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -90,7 +91,12 @@ export function TrackList(): React.JSX.Element | null {
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
-                setMenu({ x: e.clientX, y: e.clientY, filePath: track.file_path })
+                setMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  filePath: track.file_path,
+                  favorite: track.favorite
+                })
               }}
             >
               <span className="track-row-num">
@@ -122,6 +128,15 @@ export function TrackList(): React.JSX.Element | null {
             }}
           >
             + Add to Queue
+          </button>
+          <button
+            className="track-context-menu-item"
+            onClick={() => {
+              void setFavorite(menu.filePath, !menu.favorite)
+              setMenu(null)
+            }}
+          >
+            {menu.favorite ? '♥ Remove from Favorites' : '♡ Add to Favorites'}
           </button>
         </div>
       )}

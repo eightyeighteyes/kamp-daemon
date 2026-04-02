@@ -1297,6 +1297,27 @@ body,
   color: var(--accent);
 }
 
+.favorite-btn {
+  color: var(--text-dim);
+}
+
+.favorite-btn:hover {
+  color: #e06c75;
+}
+
+.favorite-btn.active {
+  color: #e06c75;
+}
+
+.favorite-btn.active:hover {
+  color: var(--text);
+}
+
+.favorite-btn:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
 /* Drag-to-reorder: grab cursor for draggable rows, locked cursor for current */
 .queue-track-row[draggable='true'] {
   cursor: grab;

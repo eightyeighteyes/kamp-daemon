@@ -926,3 +926,49 @@ class TestUiStateEndpoints:
         )
         TestClient(app).post("/api/v1/ui/sort-order", json={"sort_order": "date_added"})
         callback.assert_called_once_with("ui.sort_order", "date_added")
+
+
+# ---------------------------------------------------------------------------
+# Favorite endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestFavoriteEndpoint:
+    def test_set_favorite_endpoint(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_index.get_track_by_path.return_value = _track(1)
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        resp = TestClient(app).post(
+            "/api/v1/tracks/favorite",
+            json={"file_path": "/music/01.mp3", "favorite": True},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        mock_index.set_favorite.assert_called_once_with(Path("/music/01.mp3"), True)
+        # Queue must also be updated so the next player-state snapshot is correct.
+        mock_queue.update_favorite.assert_called_once_with(Path("/music/01.mp3"), True)
+
+    def test_set_favorite_returns_404_for_unknown_track(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_index.get_track_by_path.return_value = None
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        resp = TestClient(app).post(
+            "/api/v1/tracks/favorite",
+            json={"file_path": "/music/ghost.mp3", "favorite": True},
+        )
+        assert resp.status_code == 404
+
+    def test_track_out_includes_favorite_field(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_index.tracks_for_album.return_value = [_track(1)]
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        track = (
+            TestClient(app)
+            .get("/api/v1/tracks?album_artist=Artist&album=Album")
+            .json()[0]
+        )
+        assert "favorite" in track
+        assert track["favorite"] is False

@@ -76,6 +76,7 @@ type PlayerStore = {
   skipToQueueTrack: (position: number) => Promise<void>
   clearQueue: () => Promise<void>
   clearRemainingQueue: (position: number) => Promise<void>
+  setFavorite: (filePath: string, favorite: boolean) => Promise<void>
   refreshOpenAlbum: () => Promise<void>
   scanLibrary: () => Promise<void>
   setLibraryPath: (path: string) => Promise<void>
@@ -335,6 +336,21 @@ export const useStore = create<PlayerStore>((set, get) => ({
   clearRemainingQueue: async (position) => {
     await api.clearRemainingQueue(position)
     void get().loadQueue()
+  },
+
+  setFavorite: async (filePath, favorite) => {
+    await api.setTrackFavorite(filePath, favorite)
+    // Keep the player state in sync if the favorited track is currently playing.
+    if (get().player.current_track?.file_path === filePath) {
+      set((s) => ({
+        player: {
+          ...s.player,
+          current_track: s.player.current_track ? { ...s.player.current_track, favorite } : null
+        }
+      }))
+    }
+    // Reload the open album track list so the heart in track rows updates.
+    await get().refreshOpenAlbum()
   },
 
   setLibraryPath: async (path) => {

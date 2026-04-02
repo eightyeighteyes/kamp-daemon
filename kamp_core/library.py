@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     mb_release_id    TEXT    NOT NULL DEFAULT '',
     mb_recording_id  TEXT    NOT NULL DEFAULT '',
     date_added       REAL,    -- file birthtime/ctime at first scan (Unix timestamp)
-    last_played      REAL     -- Unix timestamp of last natural EOF; NULL until played
+    last_played      REAL,    -- Unix timestamp of last natural EOF; NULL until played
+    favorite         INTEGER NOT NULL DEFAULT 0
 );
 
 -- FTS5 virtual table for full-text search across track metadata.
@@ -129,6 +130,7 @@ class Track:
     id: int = field(default=0, compare=False)
     date_added: float | None = field(default=None, compare=False)
     last_played: float | None = field(default=None, compare=False)
+    favorite: bool = field(default=False, compare=False)
 
 
 @dataclass
@@ -227,6 +229,15 @@ class LibraryIndex:
                     )
             self._conn.execute("UPDATE schema_version SET version = 3")
             self._conn.commit()
+            version = 3
+
+        if version < 4:
+            # v3 → v4: favorite column added.
+            self._conn.execute(
+                "ALTER TABLE tracks ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0"
+            )
+            self._conn.execute("UPDATE schema_version SET version = 4")
+            self._conn.commit()
 
     def _rebuild_fts(self) -> None:
         """Rebuild the FTS index from the current contents of the tracks table."""
@@ -295,6 +306,14 @@ class LibraryIndex:
         self._conn.execute(
             "UPDATE tracks SET last_played = ? WHERE file_path = ?",
             (time.time(), str(file_path)),
+        )
+        self._conn.commit()
+
+    def set_favorite(self, file_path: Path, favorite: bool) -> None:
+        """Set or clear the favorite flag for the track at *file_path*."""
+        self._conn.execute(
+            "UPDATE tracks SET favorite = ? WHERE file_path = ?",
+            (int(favorite), str(file_path)),
         )
         self._conn.commit()
 
@@ -483,6 +502,7 @@ def _row_to_track(row: sqlite3.Row) -> Track:
         mb_recording_id=row["mb_recording_id"],
         date_added=row["date_added"],
         last_played=row["last_played"],
+        favorite=bool(row["favorite"]),
     )
 
 
