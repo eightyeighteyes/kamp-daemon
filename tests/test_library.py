@@ -123,7 +123,7 @@ class TestLibraryIndex:
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
 
-        assert version == 3
+        assert version == 4
 
     def test_upsert_adds_track(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
@@ -938,7 +938,7 @@ class TestSearch:
         ]
         index.close()
 
-        assert version == 3
+        assert version == 4
         assert len(results) == 1
         assert results[0].title == "Title"
 
@@ -984,7 +984,7 @@ class TestSearch:
         conn.commit()
         conn.close()
 
-        # Opening with LibraryIndex should migrate v2 → v3.
+        # Opening with LibraryIndex should migrate v2 → v4.
         index = LibraryIndex(db_path)
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
@@ -995,7 +995,7 @@ class TestSearch:
         ).fetchone()
         index.close()
 
-        assert version == 3
+        assert version == 4
         assert row is not None
         # date_added will be NULL since the file path is fake; that is expected.
         assert row[0] is None
@@ -1178,3 +1178,116 @@ class TestRecordPlayed:
         index = LibraryIndex(tmp_path / "library.db")
         index.record_played(tmp_path / "ghost.mp3")  # should not raise
         index.close()
+
+
+# ---------------------------------------------------------------------------
+# Favorite
+# ---------------------------------------------------------------------------
+
+
+class TestFavorite:
+    """Tests for LibraryIndex.set_favorite() and Track.favorite persistence."""
+
+    def _make_index_with_track(self, tmp_path: Path) -> tuple[LibraryIndex, Path]:
+        index = LibraryIndex(tmp_path / "library.db")
+        p = tmp_path / "track.mp3"
+        _make_mp3(p, artist="A", album_artist="A", album="B", title="T")
+        index.upsert_many(
+            [
+                Track(
+                    file_path=p,
+                    title="T",
+                    artist="A",
+                    album_artist="A",
+                    album="B",
+                    year="",
+                    track_number=1,
+                    disc_number=1,
+                    ext="mp3",
+                    embedded_art=False,
+                    mb_release_id="",
+                    mb_recording_id="",
+                )
+            ]
+        )
+        return index, p
+
+    def test_favorite_defaults_to_false(self, tmp_path: Path) -> None:
+        index, p = self._make_index_with_track(tmp_path)
+        track = index.get_track_by_path(p)
+        index.close()
+        assert track is not None
+        assert track.favorite is False
+
+    def test_set_favorite_marks_track(self, tmp_path: Path) -> None:
+        index, p = self._make_index_with_track(tmp_path)
+        index.set_favorite(p, True)
+        track = index.get_track_by_path(p)
+        index.close()
+        assert track is not None
+        assert track.favorite is True
+
+    def test_set_favorite_clears_flag(self, tmp_path: Path) -> None:
+        index, p = self._make_index_with_track(tmp_path)
+        index.set_favorite(p, True)
+        index.set_favorite(p, False)
+        track = index.get_track_by_path(p)
+        index.close()
+        assert track is not None
+        assert track.favorite is False
+
+    def test_migration_v3_to_v4_adds_favorite_column(self, tmp_path: Path) -> None:
+        """Existing v3 databases gain the favorite column on open."""
+        import sqlite3 as _sqlite3
+
+        db_path = tmp_path / "library.db"
+        # Build a v3-style database (has date columns but no favorite).
+        conn = _sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version VALUES (3)")
+        conn.execute("""
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                album_artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                track_number INTEGER NOT NULL DEFAULT 0,
+                disc_number INTEGER NOT NULL DEFAULT 1,
+                ext TEXT NOT NULL DEFAULT '',
+                embedded_art INTEGER NOT NULL DEFAULT 0,
+                mb_release_id TEXT NOT NULL DEFAULT '',
+                mb_recording_id TEXT NOT NULL DEFAULT '',
+                date_added REAL,
+                last_played REAL
+            )
+            """)
+        conn.execute(
+            "INSERT INTO tracks VALUES (1, '/c.mp3', 'Song', 'Band', 'Band', "
+            "'Album', '2000', 1, 1, 'mp3', 0, '', '', NULL, NULL)"
+        )
+        conn.execute(
+            "CREATE VIRTUAL TABLE tracks_fts USING fts5("
+            "title, artist, album_artist, album, tokenize='unicode61')"
+        )
+        conn.execute(
+            "CREATE TABLE player_state ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), "
+            "track_path TEXT NOT NULL, position REAL NOT NULL DEFAULT 0)"
+        )
+        conn.commit()
+        conn.close()
+
+        # Opening with LibraryIndex should migrate v3 → v4.
+        index = LibraryIndex(db_path)
+        version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
+        row = index._conn.execute("SELECT favorite FROM tracks WHERE id = 1").fetchone()
+        index.close()
+
+        assert version == 4
+        assert row is not None
+        assert row[0] == 0  # existing tracks default to not-favorited
