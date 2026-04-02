@@ -32,7 +32,8 @@ export default function App(): React.JSX.Element {
   const loadQueue = useStore((s) => s.loadQueue)
   const searchBarRef = useRef<HTMLInputElement>(null)
   const mainContentRef = useRef<HTMLElement>(null)
-  // Per-view scroll positions so switching library ↔ now-playing doesn't reset scroll.
+  // Per-view scroll positions — kept current by a scroll listener so we never
+  // read a browser-clamped value when the outgoing view's content was taller.
   const viewScrollRef = useRef<Partial<Record<string, number>>>({})
 
   useEffect(() => {
@@ -139,17 +140,24 @@ export default function App(): React.JSX.Element {
     toggleQueuePanel
   ])
 
-  // Save the outgoing view's scroll position and restore the incoming view's,
-  // synchronously before paint so there's no visible jump.
-  const prevViewRef = useRef(activeView)
+  // Keep viewScrollRef continuously current so we always have the right value
+  // when switching views — reading scrollTop after a DOM update can give a
+  // browser-clamped value if the new content is shorter than the old.
+  useEffect(() => {
+    const el = mainContentRef.current
+    if (!el) return
+    const onScroll = (): void => {
+      viewScrollRef.current[activeView] = el.scrollTop
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [activeView])
+
+  // Restore the incoming view's scroll position synchronously before paint.
   useLayoutEffect(() => {
     const el = mainContentRef.current
     if (!el) return
-    if (prevViewRef.current !== activeView) {
-      viewScrollRef.current[prevViewRef.current] = el.scrollTop
-      el.scrollTop = viewScrollRef.current[activeView] ?? 0
-      prevViewRef.current = activeView
-    }
+    el.scrollTop = viewScrollRef.current[activeView] ?? 0
   }, [activeView])
 
   if (serverStatus === 'disconnected') {
