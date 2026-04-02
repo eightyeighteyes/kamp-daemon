@@ -20,6 +20,7 @@ export type Track = {
   mb_release_id: string
   mb_recording_id: string
   favorite: boolean
+  play_count: number
 }
 
 export type Album = {

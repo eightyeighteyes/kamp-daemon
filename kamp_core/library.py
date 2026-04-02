@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     mb_recording_id  TEXT    NOT NULL DEFAULT '',
     date_added       REAL,    -- file birthtime/ctime at first scan (Unix timestamp)
     last_played      REAL,    -- Unix timestamp of last natural EOF; NULL until played
-    favorite         INTEGER NOT NULL DEFAULT 0
+    favorite         INTEGER NOT NULL DEFAULT 0,
+    play_count       INTEGER NOT NULL DEFAULT 0
 );
 
 -- FTS5 virtual table for full-text search across track metadata.
@@ -131,6 +132,7 @@ class Track:
     date_added: float | None = field(default=None, compare=False)
     last_played: float | None = field(default=None, compare=False)
     favorite: bool = field(default=False, compare=False)
+    play_count: int = field(default=0, compare=False)
 
 
 @dataclass
@@ -238,6 +240,15 @@ class LibraryIndex:
             )
             self._conn.execute("UPDATE schema_version SET version = 4")
             self._conn.commit()
+            version = 4
+
+        if version < 5:
+            # v4 → v5: play_count column added.
+            self._conn.execute(
+                "ALTER TABLE tracks ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0"
+            )
+            self._conn.execute("UPDATE schema_version SET version = 5")
+            self._conn.commit()
 
     def _rebuild_fts(self) -> None:
         """Rebuild the FTS index from the current contents of the tracks table."""
@@ -304,7 +315,7 @@ class LibraryIndex:
         import time
 
         self._conn.execute(
-            "UPDATE tracks SET last_played = ? WHERE file_path = ?",
+            "UPDATE tracks SET last_played = ?, play_count = play_count + 1 WHERE file_path = ?",
             (time.time(), str(file_path)),
         )
         self._conn.commit()
@@ -503,6 +514,7 @@ def _row_to_track(row: sqlite3.Row) -> Track:
         date_added=row["date_added"],
         last_played=row["last_played"],
         favorite=bool(row["favorite"]),
+        play_count=row["play_count"],
     )
 
 

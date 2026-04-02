@@ -972,3 +972,16 @@ class TestFavoriteEndpoint:
         )
         assert "favorite" in track
         assert track["favorite"] is False
+
+    def test_track_out_includes_play_count_field(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_index.tracks_for_album.return_value = [_track(1)]
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        track = (
+            TestClient(app)
+            .get("/api/v1/tracks?album_artist=Artist&album=Album")
+            .json()[0]
+        )
+        assert "play_count" in track
+        assert track["play_count"] == 0

@@ -42,6 +42,7 @@ class TrackOut(BaseModel):
     mb_release_id: str
     mb_recording_id: str
     favorite: bool
+    play_count: int
 
     @classmethod
     def from_track(cls, t: Track) -> "TrackOut":
@@ -59,6 +60,7 @@ class TrackOut(BaseModel):
             mb_release_id=t.mb_release_id,
             mb_recording_id=t.mb_recording_id,
             favorite=t.favorite,
+            play_count=t.play_count,
         )
 
 
