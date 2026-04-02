@@ -1,10 +1,10 @@
 ---
 id: TASK-28
 title: track listening statistics are kept in the Library
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-29 17:29'
-updated_date: '2026-03-31 03:21'
+updated_date: '2026-04-02 16:17'
 labels:
   - feature
   - library
@@ -12,7 +12,7 @@ labels:
 milestone: m-5
 dependencies: []
 priority: medium
-ordinal: 3000
+ordinal: 2000
 ---
 
 ## Description
