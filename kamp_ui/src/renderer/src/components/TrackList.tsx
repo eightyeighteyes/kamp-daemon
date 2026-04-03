@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { artUrl } from '../api/client'
 
@@ -43,6 +43,15 @@ export function TrackList(): React.JSX.Element | null {
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [menu])
+
+  // Flip the menu toward the cursor if it would overflow the window edge.
+  useLayoutEffect(() => {
+    if (!menu || !menuRef.current) return
+    const el = menuRef.current
+    const rect = el.getBoundingClientRect()
+    if (rect.right > window.innerWidth) el.style.left = `${menu.x - rect.width}px`
+    if (rect.bottom > window.innerHeight) el.style.top = `${menu.y - rect.height}px`
   }, [menu])
 
   if (!album) return null

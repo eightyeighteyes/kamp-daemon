@@ -1,10 +1,10 @@
 ---
 id: TASK-80
 title: minimum boundaries for window
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 15:35'
-updated_date: '2026-04-03 15:39'
+updated_date: '2026-04-03 17:52'
 labels:
   - 'estimate: single'
 milestone: m-20
