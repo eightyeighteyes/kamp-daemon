@@ -4,12 +4,26 @@ import { artUrl } from '../api/client'
 
 type ContextMenu = { x: number; y: number; filePath: string; favorite: boolean }
 
+function HeroImage({ src }: { src: string }): React.JSX.Element {
+  const [loaded, setLoaded] = useState(false)
+  return (
+    <img
+      className={`track-list-hero-img${loaded ? ' loaded' : ''}`}
+      src={src}
+      alt=""
+      onLoad={() => setLoaded(true)}
+      onError={() => setLoaded(false)}
+    />
+  )
+}
+
 export function TrackList(): React.JSX.Element | null {
   const album = useStore((s) => s.library.selectedAlbum)
   const tracks = useStore((s) => s.library.tracks)
   const currentTrack = useStore((s) => s.player.current_track)
   const playing = useStore((s) => s.player.playing)
   const selectAlbum = useStore((s) => s.selectAlbum)
+  const selectArtist = useStore((s) => s.selectArtist)
   const playTrack = useStore((s) => s.playTrack)
   const togglePlayPause = useStore((s) => s.togglePlayPause)
   const addToQueue = useStore((s) => s.addToQueue)
@@ -38,79 +52,96 @@ export function TrackList(): React.JSX.Element | null {
 
   return (
     <div className="track-list-view">
-      <div className="track-list-header">
-        <button className="back-btn" onClick={() => selectAlbum(null)}>
-          ← Albums
-        </button>
-        <div className="track-list-album-info">
-          {album.has_art && (
-            <img
-              className="track-list-album-art"
-              src={artUrl(album.album_artist, album.album)}
-              alt=""
-            />
-          )}
-          <div className="track-list-album-text">
-            <span className="track-list-album-title">{album.album}</span>
-            <span className="track-list-album-artist">{album.album_artist}</span>
-            <span className="track-list-album-year">{album.year}</span>
-          </div>
+      {/* Hero: full-width art — image intentionally taller than hero to bleed into track list */}
+      <div className={`track-list-hero${album.has_art ? ' has-art' : ''}`}>
+        {album.has_art && <HeroImage src={artUrl(album.album_artist, album.album)} />}
+      </div>
+      {/* Overlay spans the full view so the gradient covers both hero and the top of the track list */}
+      <div className="track-list-hero-overlay" />
+
+      {/* Back button floats over the hero */}
+      <button className="back-btn" onClick={() => selectAlbum(null)} aria-label="Back to albums">
+        ←
+      </button>
+
+      {/* Static identity block — does not scroll */}
+      <div className="track-list-identity">
+        <div className="track-list-identity-text">
+          <h1 className="track-list-album-title">{album.album}</h1>
+          <h2 className="track-list-album-artist">
+            <button
+              className="track-list-artist-link"
+              onClick={() => {
+                selectAlbum(null)
+                selectArtist(album.album_artist)
+              }}
+            >
+              {album.album_artist}
+            </button>
+          </h2>
+          {album.year && <div className="track-list-album-year">{album.year}</div>}
         </div>
         <button
           className="play-all-btn"
+          aria-label="Play all"
           onClick={() => playTrack(album.album_artist, album.album, 0)}
         >
-          ▶ Play All
+          ▶
         </button>
       </div>
 
-      <ol className="track-rows">
-        {tracks.map((track, i) => {
-          const isCurrent = isCurrentAlbum && currentTrack?.track_number === track.track_number
-          return (
-            <li
-              key={`${track.disc_number}-${track.track_number}`}
-              className={`track-row${isCurrent ? ' current' : ''}`}
-              tabIndex={0}
-              onClick={() => {
-                if (isCurrent) {
-                  togglePlayPause()
-                } else {
-                  playTrack(album.album_artist, album.album, i)
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter') return
-                if (isCurrent) togglePlayPause()
-                else playTrack(album.album_artist, album.album, i)
-              }}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('text/kamp-track-path', track.file_path)
-                e.dataTransfer.effectAllowed = 'copy'
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setMenu({
-                  x: e.clientX,
-                  y: e.clientY,
-                  filePath: track.file_path,
-                  favorite: track.favorite
-                })
-              }}
-            >
-              <span className="track-row-fav" aria-hidden="true">
-                {track.favorite ? '♥' : ''}
-              </span>
-              <span className="track-row-num">
-                {isCurrent ? (playing ? '▶' : '▐▐') : track.track_number}
-              </span>
-              <span className="track-row-title">{track.title}</span>
-              <span className="track-row-artist">{track.artist}</span>
-            </li>
-          )
-        })}
-      </ol>
+      <div className="track-list-divider" />
+
+      {/* Scrollable body */}
+      <div className="track-list-body">
+        <ol className="track-rows">
+          {tracks.map((track, i) => {
+            const isCurrent = isCurrentAlbum && currentTrack?.track_number === track.track_number
+            return (
+              <li
+                key={`${track.disc_number}-${track.track_number}`}
+                className={`track-row${isCurrent ? ' current' : ''}`}
+                tabIndex={0}
+                onClick={() => {
+                  if (isCurrent) {
+                    togglePlayPause()
+                  } else {
+                    playTrack(album.album_artist, album.album, i)
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  if (isCurrent) togglePlayPause()
+                  else playTrack(album.album_artist, album.album, i)
+                }}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/kamp-track-path', track.file_path)
+                  e.dataTransfer.effectAllowed = 'copy'
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    filePath: track.file_path,
+                    favorite: track.favorite
+                  })
+                }}
+              >
+                <span className="track-row-fav" aria-hidden="true">
+                  {track.favorite ? '♥' : ''}
+                </span>
+                <span className="track-row-num">
+                  {isCurrent ? (playing ? '▶' : '▐▐') : track.track_number}
+                </span>
+                <span className="track-row-title">{track.title}</span>
+                <span className="track-row-artist">{track.artist}</span>
+              </li>
+            )
+          })}
+        </ol>
+      </div>
 
       {menu && (
         <div ref={menuRef} className="track-context-menu" style={{ top: menu.y, left: menu.x }}>
