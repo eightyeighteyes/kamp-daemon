@@ -1,10 +1,10 @@
 ---
 id: TASK-79
 title: check window boundaries for context menus
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-03 13:01'
-updated_date: '2026-04-03 13:02'
+updated_date: '2026-04-03 17:33'
 labels:
   - bug
   - ui

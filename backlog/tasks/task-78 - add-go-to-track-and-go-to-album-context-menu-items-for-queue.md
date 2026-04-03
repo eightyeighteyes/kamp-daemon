@@ -1,10 +1,10 @@
 ---
 id: TASK-78
 title: add 'go to track' and 'go to album' context menu items for queue
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-03 12:58'
-updated_date: '2026-04-03 13:02'
+updated_date: '2026-04-03 17:36'
 labels:
   - feature
   - ui

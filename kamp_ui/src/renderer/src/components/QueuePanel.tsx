@@ -1,7 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 
-type ContextMenu = { x: number; y: number; trackIdx: number | null }
+type ContextMenu = {
+  x: number
+  y: number
+  trackIdx: number | null
+  albumArtist?: string
+  album?: string
+}
 
 export function QueuePanel(): React.JSX.Element {
   const queue = useStore((s) => s.queue)
@@ -14,6 +20,10 @@ export function QueuePanel(): React.JSX.Element {
   const insertIntoQueue = useStore((s) => s.insertIntoQueue)
   const insertAlbumAt = useStore((s) => s.insertAlbumAt)
   const addAlbumToQueue = useStore((s) => s.addAlbumToQueue)
+  const albums = useStore((s) => s.library.albums)
+  const selectAlbum = useStore((s) => s.selectAlbum)
+  const selectArtist = useStore((s) => s.selectArtist)
+  const setActiveView = useStore((s) => s.setActiveView)
   const activeRef = useRef<HTMLLIElement>(null)
   const listRef = useRef<HTMLOListElement>(null)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
@@ -46,6 +56,15 @@ export function QueuePanel(): React.JSX.Element {
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [menu])
+
+  // Flip the menu toward the cursor if it would overflow the window edge.
+  useLayoutEffect(() => {
+    if (!menu || !menuRef.current) return
+    const el = menuRef.current
+    const rect = el.getBoundingClientRect()
+    if (rect.right > window.innerWidth) el.style.left = `${menu.x - rect.width}px`
+    if (rect.bottom > window.innerHeight) el.style.top = `${menu.y - rect.height}px`
   }, [menu])
 
   function handleDrop(e: React.DragEvent, dropIdx: number): void {
@@ -139,7 +158,13 @@ export function QueuePanel(): React.JSX.Element {
                 onContextMenu={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  setMenu({ x: e.clientX, y: e.clientY, trackIdx: isUnplayed ? idx : null })
+                  setMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    trackIdx: isUnplayed ? idx : null,
+                    albumArtist: track.album_artist,
+                    album: track.album
+                  })
                 }}
               >
                 <span className="queue-track-fav" aria-hidden="true">
@@ -155,6 +180,41 @@ export function QueuePanel(): React.JSX.Element {
       )}
       {menu && (
         <div ref={menuRef} className="track-context-menu" style={{ top: menu.y, left: menu.x }}>
+          {menu.albumArtist && menu.album && (
+            <>
+              <button
+                className="track-context-menu-item"
+                onClick={() => {
+                  const found =
+                    albums.find(
+                      (a) => a.album_artist === menu.albumArtist && a.album === menu.album
+                    ) ?? {
+                      album_artist: menu.albumArtist!,
+                      album: menu.album!,
+                      year: '',
+                      track_count: 0,
+                      has_art: false
+                    }
+                  void setActiveView('library')
+                  void selectAlbum(found)
+                  setMenu(null)
+                }}
+              >
+                ⌾ Go to Album
+              </button>
+              <button
+                className="track-context-menu-item"
+                onClick={() => {
+                  void setActiveView('library')
+                  selectArtist(menu.albumArtist!)
+                  setMenu(null)
+                }}
+              >
+                ♫ Go to Artist
+              </button>
+              <div className="track-context-menu-divider" />
+            </>
+          )}
           <button
             className="track-context-menu-item"
             onClick={() => {

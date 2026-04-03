@@ -1,10 +1,10 @@
 ---
 id: TASK-77
 title: auto-scroll queue to show a little history and a lot of future
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 12:50'
-updated_date: '2026-04-03 13:02'
+updated_date: '2026-04-03 17:33'
 labels:
   - feature
   - ui
