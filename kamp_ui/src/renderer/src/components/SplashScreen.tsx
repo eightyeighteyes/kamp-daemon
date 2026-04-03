@@ -116,22 +116,25 @@ export function SplashScreen({ hiding }: { hiding: boolean }): React.JSX.Element
         </g>
 
         {/* === Tonearm (static) === */}
-        {/* Pivot post */}
-        <circle cx="216" cy="18" r="6" fill="none" stroke="#c4aa78" strokeWidth="1.5" />
-        <circle cx="216" cy="18" r="2.5" fill="#c4aa78" />
-        {/* Arm — from pivot down to stylus at the record grooves */}
-        <line
-          x1="213"
-          y1="22"
-          x2="158"
-          y2="55"
+        {/* Pivot post — arm connects to its centre */}
+        <circle cx="218" cy="18" r="7" fill="none" stroke="#c4aa78" strokeWidth="1.5" />
+        <circle cx="218" cy="18" r="2.5" fill="#c4aa78" />
+        {/*
+          Arm geometry (angles clockwise from 12 o'clock):
+          - Main tube exits pivot centre at 195° for 140 px → bend at (182, 153)
+          - Headshell continues from bend to stylus at 170° on groove r=74 → (113, 173)
+        */}
+        <path
+          d="M 218 18 L 182 153 L 113 173"
+          fill="none"
           stroke="#c4aa78"
           strokeWidth="2"
           strokeLinecap="round"
+          strokeLinejoin="round"
         />
         {/* Stylus head */}
-        <circle cx="157" cy="56" r="3" fill="none" stroke="#c4aa78" strokeWidth="1.2" />
-        <circle cx="157" cy="56" r="1.5" fill="#c4aa78" />
+        <circle cx="113" cy="173" r="3" fill="none" stroke="#c4aa78" strokeWidth="1.2" />
+        <circle cx="113" cy="173" r="1.5" fill="#c4aa78" />
       </svg>
     </div>
   )
