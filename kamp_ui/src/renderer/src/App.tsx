@@ -37,18 +37,25 @@ export default function App(): React.JSX.Element {
   // read a browser-clamped value when the outgoing view's content was taller.
   const viewScrollRef = useRef<Partial<Record<string, number>>>({})
 
-  // Splash: shown while status is 'reconnecting' (initial load), then fades out.
+  // Splash: shown while reconnecting, then lingers 1s after connect so the
+  // library fetch completes before the app is revealed, then fades out.
   const [splashHiding, setSplashHiding] = useState(false)
   const [splashGone, setSplashGone] = useState(false)
   const splashFadeStartedRef = useRef(false)
+  const splashLingerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const splashFadeRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => {
-    let t: ReturnType<typeof setTimeout> | undefined
     if (serverStatus !== 'reconnecting' && !splashFadeStartedRef.current) {
       splashFadeStartedRef.current = true
-      setSplashHiding(true)
-      t = setTimeout(() => setSplashGone(true), 500)
+      splashLingerRef.current = setTimeout(() => {
+        setSplashHiding(true)
+        splashFadeRef.current = setTimeout(() => setSplashGone(true), 500)
+      }, 1000)
     }
-    return () => clearTimeout(t)
+    return () => {
+      clearTimeout(splashLingerRef.current)
+      clearTimeout(splashFadeRef.current)
+    }
   }, [serverStatus])
 
   useEffect(() => {
