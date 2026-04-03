@@ -52,20 +52,21 @@ export function TrackList(): React.JSX.Element | null {
 
   return (
     <div className="track-list-view">
-      {/* Hero: full-width art with gradient fade */}
+      {/* Hero: full-width art — image intentionally taller than hero to bleed into track list */}
       <div className={`track-list-hero${album.has_art ? ' has-art' : ''}`}>
         {album.has_art && <HeroImage src={artUrl(album.album_artist, album.album)} />}
-        <div className="track-list-hero-overlay" />
       </div>
+      {/* Overlay spans the full view so the gradient covers both hero and the top of the track list */}
+      <div className="track-list-hero-overlay" />
 
       {/* Back button floats over the hero */}
       <button className="back-btn" onClick={() => selectAlbum(null)} aria-label="Back to albums">
         ←
       </button>
 
-      {/* Scrollable body */}
-      <div className="track-list-body">
-        <div className="track-list-identity">
+      {/* Static identity block — does not scroll */}
+      <div className="track-list-identity">
+        <div className="track-list-identity-text">
           <h1 className="track-list-album-title">{album.album}</h1>
           <h2 className="track-list-album-artist">
             <button
@@ -80,17 +81,19 @@ export function TrackList(): React.JSX.Element | null {
           </h2>
           {album.year && <div className="track-list-album-year">{album.year}</div>}
         </div>
+        <button
+          className="play-all-btn"
+          aria-label="Play all"
+          onClick={() => playTrack(album.album_artist, album.album, 0)}
+        >
+          ▶
+        </button>
+      </div>
 
-        <div className="track-list-divider">
-          <button
-            className="play-all-btn"
-            onClick={() => playTrack(album.album_artist, album.album, 0)}
-          >
-            <span className="play-all-icon">▶</span>
-            Play All
-          </button>
-        </div>
+      <div className="track-list-divider" />
 
+      {/* Scrollable body */}
+      <div className="track-list-body">
         <ol className="track-rows">
           {tracks.map((track, i) => {
             const isCurrent = isCurrentAlbum && currentTrack?.track_number === track.track_number
