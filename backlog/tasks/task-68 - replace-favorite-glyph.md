@@ -1,10 +1,10 @@
 ---
 id: TASK-68
 title: replace favorite glyph
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 03:36'
-updated_date: '2026-04-03 04:35'
+updated_date: '2026-04-04 17:25'
 labels:
   - polish
   - ui
