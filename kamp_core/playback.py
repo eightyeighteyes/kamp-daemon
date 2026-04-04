@@ -349,7 +349,8 @@ class MpvPlaybackEngine:
                 f"--input-ipc-server={tmp}",
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            # Capture stderr so we can surface it if mpv fails to start.
+            stderr=subprocess.PIPE,
         )
         self._connect_socket()
         self._observe_properties()
@@ -366,9 +367,17 @@ class MpvPlaybackEngine:
                 break
             time.sleep(0.05)
         else:
+            # Try to collect any error output from mpv before raising.
+            assert self._proc is not None
+            detail = ""
+            if self._proc.poll() is not None and self._proc.stderr:
+                stderr_bytes = self._proc.stderr.read()
+                if stderr_bytes:
+                    detail = f": {stderr_bytes.decode(errors='replace').strip()}"
             raise RuntimeError(
                 f"mpv IPC socket did not appear at {self._sock_path} "
-                f"within {timeout}s"
+                f"within {timeout}s{detail}. "
+                f"Is '{self._mpv_bin}' installed and in PATH?"
             )
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.connect(self._sock_path)
