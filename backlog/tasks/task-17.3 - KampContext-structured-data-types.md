@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Claude
 created_date: '2026-04-05 16:36'
-updated_date: '2026-04-05 20:13'
+updated_date: '2026-04-05 20:14'
 labels:
   - feature
   - architecture
@@ -26,10 +26,10 @@ Initial types needed: `TrackMetadata`, `ArtworkQuery`, `ArtworkResult`. Addition
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 TrackMetadata, ArtworkQuery, and ArtworkResult are defined as typed dataclasses or similar
-- [ ] #2 All fields use Python primitive types or other KampContext types; no pathlib.Path, no SQLite connections, no internal daemon types
-- [ ] #3 Types are importable from a public kamp.extensions module
-- [ ] #4 Types are serialisable (can round-trip through the worker subprocess IPC boundary)
+- [x] #1 TrackMetadata, ArtworkQuery, and ArtworkResult are defined as typed dataclasses or similar
+- [x] #2 All fields use Python primitive types or other KampContext types; no pathlib.Path, no SQLite connections, no internal daemon types
+- [x] #3 Types are importable from a public kamp.extensions module
+- [x] #4 Types are serialisable (can round-trip through the worker subprocess IPC boundary)
 <!-- AC:END -->
 
 ## Implementation Plan
