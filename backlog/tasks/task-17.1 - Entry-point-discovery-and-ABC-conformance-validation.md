@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Claude
 created_date: '2026-04-05 16:36'
-updated_date: '2026-04-05 19:06'
+updated_date: '2026-04-05 19:08'
 labels:
   - feature
   - architecture
@@ -24,10 +24,10 @@ Implement the extension discovery mechanism: scan `[project.entry-points."kamp.e
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Extensions declared via [project.entry-points."kamp.extensions"] are discovered at daemon startup
-- [ ] #2 Each entry point is validated against its expected ABC; non-conforming classes are rejected with a clear error naming the package and missing method
-- [ ] #3 Valid extensions are registered in the host's extension registry
-- [ ] #4 An installed package with no entry points matching the kamp.extensions group is silently ignored
+- [x] #1 Extensions declared via [project.entry-points."kamp.extensions"] are discovered at daemon startup
+- [x] #2 Each entry point is validated against its expected ABC; non-conforming classes are rejected with a clear error naming the package and missing method
+- [x] #3 Valid extensions are registered in the host's extension registry
+- [x] #4 An installed package with no entry points matching the kamp.extensions group is silently ignored
 <!-- AC:END -->
 
 ## Implementation Plan
