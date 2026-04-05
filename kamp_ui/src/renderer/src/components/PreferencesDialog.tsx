@@ -337,7 +337,12 @@ export function PreferencesDialog(): React.JSX.Element | null {
   const handleSave = async (key: string, value: string): Promise<void> => {
     if (INT_KEYS.has(key)) {
       const n = Number(value)
-      if (!Number.isInteger(n) || n < 0) throw new Error('Must be a non-negative integer')
+      if (value.trim() === '' || !Number.isInteger(n) || n < 0)
+        throw new Error('Enter a whole number (0 or greater).')
+    }
+    if (key === 'musicbrainz.contact') {
+      if (!value.includes('@') || value.trim() === '')
+        throw new Error('Enter a valid email address.')
     }
     await setConfigValue(key, value)
   }

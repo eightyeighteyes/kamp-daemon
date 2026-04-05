@@ -73,7 +73,17 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${path}`)
+  if (!res.ok) {
+    // Prefer the server's detail message over the raw HTTP status text.
+    let message = `${res.status} ${res.statusText}`
+    try {
+      const json = (await res.json()) as { detail?: string }
+      if (json.detail) message = json.detail
+    } catch {
+      // JSON parse failed — fall back to the HTTP status message.
+    }
+    throw new Error(message)
+  }
   return res.json() as Promise<T>
 }
 
