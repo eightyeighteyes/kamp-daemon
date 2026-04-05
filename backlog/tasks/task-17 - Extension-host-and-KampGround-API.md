@@ -4,13 +4,14 @@ title: Extension host and KampGround API
 status: To Do
 assignee: []
 created_date: '2026-03-29 03:12'
-updated_date: '2026-04-05 16:28'
+updated_date: '2026-04-05 16:32'
 labels:
   - feature
   - architecture
   - 'estimate: box set'
 milestone: m-2
 dependencies: []
+ordinal: 1000
 ---
 
 ## Description
