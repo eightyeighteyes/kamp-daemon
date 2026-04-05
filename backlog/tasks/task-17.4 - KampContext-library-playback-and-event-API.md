@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Claude
 created_date: '2026-04-05 16:36'
-updated_date: '2026-04-05 21:22'
+updated_date: '2026-04-05 21:24'
 labels:
   - feature
   - architecture
@@ -28,11 +28,11 @@ This is the largest subtask of TASK-17 and should be worked in parallel with TAS
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 KampGround exposes library query methods sufficient for the MusicBrainz tagger and artwork fetcher to do their work
-- [ ] #2 KampGround exposes playback control and state query methods
-- [ ] #3 KampGround exposes an event subscription mechanism for daemon lifecycle events
-- [ ] #4 All API methods are typed and documented with examples
-- [ ] #5 No method on KampGround returns a file path, database cursor, or internal daemon object
+- [x] #1 KampGround exposes library query methods sufficient for the MusicBrainz tagger and artwork fetcher to do their work
+- [x] #2 KampGround exposes playback control and state query methods
+- [x] #3 KampGround exposes an event subscription mechanism for daemon lifecycle events
+- [x] #4 All API methods are typed and documented with examples
+- [x] #5 No method on KampGround returns a file path, database cursor, or internal daemon object
 <!-- AC:END -->
 
 ## Implementation Plan
