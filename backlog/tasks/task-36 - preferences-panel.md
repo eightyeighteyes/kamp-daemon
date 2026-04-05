@@ -1,10 +1,10 @@
 ---
 id: TASK-36
 title: Preferences panel
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-29 14:01'
-updated_date: '2026-04-05 16:56'
+updated_date: '2026-04-05 19:03'
 labels:
   - feature
   - ui
@@ -13,6 +13,7 @@ labels:
 milestone: m-21
 dependencies: []
 priority: high
+ordinal: 1000
 ---
 
 ## Description
