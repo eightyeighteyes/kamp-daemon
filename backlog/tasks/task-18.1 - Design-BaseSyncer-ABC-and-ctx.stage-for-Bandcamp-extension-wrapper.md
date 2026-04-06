@@ -1,10 +1,10 @@
 ---
 id: TASK-18.1
 title: Design BaseSyncer ABC and ctx.stage() for Bandcamp extension wrapper
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-06 14:29'
-updated_date: '2026-04-06 18:43'
+updated_date: '2026-04-06 18:57'
 labels:
   - extensions
   - bandcamp
