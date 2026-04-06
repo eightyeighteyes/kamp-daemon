@@ -205,6 +205,55 @@ def test_probe_rejection_prevents_registration(caplog):
     assert registry.taggers == []
 
 
+def _patch_pins(passes: bool = True):
+    """Patch verify_or_pin to return *passes* without touching the filesystem."""
+    return patch(
+        "kamp_daemon.ext.discovery.verify_or_pin",
+        return_value=passes,
+    )
+
+
+def test_hash_verification_failure_prevents_registration(caplog):
+    """An extension whose files fail hash verification is never registered."""
+    ep = _make_ep("tampered", GoodTagger, dist_name="tampered-pkg")
+    registry = ExtensionRegistry()
+    with _patch_eps(ep), _patch_probe(), _patch_pins(passes=False):
+        discover_extensions(registry)
+    assert registry.taggers == []
+
+
+def test_hash_verification_called_when_dist_present():
+    """verify_or_pin is invoked when the entry point has a dist attribute."""
+    ep = _make_ep("ext", GoodTagger, dist_name="ext-pkg")
+    registry = ExtensionRegistry()
+    with _patch_eps(ep), _patch_probe():
+        with patch(
+            "kamp_daemon.ext.discovery.verify_or_pin", return_value=True
+        ) as mock_verify:
+            discover_extensions(registry)
+    mock_verify.assert_called_once()
+    call_args = mock_verify.call_args
+    assert call_args[0][0] == "ext-pkg"  # dist_name passed correctly
+
+
+def test_hash_verification_skipped_when_no_dist():
+    """verify_or_pin is not called when ep.dist is absent (unknown distribution)."""
+    ep = MagicMock(spec=importlib.metadata.EntryPoint)
+    ep.name = "nodist"
+    ep.value = "test_module:GoodTagger"
+    ep.load.return_value = GoodTagger
+    # No dist attribute — _dist_name returns '<unknown>', dist is None
+    del ep.dist
+
+    registry = ExtensionRegistry()
+    with _patch_eps(ep), _patch_probe():
+        with patch(
+            "kamp_daemon.ext.discovery.verify_or_pin", return_value=True
+        ) as mock_verify:
+            discover_extensions(registry)
+    mock_verify.assert_not_called()
+
+
 def test_dist_name_falls_back_to_unknown_on_attribute_error():
     """_dist_name returns '<unknown>' when dist.metadata raises AttributeError."""
     from kamp_daemon.ext.discovery import _dist_name

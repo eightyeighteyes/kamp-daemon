@@ -1,10 +1,10 @@
 ---
 id: TASK-84
 title: Hash-pinning for installed extensions
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-05 16:27'
-updated_date: '2026-04-05 16:32'
+updated_date: '2026-04-06 11:51'
 labels:
   - feature
   - security
@@ -14,7 +14,7 @@ dependencies:
   - TASK-17
 documentation:
   - project/kampground-ideation.md
-ordinal: 3000
+ordinal: 9000
 ---
 
 ## Description
