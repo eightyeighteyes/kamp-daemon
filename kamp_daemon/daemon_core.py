@@ -18,7 +18,8 @@ from typing import Literal
 from .config import Config, _state_dir
 from .config_monitor import ConfigMonitor
 from .ext import ExtensionRegistry, discover_extensions
-from .syncer import Syncer
+from .ext.builtin.bandcamp import KampBandcampSyncer
+from .ext.context import KampGround, PlaybackSnapshot
 from .watcher import Watcher
 
 _PID_PATH: Path = _state_dir() / "daemon.pid"
@@ -42,10 +43,12 @@ class DaemonCore:
         self._state: DaemonState = "stopped"
         self._done = threading.Event()
         # Created here so callers can wire callbacks (e.g. status_callback on
-        # Syncer) before start() launches threads — avoids a race where the
+        # the syncer) before start() launches threads — avoids a race where the
         # first automatic sync fires before the menu bar has wired its callback.
         self._watcher: Watcher = Watcher(config)
-        self._syncer: Syncer = Syncer(config)
+        ctx = KampGround(playback=PlaybackSnapshot(), library_tracks=[])
+        self._syncer: KampBandcampSyncer = KampBandcampSyncer(ctx)
+        self._syncer._configure(config)
         self._monitor: ConfigMonitor | None = None
         self._extension_registry: ExtensionRegistry = ExtensionRegistry()
 
@@ -68,8 +71,8 @@ class DaemonCore:
         return self._watcher
 
     @property
-    def syncer(self) -> Syncer:
-        """The Syncer instance (available immediately after construction)."""
+    def syncer(self) -> KampBandcampSyncer:
+        """The syncer instance (available immediately after construction)."""
         return self._syncer
 
     # ------------------------------------------------------------------

@@ -90,8 +90,26 @@ class SetArtworkMutation:
     artwork: ArtworkResult
 
 
+@dataclass
+class StageMutation:
+    """A queued request to deposit a file in the staging directory.
+
+    Collected during extension execution (typically by a BaseSyncer) and
+    applied by the host after the worker completes.  The host writes
+    ``content`` to ``staging_dir / filename``.  Extensions must not write
+    to the filesystem directly — use ``KampGround.stage()`` instead.
+
+    Args:
+        filename: Base filename (no path separators) for the staged file.
+        content: Raw bytes to write (e.g. a downloaded ZIP archive).
+    """
+
+    filename: str
+    content: bytes
+
+
 # Union type for all mutation variants.
-Mutation = UpdateMetadataMutation | SetArtworkMutation
+Mutation = UpdateMetadataMutation | SetArtworkMutation | StageMutation
 
 
 @dataclass
@@ -256,6 +274,37 @@ class KampGround:
             ctx.set_artwork(track.mbid, ArtworkResult(result.body, "image/jpeg"))
         """
         self._pending_mutations.append(SetArtworkMutation(mbid=mbid, artwork=artwork))
+
+    def stage(self, filename: str, content: bytes) -> None:
+        """Queue a file to be deposited in the staging directory by the host.
+
+        The host writes ``content`` to ``staging_dir / filename`` after the
+        extension completes.  Extensions (particularly ``BaseSyncer``
+        implementations) must use this method rather than writing to the
+        filesystem directly — doing so would couple the extension to a
+        specific path, breaking the extension isolation contract.
+
+        Args:
+            filename: Base filename for the staged file.  Must not contain
+                path separators (``/`` or ``\\``).  The host rejects names
+                that would escape the staging directory.
+            content: Raw bytes to write (e.g. a downloaded ZIP archive).
+
+        Raises:
+            ValueError: If *filename* contains a path separator.
+
+        Example::
+
+            ctx.stage("artist-album.zip", zip_bytes)
+        """
+        if "/" in filename or "\\" in filename:
+            raise ValueError(
+                f"stage() filename must be a base name with no path separators; "
+                f"got {filename!r}"
+            )
+        self._pending_mutations.append(
+            StageMutation(filename=filename, content=content)
+        )
 
     # ------------------------------------------------------------------
     # Events

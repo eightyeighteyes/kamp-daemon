@@ -377,3 +377,53 @@ def test_mutations_pickle_cleanly() -> None:
     for m in (m1, m2):
         restored = pickle.loads(pickle.dumps(m))
         assert restored.mbid == m.mbid
+
+
+# ---------------------------------------------------------------------------
+# ctx.stage() / StageMutation
+# ---------------------------------------------------------------------------
+
+
+def test_stage_queues_stage_mutation() -> None:
+    """ctx.stage() queues a StageMutation with the given filename and content."""
+    from kamp_daemon.ext.context import StageMutation
+
+    ctx = KampGround()
+    ctx.stage("artist-album.zip", b"\x50\x4b\x03\x04")  # minimal ZIP magic
+
+    mutations = ctx.pending_mutations
+    assert len(mutations) == 1
+    assert isinstance(mutations[0], StageMutation)
+    assert mutations[0].filename == "artist-album.zip"
+    assert mutations[0].content == b"\x50\x4b\x03\x04"
+
+
+def test_stage_rejects_path_separators() -> None:
+    """ctx.stage() raises ValueError if the filename contains a path separator."""
+    ctx = KampGround()
+    with pytest.raises(ValueError, match="path separator"):
+        ctx.stage("subdir/evil.zip", b"")
+    with pytest.raises(ValueError, match="path separator"):
+        ctx.stage("subdir\\evil.zip", b"")
+
+
+def test_stage_mutation_pickles_cleanly() -> None:
+    """StageMutation is picklable so it can cross the subprocess boundary."""
+    from kamp_daemon.ext.context import StageMutation
+
+    m = StageMutation(filename="album.zip", content=b"\x00\x01\x02")
+    restored = pickle.loads(pickle.dumps(m))
+    assert restored.filename == m.filename
+    assert restored.content == m.content
+
+
+def test_stage_and_update_metadata_coexist() -> None:
+    """Multiple mutation types can be queued in the same ctx."""
+    from kamp_daemon.ext.context import StageMutation
+
+    ctx = KampGround()
+    ctx.update_metadata("rec-1", {"title": "New Title"})
+    ctx.stage("download.zip", b"zip-bytes")
+
+    assert len(ctx.pending_mutations) == 2
+    assert isinstance(ctx.pending_mutations[1], StageMutation)

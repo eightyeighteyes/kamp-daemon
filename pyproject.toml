@@ -39,6 +39,7 @@ kamp = "kamp_daemon.__main__:main"
 [tool.poetry.plugins."kamp.extensions"]
 kamp-musicbrainz-tagger = "kamp_daemon.ext.builtin.musicbrainz:KampMusicBrainzTagger"
 kamp-coverart-archive   = "kamp_daemon.ext.builtin.coverart:KampCoverArtArchive"
+kamp-bandcamp-syncer    = "kamp_daemon.ext.builtin.bandcamp:KampBandcampSyncer"
 
 [build-system]
 requires = ["poetry-core"]
