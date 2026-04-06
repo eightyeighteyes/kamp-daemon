@@ -14,6 +14,7 @@ import inspect
 import logging
 
 from .abc import BaseArtworkSource, BaseTagger
+from .probe import probe_extension
 from .registry import ExtensionRegistry
 
 _logger = logging.getLogger(__name__)
@@ -42,6 +43,13 @@ def _load_and_register(
     """Load a single entry point and register it if it passes validation."""
     # Identify the owning distribution for useful error messages.
     dist_name = _dist_name(ep)
+
+    # --- Import-time execution probe ---
+    # Derive the module name from the entry point value (e.g. "my_ext.tagger:MyTagger"
+    # → "my_ext.tagger") and probe it before loading the class into this process.
+    module_name = ep.value.split(":")[0]
+    if not probe_extension(module_name, package_name=dist_name):
+        return
 
     # --- Load ---
     try:

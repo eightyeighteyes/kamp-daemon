@@ -10,6 +10,7 @@ from .context import (
     UpdateMetadataMutation,
 )
 from .discovery import discover_extensions
+from .probe import probe_extension
 from .registry import ExtensionRegistry
 from .types import ArtworkQuery, ArtworkResult, TrackMetadata
 from .worker import invoke_extension
@@ -29,4 +30,5 @@ __all__ = [
     "UpdateMetadataMutation",
     "discover_extensions",
     "invoke_extension",
+    "probe_extension",
 ]
