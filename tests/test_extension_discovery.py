@@ -54,6 +54,9 @@ def _make_ep(name: str, cls: type, dist_name: str = "test-pkg") -> MagicMock:
     """Build a mock EntryPoint that loads *cls*."""
     ep = MagicMock(spec=importlib.metadata.EntryPoint)
     ep.name = name
+    ep.value = (
+        f"test_module:{cls.__name__}" if isinstance(cls, type) else "test_module:obj"
+    )
     ep.load.return_value = cls
     dist = MagicMock()
     dist.metadata = {"Name": dist_name}
@@ -69,6 +72,14 @@ def _patch_eps(*eps: MagicMock):
     )
 
 
+def _patch_probe(passes: bool = True):
+    """Patch probe_extension to return *passes* without spawning a subprocess."""
+    return patch(
+        "kamp_daemon.ext.discovery.probe_extension",
+        return_value=passes,
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC #1 / AC #3 — conforming extensions are discovered and registered
 # ---------------------------------------------------------------------------
@@ -77,7 +88,7 @@ def _patch_eps(*eps: MagicMock):
 def test_conforming_tagger_is_registered():
     ep = _make_ep("my_tagger", GoodTagger)
     registry = ExtensionRegistry()
-    with _patch_eps(ep):
+    with _patch_eps(ep), _patch_probe():
         discover_extensions(registry)
     assert GoodTagger in registry.taggers
 
@@ -85,7 +96,7 @@ def test_conforming_tagger_is_registered():
 def test_conforming_artwork_source_is_registered():
     ep = _make_ep("my_art", GoodArtworkSource)
     registry = ExtensionRegistry()
-    with _patch_eps(ep):
+    with _patch_eps(ep), _patch_probe():
         discover_extensions(registry)
     assert GoodArtworkSource in registry.artwork_sources
 
@@ -94,7 +105,7 @@ def test_multiple_extensions_registered_in_order():
     ep_t = _make_ep("t", GoodTagger)
     ep_a = _make_ep("a", GoodArtworkSource)
     registry = ExtensionRegistry()
-    with _patch_eps(ep_t, ep_a):
+    with _patch_eps(ep_t, ep_a), _patch_probe():
         discover_extensions(registry)
     assert GoodTagger in registry.taggers
     assert GoodArtworkSource in registry.artwork_sources
@@ -110,13 +121,10 @@ def test_non_abc_class_rejected(caplog):
     registry = ExtensionRegistry()
     with (
         _patch_eps(ep),
-        pytest.raises(SystemExit, match="") if False else _patch_eps(ep),
+        _patch_probe(),
+        caplog.at_level("ERROR", logger="kamp_daemon.ext.discovery"),
     ):
-        pass
-    # Re-run properly
-    with _patch_eps(ep):
-        with caplog.at_level("ERROR", logger="kamp_daemon.ext.discovery"):
-            discover_extensions(registry)
+        discover_extensions(registry)
     assert registry.taggers == []
     assert registry.artwork_sources == []
     assert "bad-pkg" in caplog.text
@@ -126,7 +134,7 @@ def test_non_abc_class_rejected(caplog):
 def test_incomplete_tagger_rejected_names_missing_method(caplog):
     ep = _make_ep("incomplete", IncompleteTagger, dist_name="incomplete-pkg")
     registry = ExtensionRegistry()
-    with _patch_eps(ep):
+    with _patch_eps(ep), _patch_probe():
         with caplog.at_level("ERROR", logger="kamp_daemon.ext.discovery"):
             discover_extensions(registry)
     assert registry.taggers == []
@@ -142,13 +150,14 @@ def test_incomplete_tagger_rejected_names_missing_method(caplog):
 def test_import_error_logged_and_skipped(caplog):
     ep = MagicMock(spec=importlib.metadata.EntryPoint)
     ep.name = "broken"
+    ep.value = "broken_mod:BrokenClass"
     ep.load.side_effect = ImportError("missing dependency")
     dist = MagicMock()
     dist.metadata = {"Name": "broken-pkg"}
     ep.dist = dist
 
     registry = ExtensionRegistry()
-    with _patch_eps(ep):
+    with _patch_eps(ep), _patch_probe():
         with caplog.at_level("ERROR", logger="kamp_daemon.ext.discovery"):
             discover_extensions(registry)
     assert registry.taggers == []
@@ -179,8 +188,30 @@ def test_no_entry_points_yields_empty_registry(caplog):
 def test_non_class_entry_point_rejected(caplog):
     ep = _make_ep("not_a_class", "just a string")  # type: ignore[arg-type]
     registry = ExtensionRegistry()
-    with _patch_eps(ep):
+    with _patch_eps(ep), _patch_probe():
         with caplog.at_level("ERROR", logger="kamp_daemon.ext.discovery"):
             discover_extensions(registry)
     assert registry.taggers == []
     assert "not a class" in caplog.text.lower()
+
+
+def test_probe_rejection_prevents_registration(caplog):
+    """An extension rejected by the import-time probe is never registered."""
+    ep = _make_ep("evil", GoodTagger, dist_name="evil-pkg")
+    registry = ExtensionRegistry()
+    with _patch_eps(ep), _patch_probe(passes=False):
+        with caplog.at_level("ERROR", logger="kamp_daemon.ext.discovery"):
+            discover_extensions(registry)
+    assert registry.taggers == []
+
+
+def test_dist_name_falls_back_to_unknown_on_attribute_error():
+    """_dist_name returns '<unknown>' when dist.metadata raises AttributeError."""
+    from kamp_daemon.ext.discovery import _dist_name
+
+    ep = MagicMock(spec=importlib.metadata.EntryPoint)
+    dist = MagicMock()
+    dist.metadata = MagicMock()
+    dist.metadata.__getitem__ = MagicMock(side_effect=AttributeError)
+    ep.dist = dist
+    assert _dist_name(ep) == "<unknown>"
