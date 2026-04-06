@@ -32,7 +32,7 @@ def mock_watcher():
 
 @pytest.fixture
 def mock_syncer():
-    with patch("kamp_daemon.daemon_core.Syncer") as cls:
+    with patch("kamp_daemon.daemon_core.KampBandcampSyncer") as cls:
         yield cls
 
 

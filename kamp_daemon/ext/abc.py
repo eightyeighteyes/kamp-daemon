@@ -7,6 +7,73 @@ from abc import ABC, abstractmethod
 from .types import ArtworkQuery, ArtworkResult, TrackMetadata
 
 
+class BaseSyncer(ABC):
+    """Polls an external source and deposits new downloads into staging.
+
+    Implementations run in-process within the daemon — the extension host
+    already provides process isolation, so a nested subprocess is not needed.
+    Third-party syncers that cannot write to the filesystem directly should
+    call ``ctx.stage(filename, content)`` to deposit files; the host writes
+    them to the staging directory.
+
+    Lifecycle
+    ---------
+    ``DaemonCore`` calls the following methods in order::
+
+        syncer.start()        # begin background polling
+        syncer.pause()        # temporarily stop polling (e.g. pipeline pause)
+        syncer.resume()       # restart polling after pause
+        syncer.stop()         # final shutdown; join background thread
+
+    The default implementations of ``pause`` and ``resume`` delegate to
+    ``stop`` / ``start`` respectively.  Override them if the implementation
+    can cheaply suspend without fully tearing down (e.g. by setting an event).
+
+    Manual triggers
+    ---------------
+    ``sync_once`` and ``mark_synced`` are optional capabilities.  Override
+    them to support manual sync triggers (e.g. a "Sync now" menu item).
+    """
+
+    @abstractmethod
+    def start(self) -> None:
+        """Start the background polling thread."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Stop the background polling thread and join it."""
+        raise NotImplementedError
+
+    def pause(self) -> None:
+        """Temporarily pause polling. Default: calls stop()."""
+        self.stop()
+
+    def resume(self) -> None:
+        """Resume polling after pause(). Default: calls start()."""
+        self.start()
+
+    def sync_once(self, *, skip_auto_mark: bool = False) -> None:
+        """Perform a single immediate sync without waiting for the poll interval.
+
+        Override to support manual sync triggers.  The default raises
+        ``NotImplementedError`` so callers can detect unsupported syncers.
+
+        Args:
+            skip_auto_mark: When True, skip the automatic "mark existing
+                collection as synced" step that normally runs on first use.
+        """
+        raise NotImplementedError
+
+    def mark_synced(self) -> None:
+        """Mark the entire collection as already synced without downloading.
+
+        Override to support the "mark synced" operation.  The default raises
+        ``NotImplementedError`` so callers can detect unsupported syncers.
+        """
+        raise NotImplementedError
+
+
 class BaseTagger(ABC):
     """Resolves track metadata.
 
