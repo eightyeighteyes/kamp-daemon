@@ -347,6 +347,38 @@ poetry run black kamp_daemon/ kamp_core/ tests/
 ```
 
 
+### Frontend extensions
+
+The Electron UI supports frontend extensions — npm packages that contribute panels to the nav bar.
+
+**How it works:**
+
+1. The main process scans `kamp_ui/extensions/` (first-party) and `node_modules/` (installed) for packages with `"kamp-extension"` in their `keywords`.
+2. Each extension's entry point is an ES module that exports a `register(api)` function.
+3. `register` receives `window.KampAPI` and calls `api.panels.register(manifest)` to add a tab.
+
+**Writing an extension:**
+
+```js
+// package.json: { "keywords": ["kamp-extension"], "main": "index.js", "type": "module" }
+
+export function register(api) {
+  api.panels.register({
+    id: 'my-extension.my-panel',   // must be globally unique
+    title: 'My Panel',
+    render(container) {
+      container.textContent = 'Hello from my panel'
+      // Return a cleanup function called on unmount:
+      return () => {}
+    }
+  })
+}
+```
+
+Extensions run in the renderer process with `nodeIntegration: false` — they have no access to `ipcRenderer` or Node.js APIs. The only kamp surface is `window.KampAPI`, which exposes `panels`, `extensions`, and `serverUrl` (the HTTP server base URL for calling the REST API).
+
+An example first-party extension lives in `kamp_ui/extensions/kamp-example-panel/`.
+
 ---
 
 *Built by [Claude Sonnet 4.6](https://www.anthropic.com/claude) (claude-sonnet-4-6) — Anthropic's AI assistant.*

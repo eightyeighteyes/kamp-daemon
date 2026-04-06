@@ -3,6 +3,7 @@ import { useStore } from './store'
 import { connectStateStream } from './api/client'
 import { ArtistPanel } from './components/ArtistPanel'
 import { AlbumGrid } from './components/AlbumGrid'
+import { ExtensionPanel } from './components/ExtensionPanel'
 import { NowPlayingView } from './components/NowPlayingView'
 import { PreferencesDialog } from './components/PreferencesDialog'
 import { SearchBar } from './components/SearchBar'
@@ -12,6 +13,7 @@ import { SplashScreen } from './components/SplashScreen'
 import { TrackList } from './components/TrackList'
 import { TransportBar } from './components/TransportBar'
 import { QueuePanel } from './components/QueuePanel'
+import { useRegisteredPanels } from './hooks/useRegisteredPanels'
 
 export default function App(): React.JSX.Element {
   const loadLibrary = useStore((s) => s.loadLibrary)
@@ -33,6 +35,9 @@ export default function App(): React.JSX.Element {
   const toggleQueuePanel = useStore((s) => s.toggleQueuePanel)
   const loadQueue = useStore((s) => s.loadQueue)
   const openPrefs = useStore((s) => s.openPrefs)
+  const extensionPanels = useRegisteredPanels()
+  // Active extension panel id, or null when a built-in view is showing.
+  const [activeExtPanel, setActiveExtPanel] = useState<string | null>(null)
   const searchBarRef = useRef<HTMLInputElement>(null)
   const mainContentRef = useRef<HTMLElement>(null)
   // Per-view scroll positions — kept current by a scroll listener so we never
@@ -180,6 +185,38 @@ export default function App(): React.JSX.Element {
     return cleanup
   }, [openPrefs])
 
+  // Discover and load frontend extensions. Each extension entry point is a
+  // plain ES module that exports a `register(api)` function. Extensions call
+  // window.KampAPI.panels.register() to contribute panels; the
+  // useRegisteredPanels hook above picks up the resulting CustomEvents.
+  useEffect(() => {
+    async function loadExtensions(): Promise<void> {
+      try {
+        const extensions = await window.KampAPI.extensions.getAll()
+        for (const ext of extensions) {
+          // Create a Blob URL so the renderer can import ES module code
+          // supplied by the main process — file:// imports are blocked by
+          // Chromium when the page is served from an http:// origin (dev mode).
+          const blob = new Blob([ext.code], { type: 'text/javascript' })
+          const blobUrl = URL.createObjectURL(blob)
+          try {
+            const mod = await import(/* @vite-ignore */ blobUrl)
+            if (typeof mod.register === 'function') {
+              mod.register(window.KampAPI)
+            }
+          } catch (err) {
+            console.error(`[kamp] failed to load extension "${ext.id}":`, err)
+          } finally {
+            URL.revokeObjectURL(blobUrl)
+          }
+        }
+      } catch (err) {
+        console.error('[kamp] extension discovery failed:', err)
+      }
+    }
+    void loadExtensions()
+  }, [])
+
   // Keep viewScrollRef continuously current so we always have the right value
   // when switching views — reading scrollTop after a DOM update can give a
   // browser-clamped value if the new content is shorter than the old.
@@ -226,25 +263,44 @@ export default function App(): React.JSX.Element {
       {!showSetup && (
         <nav className="view-tabs">
           <button
-            className={activeView === 'library' ? 'active' : ''}
-            onClick={() => setActiveView('library')}
+            className={activeView === 'library' && !activeExtPanel ? 'active' : ''}
+            onClick={() => {
+              void setActiveView('library')
+              setActiveExtPanel(null)
+            }}
           >
             Library
           </button>
           <button
-            className={activeView === 'now-playing' ? 'active' : ''}
-            onClick={() => setActiveView('now-playing')}
+            className={activeView === 'now-playing' && !activeExtPanel ? 'active' : ''}
+            onClick={() => {
+              void setActiveView('now-playing')
+              setActiveExtPanel(null)
+            }}
           >
             Now Playing
           </button>
+          {extensionPanels.map((panel) => (
+            <button
+              key={panel.id}
+              className={activeExtPanel === panel.id ? 'active' : ''}
+              onClick={() => setActiveExtPanel(panel.id)}
+            >
+              {panel.title}
+            </button>
+          ))}
           <SearchBar ref={searchBarRef} />
         </nav>
       )}
       <div className="app-body">
-        {!showSetup && activeView === 'library' && !searchQuery && <ArtistPanel />}
+        {!showSetup && activeView === 'library' && !searchQuery && !activeExtPanel && (
+          <ArtistPanel />
+        )}
         <main className="main-content" ref={mainContentRef}>
           {showSetup ? (
             <SetupScreen />
+          ) : activeExtPanel ? (
+            <ExtensionPanel panel={extensionPanels.find((p) => p.id === activeExtPanel)!} />
           ) : searchQuery ? (
             <SearchView />
           ) : activeView === 'now-playing' ? (

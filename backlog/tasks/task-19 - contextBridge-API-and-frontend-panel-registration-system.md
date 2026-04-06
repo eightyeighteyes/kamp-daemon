@@ -1,17 +1,17 @@
 ---
 id: TASK-19
 title: contextBridge API and frontend panel registration system
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-29 03:12'
-updated_date: '2026-04-05 16:32'
+updated_date: '2026-04-06 20:28'
 labels:
   - feature
   - architecture
   - 'estimate: lp'
 milestone: m-2
 dependencies: []
-ordinal: 6000
+ordinal: 13000
 ---
 
 ## Description
@@ -24,8 +24,8 @@ Extensions must never touch `ipcRenderer` or Node.js directly — only `window.K
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 window.KampAPI is injected via contextBridge in the preload script
-- [ ] #2 Frontend extensions are discovered via kamp-extension npm keyword
-- [ ] #3 An example first-party extension registers a panel successfully
-- [ ] #4 Extensions cannot access ipcRenderer or Node.js APIs directly
+- [x] #1 window.KampAPI is injected via contextBridge in the preload script
+- [x] #2 Frontend extensions are discovered via kamp-extension npm keyword
+- [x] #3 An example first-party extension registers a panel successfully
+- [x] #4 Extensions cannot access ipcRenderer or Node.js APIs directly
 <!-- AC:END -->
