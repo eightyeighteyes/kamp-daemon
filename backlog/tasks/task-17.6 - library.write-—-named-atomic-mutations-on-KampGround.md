@@ -4,6 +4,7 @@ title: library.write — named atomic mutations on KampGround
 status: In Progress
 assignee: []
 created_date: '2026-04-06 01:26'
+updated_date: '2026-04-06 01:41'
 labels:
   - feature
   - 'estimate: side'
@@ -21,8 +22,8 @@ Expose `library.write` capability on KampGround as named atomic mutations (`upda
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 KampGround.update_metadata(mbid, fields) queues a metadata update to be applied by the host after the worker completes
-- [ ] #2 KampGround.set_artwork(mbid, artwork_result) queues an artwork write to be applied by the host after the worker completes
-- [ ] #3 Mutations are collected as a list on KampGround and returned to the host via the result queue; the host applies them — no direct DB access from the worker subprocess
-- [ ] #4 Extensions cannot access the database directly through KampGround
+- [x] #1 KampGround.update_metadata(mbid, fields) queues a metadata update to be applied by the host after the worker completes
+- [x] #2 KampGround.set_artwork(mbid, artwork_result) queues an artwork write to be applied by the host after the worker completes
+- [x] #3 Mutations are collected as a list on KampGround and returned to the host via the result queue; the host applies them — no direct DB access from the worker subprocess
+- [x] #4 Extensions cannot access the database directly through KampGround
 <!-- AC:END -->
