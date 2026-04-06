@@ -256,3 +256,116 @@ def test_probe_extension_violation_returns_false(tmp_path: Path, caplog: Any) ->
     # AC #4 — error includes package name and stubbed symbol
     assert "evil-pkg" in caplog.text
     assert "open" in caplog.text
+
+
+def test_probe_extension_error_status_returns_false(caplog: Any) -> None:
+    """An ("error", detail) result from the worker returns False."""
+    import queue as _stdlib_queue
+
+    q: Any = _stdlib_queue.Queue()
+    q.put(("error", "bad module"))
+
+    class _FakeProcess:
+        exitcode = 0
+
+        def __init__(self, **kw: Any) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+        def join(self) -> None:
+            pass
+
+    class _FakeCtx:
+        def Queue(self) -> Any:
+            return q
+
+        def Process(self, **kw: Any) -> _FakeProcess:
+            return _FakeProcess(**kw)
+
+    with (
+        patch(
+            "kamp_daemon.ext.probe.multiprocessing.get_context", return_value=_FakeCtx()
+        ),
+        caplog.at_level("ERROR", logger="kamp_daemon.ext.probe"),
+    ):
+        result = probe_extension("some_module", package_name="some-pkg")
+    assert result is False
+    assert "some-pkg" in caplog.text
+    assert "bad module" in caplog.text
+
+
+def test_probe_extension_crash_empty_queue_returns_false(caplog: Any) -> None:
+    """Non-zero exit code with empty queue (hard crash) returns False."""
+    import queue as _stdlib_queue
+
+    q: Any = _stdlib_queue.Queue()  # empty — worker never put anything
+
+    class _CrashProcess:
+        exitcode = 139  # SIGSEGV
+
+        def __init__(self, **kw: Any) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+        def join(self) -> None:
+            pass
+
+    class _FakeCtx:
+        def Queue(self) -> Any:
+            return q
+
+        def Process(self, **kw: Any) -> _CrashProcess:
+            return _CrashProcess(**kw)
+
+    with (
+        patch(
+            "kamp_daemon.ext.probe.multiprocessing.get_context", return_value=_FakeCtx()
+        ),
+        caplog.at_level("ERROR", logger="kamp_daemon.ext.probe"),
+    ):
+        result = probe_extension("crash_module", package_name="crash-pkg")
+    assert result is False
+    assert "crash-pkg" in caplog.text
+    assert "139" in caplog.text
+
+
+def test_probe_extension_empty_queue_on_success_exit_returns_false(
+    caplog: Any,
+) -> None:
+    """Exit code 0 but empty queue (worker exited without result) returns False."""
+    import queue as _stdlib_queue
+
+    q: Any = _stdlib_queue.Queue()  # empty
+
+    class _FakeProcess:
+        exitcode = 0
+
+        def __init__(self, **kw: Any) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+        def join(self) -> None:
+            pass
+
+    class _FakeCtx:
+        def Queue(self) -> Any:
+            return q
+
+        def Process(self, **kw: Any) -> _FakeProcess:
+            return _FakeProcess(**kw)
+
+    with (
+        patch(
+            "kamp_daemon.ext.probe.multiprocessing.get_context", return_value=_FakeCtx()
+        ),
+        caplog.at_level("ERROR", logger="kamp_daemon.ext.probe"),
+    ):
+        result = probe_extension("no_result_module", package_name="no-result-pkg")
+    assert result is False
+    assert "no-result-pkg" in caplog.text
