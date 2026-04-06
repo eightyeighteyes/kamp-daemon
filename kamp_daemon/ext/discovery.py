@@ -14,6 +14,7 @@ import inspect
 import logging
 
 from .abc import BaseArtworkSource, BaseTagger
+from .pins import verify_or_pin
 from .probe import probe_extension
 from .registry import ExtensionRegistry
 
@@ -50,6 +51,15 @@ def _load_and_register(
     module_name = ep.value.split(":")[0]
     if not probe_extension(module_name, package_name=dist_name):
         return
+
+    # --- Hash verification ---
+    # Verify (or pin on first encounter) the distribution's installed files.
+    # Skipped when the distribution is unknown — probe already ran, and we
+    # cannot enumerate files without a Distribution object.
+    dist = getattr(ep, "dist", None)
+    if dist is not None:
+        if not verify_or_pin(dist_name, dist):
+            return
 
     # --- Load ---
     try:
