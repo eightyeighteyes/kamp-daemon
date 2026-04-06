@@ -1,4 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { KampAPI } from '../shared/kampAPI'
 
 declare global {
   interface Window {
@@ -7,5 +8,6 @@ declare global {
       openDirectory: () => Promise<string | null>
       onOpenPreferences: (callback: () => void) => () => void
     }
+    KampAPI: KampAPI
   }
 }

@@ -6,6 +6,7 @@ import * as http from 'http'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { theme } from '../shared/theme'
+import { discoverExtensions } from './extensions'
 
 // Set the app name before the app is ready so the macOS menu bar and all
 // default menu items ("About kamp", "Quit kamp") reflect the correct name.
@@ -218,6 +219,8 @@ app.whenReady().then(async () => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  ipcMain.handle('kamp:get-extensions', () => discoverExtensions())
 
   ipcMain.handle('open-directory', async () => {
     const result = await dialog.showOpenDialog({
