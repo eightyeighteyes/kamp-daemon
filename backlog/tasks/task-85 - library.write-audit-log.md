@@ -1,10 +1,10 @@
 ---
 id: TASK-85
 title: library.write audit log
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-05 16:27'
-updated_date: '2026-04-06 11:55'
+updated_date: '2026-04-06 13:00'
 labels:
   - feature
   - security
@@ -14,7 +14,7 @@ dependencies:
   - TASK-17
 documentation:
   - project/kampground-ideation.md
-ordinal: 4000
+ordinal: 10000
 ---
 
 ## Description
