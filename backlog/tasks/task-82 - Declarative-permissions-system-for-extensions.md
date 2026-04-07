@@ -1,10 +1,10 @@
 ---
 id: TASK-82
 title: Declarative permissions system for extensions
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-05 16:27'
-updated_date: '2026-04-07 03:10'
+updated_date: '2026-04-07 03:59'
 labels:
   - feature
   - security
@@ -15,7 +15,7 @@ dependencies:
   - TASK-19
 documentation:
   - project/kampground-ideation.md
-ordinal: 9000
+ordinal: 16000
 ---
 
 ## Description
