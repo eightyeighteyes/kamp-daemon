@@ -21,7 +21,7 @@
 import { app } from 'electron'
 import { readdirSync, readFileSync, existsSync } from 'fs'
 import { join, resolve } from 'path'
-import type { ExtensionInfo } from '../shared/kampAPI'
+import type { ExtensionInfo, ExtensionSettingSchema } from '../shared/kampAPI'
 import allowlistData from './first-party-allowlist.json'
 
 // Set of package names approved for Phase 1 (contextBridge) access.
@@ -41,10 +41,11 @@ function scanDir(dir: string): ExtensionInfo[] {
     try {
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
         name?: string
+        version?: string
         displayName?: string
         keywords?: string[]
         main?: string
-        kamp?: { permissions?: string[] }
+        kamp?: { permissions?: string[]; settings?: ExtensionSettingSchema[] }
       }
 
       if (!Array.isArray(pkg.keywords) || !pkg.keywords.includes('kamp-extension')) continue
@@ -75,12 +76,27 @@ function scanDir(dir: string): ExtensionInfo[] {
         )
       }
 
+      // Read settings schema, validating that each entry has at minimum key, label, type.
+      const rawSettings = pkg.kamp?.settings
+      const settings: ExtensionSettingSchema[] | undefined = Array.isArray(rawSettings)
+        ? rawSettings.filter(
+            (s): s is ExtensionSettingSchema =>
+              typeof s === 'object' &&
+              s !== null &&
+              typeof s.key === 'string' &&
+              typeof s.label === 'string' &&
+              typeof s.type === 'string'
+          )
+        : undefined
+
       results.push({
         id,
         name: pkg.displayName ?? pkg.name ?? entry.name,
+        version: pkg.version ?? '0.0.0',
         code,
         phase,
-        permissions
+        permissions,
+        settings: settings && settings.length > 0 ? settings : undefined
       })
     } catch {
       // Skip packages with malformed package.json.

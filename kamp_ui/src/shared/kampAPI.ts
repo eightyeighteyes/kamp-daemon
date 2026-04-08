@@ -6,6 +6,20 @@
  */
 
 /**
+ * A single field in an extension's declared settings schema.
+ * Declared in package.json under `kamp.settings`.
+ */
+export type ExtensionSettingSchema = {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'boolean' | 'select'
+  /** Valid values for `type: 'select'`. */
+  options?: string[]
+  default?: string | number | boolean
+  hint?: string
+}
+
+/**
  * Layout slots available in the host application.
  *
  * - `main`   – tabbed content area (Library, Now Playing, extension views)
@@ -42,6 +56,8 @@ export type PanelManifest = {
 export type ExtensionInfo = {
   id: string
   name: string
+  /** Version string from the extension's package.json. */
+  version: string
   /** Source code of the extension's entry point, read by the main process. */
   code: string
   /**
@@ -58,6 +74,11 @@ export type ExtensionInfo = {
    * Known values: "library.read", "player.read", "player.control", "network.fetch", "settings"
    */
   permissions: string[]
+  /**
+   * Settings schema declared in package.json under `kamp.settings`.
+   * The host renders a settings form from this schema in the Extensions preferences panel.
+   */
+  settings?: ExtensionSettingSchema[]
 }
 
 /** The full shape of window.KampAPI. */
@@ -83,5 +104,16 @@ export type KampAPI = {
   extensions: {
     /** Ask the main process to discover installed kamp-extension packages. */
     getAll: () => Promise<ExtensionInfo[]>
+  }
+
+  /**
+   * Per-extension settings access. Only provided when the extension declares
+   * the `"settings"` permission. Values are persisted by the host across sessions.
+   */
+  settings?: {
+    /** Read the current value of a setting key, or undefined if not yet set. */
+    get: (key: string) => unknown
+    /** Persist a new value for a setting key. */
+    set: (key: string, value: unknown) => void
   }
 }

@@ -355,17 +355,37 @@ The Electron UI supports frontend extensions — npm packages that contribute pa
 
 1. The main process scans `kamp_ui/extensions/` (first-party) and `node_modules/` (installed) for packages with `"kamp-extension"` in their `keywords`.
 2. Each extension's entry point is an ES module that exports a `register(api)` function.
-3. `register` receives `window.KampAPI` and calls `api.panels.register(manifest)` to add a tab.
+3. Extensions are classified into two security phases:
+   - **Phase 1 (first-party):** listed in `kamp_ui/src/main/first-party-allowlist.json`; runs directly in the renderer with full `KampAPI` access.
+   - **Phase 2 (community):** not on the allowlist; runs in a sandboxed `<iframe sandbox="allow-scripts">` with no access to the host DOM, localStorage, or contextBridge. Network access is restricted to the local kamp server. On first load, the user is shown a permission prompt listing the extension's declared capabilities.
+
+**Managing extensions:**
+
+Open **Preferences → Extensions** (Cmd+,) to view all installed extensions, enable/disable them, and configure per-extension settings.
 
 **Writing an extension:**
 
 ```js
-// package.json: { "keywords": ["kamp-extension"], "main": "index.js", "type": "module" }
+// package.json
+{
+  "name": "my-kamp-extension",
+  "version": "1.0.0",
+  "keywords": ["kamp-extension"],
+  "main": "index.js",
+  "kamp": {
+    "permissions": ["player.read", "network.fetch"],
+    "settings": [
+      { "key": "refresh_interval", "label": "Refresh interval (s)", "type": "number", "default": 30 }
+    ]
+  }
+}
 
+// index.js
 export function register(api) {
   api.panels.register({
     id: 'my-extension.my-panel',   // must be globally unique
     title: 'My Panel',
+    defaultSlot: 'main',
     render(container) {
       container.textContent = 'Hello from my panel'
       // Return a cleanup function called on unmount:
@@ -375,7 +395,15 @@ export function register(api) {
 }
 ```
 
-Extensions run in the renderer process with `nodeIntegration: false` — they have no access to `ipcRenderer` or Node.js APIs. The only kamp surface is `window.KampAPI`, which exposes `panels`, `extensions`, and `serverUrl` (the HTTP server base URL for calling the REST API).
+**Declared permissions** (`kamp.permissions`):
+
+| Permission | Grants |
+|---|---|
+| `library.read` | Read library metadata via the REST API |
+| `player.read` | Read playback state |
+| `player.control` | Control playback (play, pause, skip, seek) |
+| `network.fetch` | Make requests to external servers |
+| `settings` | Read and write per-extension settings via `api.settings` |
 
 An example first-party extension lives in `kamp_ui/extensions/kamp-example-panel/`.
 
