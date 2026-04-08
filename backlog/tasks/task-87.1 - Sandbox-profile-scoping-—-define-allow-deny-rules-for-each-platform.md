@@ -1,9 +1,10 @@
 ---
 id: TASK-87.1
 title: Sandbox profile scoping — define allow/deny rules for each platform
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-05 16:36'
+updated_date: '2026-04-08 17:21'
 labels:
   - security
   - 'estimate: side'
