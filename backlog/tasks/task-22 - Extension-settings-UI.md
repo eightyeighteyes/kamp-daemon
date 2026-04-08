@@ -1,18 +1,18 @@
 ---
 id: TASK-22
 title: Extension settings UI
-status: In Progress
+status: Done
 assignee:
   - Claude
 created_date: '2026-03-29 03:12'
-updated_date: '2026-04-08 16:38'
+updated_date: '2026-04-08 16:57'
 labels:
   - feature
   - ui
   - 'estimate: side'
 milestone: m-2
 dependencies: []
-ordinal: 11000
+ordinal: 18000
 ---
 
 ## Description
