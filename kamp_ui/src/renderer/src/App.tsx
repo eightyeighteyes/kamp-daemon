@@ -14,7 +14,9 @@ import { SetupScreen } from './components/SetupScreen'
 import { SplashScreen } from './components/SplashScreen'
 import { TransportBar } from './components/TransportBar'
 import { SandboxedExtensionLoader } from './components/SandboxedExtensionLoader'
+import { ExtensionPermissionPrompt } from './components/ExtensionPermissionPrompt'
 import { registerBuiltInPanel, usePanelLayout } from './hooks/usePanelLayout'
+import { useExtensionState } from './hooks/useExtensionState'
 import type { UnifiedPanel } from './hooks/usePanelLayout'
 import type { ExtensionInfo } from '../../shared/kampAPI'
 
@@ -92,11 +94,16 @@ export default function App(): React.JSX.Element {
   const openPrefs = useStore((s) => s.openPrefs)
 
   const layout = usePanelLayout()
+  const extState = useExtensionState()
 
   // Active extension panel id, or null when a built-in view is showing.
   const [activeExtPanel, setActiveExtPanel] = useState<string | null>(null)
-  // Phase 2 (community) extensions to render in sandboxed iframes.
+  // All discovered extensions (used by PreferencesDialog for the Extensions tab).
+  const [allExtensions, setAllExtensions] = useState<ExtensionInfo[]>([])
+  // Phase 2 (community) extensions approved and ready to render in sandboxed iframes.
   const [phase2Extensions, setPhase2Extensions] = useState<ExtensionInfo[]>([])
+  // Queue of Phase 2 extensions awaiting permission approval — shown one at a time.
+  const [permissionQueue, setPermissionQueue] = useState<ExtensionInfo[]>([])
 
   const searchBarRef = useRef<HTMLInputElement>(null)
   const mainContentRef = useRef<HTMLElement>(null)
@@ -237,29 +244,58 @@ export default function App(): React.JSX.Element {
   }, [openPrefs])
 
   // Discover and load frontend extensions.
+  // extState.disabledIds is captured at mount; re-runs if the disabled set changes
+  // so that newly-enabled extensions are loaded immediately.
+  const {
+    disabledIds,
+    approvedIds,
+    deniedIds,
+    approve,
+    deny,
+    resetDenied,
+    getSettingValue,
+    setSettingValue
+  } = extState
   useEffect(() => {
     async function loadExtensions(): Promise<void> {
       try {
         const extensions = await window.KampAPI.extensions.getAll()
-        const phase2: ExtensionInfo[] = []
+        setAllExtensions(extensions)
+
+        const phase2Approved: ExtensionInfo[] = []
+        const phase2Pending: ExtensionInfo[] = []
+
         for (const ext of extensions) {
+          // Skip extensions the user has explicitly disabled.
+          if (disabledIds.has(ext.id)) continue
+
           if (ext.phase === 2) {
-            // Phase 2 (community) extensions: collected and passed to
-            // SandboxedExtensionLoader, which renders them in isolated iframes.
-            phase2.push(ext)
+            // Phase 2 (community): route through permission approval.
+            if (approvedIds.has(ext.id)) {
+              phase2Approved.push(ext)
+            } else if (!deniedIds.has(ext.id)) {
+              // Not yet decided — queue for the permission prompt.
+              phase2Pending.push(ext)
+            }
+            // denied extensions are silently skipped.
             continue
           }
 
-          // Phase 1: extension is on the allow-list; pass a permission-scoped KampAPI.
-          // Panels and serverUrl are always available (they are the extension ABC contract).
-          // Future capabilities (library.read, player.read, etc.) will be gated here.
+          // Phase 1: on the allow-list; pass a permission-scoped KampAPI.
           const pset = new Set(ext.permissions)
           const scopedAPI = {
             serverUrl: window.KampAPI.serverUrl,
             panels: window.KampAPI.panels,
             extensions: window.KampAPI.extensions,
-            // Placeholder gates for declared capabilities — expand as the API grows.
-            _permissions: pset
+            // settings API: only present when the extension declared the 'settings' permission.
+            ...(pset.has('settings')
+              ? {
+                  settings: {
+                    get: (key: string) => getSettingValue(ext.id, key),
+                    set: (key: string, value: unknown) => setSettingValue(ext.id, key, value)
+                  }
+                }
+              : {})
           }
           const blob = new Blob([ext.code], { type: 'text/javascript' })
           const blobUrl = URL.createObjectURL(blob)
@@ -274,13 +310,38 @@ export default function App(): React.JSX.Element {
             URL.revokeObjectURL(blobUrl)
           }
         }
-        setPhase2Extensions(phase2)
+
+        setPhase2Extensions(phase2Approved)
+        setPermissionQueue(phase2Pending)
       } catch (err) {
         console.error('[kamp] extension discovery failed:', err)
       }
     }
     void loadExtensions()
-  }, [])
+  }, [disabledIds]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-queue a previously-denied Phase 2 extension for the permission prompt.
+  const handleReviewDenied = (id: string): void => {
+    const ext = allExtensions.find((e) => e.id === id)
+    if (!ext) return
+    resetDenied(id)
+    setPermissionQueue((q) => [...q, ext])
+  }
+
+  // Permission prompt handlers — advance the queue one extension at a time.
+  const handlePermissionApprove = (): void => {
+    const ext = permissionQueue[0]
+    if (!ext) return
+    approve(ext.id)
+    setPhase2Extensions((prev) => [...prev, ext])
+    setPermissionQueue((q) => q.slice(1))
+  }
+  const handlePermissionDeny = (): void => {
+    const ext = permissionQueue[0]
+    if (!ext) return
+    deny(ext.id)
+    setPermissionQueue((q) => q.slice(1))
+  }
 
   // Track scroll position for the active main panel key (built-in name or ext ID).
   const activeMainKey = activeExtPanel ?? activeView
@@ -311,7 +372,11 @@ export default function App(): React.JSX.Element {
           </div>
         </div>
         {!splashGone && <SplashScreen hiding={splashHiding} />}
-        <PreferencesDialog />
+        <PreferencesDialog
+          extensions={allExtensions}
+          extState={extState}
+          onReviewDenied={handleReviewDenied}
+        />
       </>
     )
   }
@@ -397,7 +462,19 @@ export default function App(): React.JSX.Element {
       </div>
       {bottomPanel && <SlotPanel panel={bottomPanel} />}
       {!splashGone && <SplashScreen hiding={splashHiding} />}
-      <PreferencesDialog />
+      <PreferencesDialog
+        extensions={allExtensions}
+        extState={extState}
+        onReviewDenied={handleReviewDenied}
+      />
+      {/* Permission prompt: shown for Phase 2 extensions awaiting user approval. */}
+      {permissionQueue[0] && (
+        <ExtensionPermissionPrompt
+          extension={permissionQueue[0]}
+          onApprove={handlePermissionApprove}
+          onDeny={handlePermissionDeny}
+        />
+      )}
       {/* Phase 2 iframes live here in a hidden holding area until their panel tab is activated */}
       <SandboxedExtensionLoader extensions={phase2Extensions} />
     </div>

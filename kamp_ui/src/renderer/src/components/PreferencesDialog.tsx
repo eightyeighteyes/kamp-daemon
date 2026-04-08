@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
+import type { ExtensionInfo, ExtensionSettingSchema } from '../../../shared/kampAPI'
+import type { ExtensionStateHook } from '../hooks/useExtensionState'
 
 // Keys whose values must be integers — sent as strings over the wire but
 // stored as numbers in the config.
@@ -278,10 +280,183 @@ function TextareaRow({
 }
 
 // ---------------------------------------------------------------------------
+// Extensions panel sub-components
+// ---------------------------------------------------------------------------
+
+function ExtensionToggle({
+  enabled,
+  onChange
+}: {
+  enabled: boolean
+  onChange: (v: boolean) => void
+}): React.JSX.Element {
+  return (
+    <label className="prefs-toggle" aria-label={enabled ? 'Disable extension' : 'Enable extension'}>
+      <input type="checkbox" checked={enabled} onChange={(e) => onChange(e.target.checked)} />
+      <span className="prefs-toggle-track" />
+    </label>
+  )
+}
+
+function ExtensionSettingField({
+  ext,
+  field,
+  extState
+}: {
+  ext: ExtensionInfo
+  field: ExtensionSettingSchema
+  extState: ExtensionStateHook
+}): React.JSX.Element {
+  const rawDefault = field.default !== undefined ? String(field.default) : ''
+  const stored = extState.getSettingValue(ext.id, field.key)
+  const initialValue = stored !== undefined ? String(stored) : rawDefault
+
+  const onSave = useCallback(
+    async (key: string, value: string): Promise<void> => {
+      const parsed: unknown = field.type === 'number' ? Number(value) : value
+      extState.setSettingValue(ext.id, key, parsed)
+    },
+    [ext.id, field.type, extState]
+  )
+
+  if (field.type === 'boolean') {
+    const checked = stored !== undefined ? Boolean(stored) : Boolean(field.default)
+    return (
+      <div className="prefs-row">
+        <div className="prefs-row-header">
+          <span className="prefs-label">{field.label}</span>
+          <ExtensionToggle
+            enabled={checked}
+            onChange={(v) => extState.setSettingValue(ext.id, field.key, v)}
+          />
+        </div>
+        {field.hint && <p className="prefs-hint">{field.hint}</p>}
+      </div>
+    )
+  }
+
+  if (field.type === 'select' && field.options && field.options.length > 0) {
+    return (
+      <SelectRow
+        label={field.label}
+        configKey={field.key}
+        options={field.options}
+        initialValue={initialValue || field.options[0]}
+        onSave={onSave}
+      />
+    )
+  }
+
+  return (
+    <InputRow
+      label={field.label}
+      configKey={field.key}
+      type={field.type === 'number' ? 'number' : 'text'}
+      hint={field.hint}
+      initialValue={initialValue}
+      onSave={onSave}
+    />
+  )
+}
+
+function ExtensionRow({
+  ext,
+  extState,
+  onReviewDenied
+}: {
+  ext: ExtensionInfo
+  extState: ExtensionStateHook
+  onReviewDenied: (id: string) => void
+}): React.JSX.Element {
+  // A Phase 2 extension that was denied is not running — treat toggle as off.
+  const isDenied = ext.phase === 2 && extState.deniedIds.has(ext.id)
+  const enabled = !isDenied && !extState.disabledIds.has(ext.id)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const hasSettings = ext.settings && ext.settings.length > 0
+
+  return (
+    <div className="prefs-row">
+      <div className="prefs-row-header">
+        <span className="prefs-label">{ext.name}</span>
+        <div className="prefs-ext-meta">
+          <span className="prefs-ext-version">{ext.version}</span>
+          <span
+            className={`prefs-ext-badge${ext.phase === 1 ? ' prefs-ext-badge--first-party' : ''}`}
+          >
+            {ext.phase === 1 ? 'First-party' : 'Community'}
+          </span>
+          {/* Denied: offer a way to re-review permissions */}
+          {isDenied && (
+            <button className="prefs-ext-configure-btn" onClick={() => onReviewDenied(ext.id)}>
+              Review permissions...
+            </button>
+          )}
+          {/* Disabled (but not denied): signal reload is needed */}
+          {!isDenied && !enabled && <span className="prefs-restart-badge">↺ reload</span>}
+          {!isDenied && hasSettings && (
+            <button
+              className="prefs-ext-configure-btn"
+              onClick={() => setDrawerOpen((o) => !o)}
+              aria-expanded={drawerOpen}
+            >
+              {drawerOpen ? 'Done' : 'Configure...'}
+            </button>
+          )}
+        </div>
+        <ExtensionToggle enabled={enabled} onChange={() => extState.toggleEnabled(ext.id)} />
+      </div>
+
+      {drawerOpen && hasSettings && (
+        <div className="prefs-ext-drawer">
+          {ext.settings!.map((field) => (
+            <ExtensionSettingField key={field.key} ext={ext} field={field} extState={extState} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExtensionsPanel({
+  extensions,
+  extState,
+  onReviewDenied
+}: {
+  extensions: ExtensionInfo[]
+  extState: ExtensionStateHook
+  onReviewDenied: (id: string) => void
+}): React.JSX.Element {
+  if (extensions.length === 0) {
+    return (
+      <div className="prefs-section">
+        <p className="prefs-ext-empty">No extensions installed.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="prefs-section">
+      <div className="prefs-section-label">Installed</div>
+      {extensions.map((ext) => (
+        <ExtensionRow key={ext.id} ext={ext} extState={extState} onReviewDenied={onReviewDenied} />
+      ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main dialog
 // ---------------------------------------------------------------------------
 
-export function PreferencesDialog(): React.JSX.Element | null {
+export function PreferencesDialog({
+  extensions,
+  extState,
+  onReviewDenied
+}: {
+  extensions: ExtensionInfo[]
+  extState: ExtensionStateHook
+  onReviewDenied: (id: string) => void
+}): React.JSX.Element | null {
   const prefsOpen = useStore((s) => s.prefsOpen)
   const closePrefs = useStore((s) => s.closePrefs)
   const loadConfig = useStore((s) => s.loadConfig)
@@ -290,6 +465,8 @@ export function PreferencesDialog(): React.JSX.Element | null {
   const scanLibrary = useStore((s) => s.scanLibrary)
   const scanStatus = useStore((s) => s.scanStatus)
   const scanProgress = useStore((s) => s.scanProgress)
+
+  const [activeTab, setActiveTab] = useState<'general' | 'extensions'>('general')
 
   // Load config the first time the dialog opens.
   useEffect(() => {
@@ -310,26 +487,13 @@ export function PreferencesDialog(): React.JSX.Element | null {
 
   if (!prefsOpen) return null
 
-  // Show a loading placeholder while config is being fetched.
-  if (configValues === null) {
-    return (
-      <div className="prefs-overlay">
-        <div className="prefs-dialog">
-          <div className="prefs-header">
-            <span className="prefs-title">PREFERENCES</span>
-            <button className="prefs-close-btn" onClick={closePrefs} aria-label="Close preferences">
-              ✕
-            </button>
-          </div>
-          <div className="prefs-body" />
-        </div>
-      </div>
-    )
-  }
+  // Show a loading placeholder while config is being fetched (General tab only).
+  const generalLoading = configValues === null && activeTab === 'general'
 
-  const hasBandcamp = configValues['bandcamp.username'] !== null
+  const hasBandcamp = configValues !== null && configValues['bandcamp.username'] !== null
 
-  const str = (key: keyof typeof configValues): string => {
+  const str = (key: keyof NonNullable<typeof configValues>): string => {
+    if (!configValues) return ''
     const v = configValues[key]
     return v != null ? String(v) : ''
   }
@@ -358,128 +522,164 @@ export function PreferencesDialog(): React.JSX.Element | null {
           </button>
         </div>
 
-        {/* Scrollable body */}
-        <div className="prefs-body">
-          {/* PATHS */}
-          <div className="prefs-section">
-            <div className="prefs-section-label">Paths</div>
-            <PathRow
-              label="Library folder"
-              configKey="paths.library"
-              initialValue={str('paths.library')}
-              onSave={handleSave}
-            />
-            <PathRow
-              label="Staging folder"
-              configKey="paths.staging"
-              initialValue={str('paths.staging')}
-              onSave={handleSave}
-            />
-            <div className="prefs-row">
-              <div className="prefs-row-header">
-                <span className="prefs-label">Library index</span>
-              </div>
-              {scanStatus === 'scanning' ? (
-                <div className="prefs-scan-status">
-                  <span className="prefs-scan-scanning">Scanning…</span>
-                  {scanProgress && scanProgress.total > 0 && (
-                    <div className="prefs-scan-progress">
-                      <div
-                        className="prefs-scan-progress-fill"
-                        style={{
-                          width: `${(scanProgress.current / scanProgress.total) * 100}%`
-                        }}
+        {/* Tab bar */}
+        <div className="prefs-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={activeTab === 'general'}
+            className={`prefs-tab${activeTab === 'general' ? ' prefs-tab--active' : ''}`}
+            onClick={() => setActiveTab('general')}
+          >
+            General
+          </button>
+          <button
+            role="tab"
+            aria-selected={activeTab === 'extensions'}
+            className={`prefs-tab${activeTab === 'extensions' ? ' prefs-tab--active' : ''}`}
+            onClick={() => setActiveTab('extensions')}
+          >
+            Extensions
+          </button>
+        </div>
+
+        {/* Scrollable body — content swaps per tab */}
+        <div className="prefs-body" role="tabpanel">
+          {activeTab === 'general' && (
+            <>
+              {generalLoading ? null : (
+                <>
+                  {/* PATHS */}
+                  <div className="prefs-section">
+                    <div className="prefs-section-label">Paths</div>
+                    <PathRow
+                      label="Library folder"
+                      configKey="paths.library"
+                      initialValue={str('paths.library')}
+                      onSave={handleSave}
+                    />
+                    <PathRow
+                      label="Staging folder"
+                      configKey="paths.staging"
+                      initialValue={str('paths.staging')}
+                      onSave={handleSave}
+                    />
+                    <div className="prefs-row">
+                      <div className="prefs-row-header">
+                        <span className="prefs-label">Library index</span>
+                      </div>
+                      {scanStatus === 'scanning' ? (
+                        <div className="prefs-scan-status">
+                          <span className="prefs-scan-scanning">Scanning…</span>
+                          {scanProgress && scanProgress.total > 0 && (
+                            <div className="prefs-scan-progress">
+                              <div
+                                className="prefs-scan-progress-fill"
+                                style={{
+                                  width: `${(scanProgress.current / scanProgress.total) * 100}%`
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <button className="prefs-choose-btn" onClick={() => void scanLibrary()}>
+                          Re-scan Library
+                        </button>
+                      )}
+                      {scanStatus === 'done' && <p className="prefs-hint">Scan complete.</p>}
+                      {scanStatus === 'error' && (
+                        <p className="prefs-hint" style={{ color: 'var(--error)' }}>
+                          Scan failed — check server logs.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* LIBRARY */}
+                  <div className="prefs-section">
+                    <div className="prefs-section-label">Library</div>
+                    <TextareaRow
+                      label="Path template"
+                      configKey="library.path_template"
+                      initialValue={str('library.path_template')}
+                      hint="{album_artist}  {year}  {album}  {track}  {title}  {ext}"
+                      onSave={handleSave}
+                    />
+                  </div>
+
+                  {/* ARTWORK */}
+                  <div className="prefs-section">
+                    <div className="prefs-section-label">Artwork</div>
+                    <InputRow
+                      label="Minimum dimension"
+                      configKey="artwork.min_dimension"
+                      type="number"
+                      unit="px"
+                      initialValue={str('artwork.min_dimension')}
+                      onSave={handleSave}
+                    />
+                    <InputRow
+                      label="Maximum file size"
+                      configKey="artwork.max_bytes"
+                      type="number"
+                      unit="bytes"
+                      initialValue={str('artwork.max_bytes')}
+                      onSave={handleSave}
+                    />
+                  </div>
+
+                  {/* MUSICBRAINZ */}
+                  <div className="prefs-section">
+                    <div className="prefs-section-label">MusicBrainz</div>
+                    <InputRow
+                      label="Contact email"
+                      configKey="musicbrainz.contact"
+                      type="email"
+                      initialValue={str('musicbrainz.contact')}
+                      hint="Sent in MusicBrainz User-Agent; required by their policy."
+                      onSave={handleSave}
+                    />
+                  </div>
+
+                  {/* BANDCAMP — only when the section is configured */}
+                  {hasBandcamp && (
+                    <div className="prefs-section">
+                      <div className="prefs-section-label">Bandcamp</div>
+                      <InputRow
+                        label="Username"
+                        configKey="bandcamp.username"
+                        initialValue={str('bandcamp.username')}
+                        onSave={handleSave}
+                      />
+                      <SelectRow
+                        label="Download format"
+                        configKey="bandcamp.format"
+                        options={BANDCAMP_FORMATS}
+                        initialValue={str('bandcamp.format')}
+                        onSave={handleSave}
+                      />
+                      <InputRow
+                        label="Poll interval"
+                        configKey="bandcamp.poll_interval_minutes"
+                        type="number"
+                        unit="min"
+                        initialValue={str('bandcamp.poll_interval_minutes')}
+                        hint="0 = manual only"
+                        onSave={handleSave}
                       />
                     </div>
                   )}
-                </div>
-              ) : (
-                <button className="prefs-choose-btn" onClick={() => void scanLibrary()}>
-                  Re-scan Library
-                </button>
+                </>
               )}
-              {scanStatus === 'done' && <p className="prefs-hint">Scan complete.</p>}
-              {scanStatus === 'error' && (
-                <p className="prefs-hint" style={{ color: 'var(--error)' }}>
-                  Scan failed — check server logs.
-                </p>
-              )}
-            </div>
-          </div>
+            </>
+          )}
 
-          {/* LIBRARY */}
-          <div className="prefs-section">
-            <div className="prefs-section-label">Library</div>
-            <TextareaRow
-              label="Path template"
-              configKey="library.path_template"
-              initialValue={str('library.path_template')}
-              hint="{album_artist}  {year}  {album}  {track}  {title}  {ext}"
-              onSave={handleSave}
+          {activeTab === 'extensions' && (
+            <ExtensionsPanel
+              extensions={extensions}
+              extState={extState}
+              onReviewDenied={onReviewDenied}
             />
-          </div>
-
-          {/* ARTWORK */}
-          <div className="prefs-section">
-            <div className="prefs-section-label">Artwork</div>
-            <InputRow
-              label="Minimum dimension"
-              configKey="artwork.min_dimension"
-              type="number"
-              unit="px"
-              initialValue={str('artwork.min_dimension')}
-              onSave={handleSave}
-            />
-            <InputRow
-              label="Maximum file size"
-              configKey="artwork.max_bytes"
-              type="number"
-              unit="bytes"
-              initialValue={str('artwork.max_bytes')}
-              onSave={handleSave}
-            />
-          </div>
-
-          {/* MUSICBRAINZ */}
-          <div className="prefs-section">
-            <div className="prefs-section-label">MusicBrainz</div>
-            <InputRow
-              label="Contact email"
-              configKey="musicbrainz.contact"
-              type="email"
-              initialValue={str('musicbrainz.contact')}
-              hint="Sent in MusicBrainz User-Agent; required by their policy."
-              onSave={handleSave}
-            />
-          </div>
-
-          {/* BANDCAMP — only when the section is configured */}
-          {hasBandcamp && (
-            <div className="prefs-section">
-              <div className="prefs-section-label">Bandcamp</div>
-              <InputRow
-                label="Username"
-                configKey="bandcamp.username"
-                initialValue={str('bandcamp.username')}
-                onSave={handleSave}
-              />
-              <SelectRow
-                label="Download format"
-                configKey="bandcamp.format"
-                options={BANDCAMP_FORMATS}
-                initialValue={str('bandcamp.format')}
-                onSave={handleSave}
-              />
-              <InputRow
-                label="Poll interval"
-                configKey="bandcamp.poll_interval_minutes"
-                type="number"
-                unit="min"
-                initialValue={str('bandcamp.poll_interval_minutes')}
-                hint="0 = manual only"
-                onSave={handleSave}
-              />
-            </div>
           )}
         </div>
       </div>

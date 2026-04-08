@@ -1,105 +1,106 @@
-import React, { useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ExtensionInfo, SlotId } from '../../../shared/kampAPI'
 
 /**
- * Builds the srcdoc HTML for a sandboxed community extension iframe.
+ * Static shim injected into every community extension iframe via srcdoc.
  *
- * The iframe carries no allow-same-origin — it cannot access the host DOM,
- * localStorage, or contextBridge. All host interaction goes through postMessage.
+ * The shim is static (no per-extension data) so its SHA-256 hash can be
+ * listed in index.html's script-src CSP, satisfying Chromium's rule that
+ * srcdoc iframes inherit the parent document's CSP.
  *
- * CSP connect-src is pinned to the exact kamp server origin so extensions
- * cannot make arbitrary outbound requests (AC#5).
+ * Extension code and metadata arrive via postMessage (kamp:init) sent after
+ * the iframe's onLoad fires. The shim dynamically imports the extension code
+ * as a blob: URL and calls register(). The extension's panels.register() call
+ * sends kamp:register-panel back to the host, which registers a real panel
+ * whose render() creates a fresh iframe on each tab activation.
+ *
+ * Hash (index.html script-src): sha256-fXNWd+rx+M3h78bhaTFeSztcM/uSwO0hPDuYKsxUtKQ=
+ * If you change SANDBOX_SHIM, recompute the hash and update index.html.
+ *
+ * NOTE: sandboxed iframes without allow-same-origin reload when moved in the
+ * DOM, so we do NOT use a holding-area/move strategy. Each panel mount creates
+ * a fresh iframe; state is lost on tab switch.
  */
-function buildSrcdoc(extensionId: string, code: string, serverUrl: string): string {
-  // Embed strings as JSON literals, escaping < > & so the HTML parser never
-  // sees a </script> tag or entity sequence inside the script block.
-  function safeJson(s: string): string {
-    return JSON.stringify(s)
-      .replace(/</g, '\\u003c')
-      .replace(/>/g, '\\u003e')
-      .replace(/&/g, '\\u0026')
-  }
+// prettier-ignore
+// If you change this string, recompute the hash and update index.html script-src:
+//   node -e "const s='<paste shim>';console.log('sha256-'+require('crypto').createHash('sha256').update(s,'utf8').digest('base64'))"
+const SANDBOX_SHIM = `(function(){var r={},c={},pending=null;window.addEventListener('message',function(e){if(e.source!==window.parent)return;var m=e.data;if(!m||typeof m.type!=='string')return;if(m.type==='kamp:init'){var id=m.id,su=m.serverUrl;var K={serverUrl:su,panels:{register:function(p){if(!p||typeof p.id!=='string')return;r[p.id]=p.render;window.parent.postMessage({type:'kamp:register-panel',extensionId:id,manifest:{id:p.id,title:p.title,defaultSlot:p.defaultSlot,compatibleSlots:p.compatibleSlots}},'*');if(pending===p.id&&typeof r[p.id]==='function'){c[p.id]=r[p.id](document.body);pending=null}}}};var b=new Blob([m.code],{type:'text/javascript'});var u=URL.createObjectURL(b);import(u).then(function(mod){if(typeof mod.register==='function')mod.register(K)}).catch(function(err){console.error('[kamp sandbox '+id+']',err)}).finally(function(){URL.revokeObjectURL(u)})}else if(m.type==='kamp:panel-mount'&&m.panelId){if(typeof r[m.panelId]==='function'){c[m.panelId]=r[m.panelId](document.body)}else{pending=m.panelId}}else if(m.type==='kamp:panel-unmount'&&m.panelId){var fn=c[m.panelId];if(typeof fn==='function')fn();delete c[m.panelId];if(pending===m.panelId)pending=null}})})();`
 
-  const escapedCode = safeJson(code)
-  const escapedId = safeJson(extensionId)
-  const escapedServerUrl = safeJson(serverUrl)
-
-  return `<!doctype html>
+const SANDBOX_SRCDOC =
+  `<!doctype html>
 <html>
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; script-src 'unsafe-inline' blob:; connect-src ${serverUrl}; style-src 'unsafe-inline'">
+  content="default-src 'none'; script-src blob: 'unsafe-inline'; connect-src http://127.0.0.1:8000; img-src http://127.0.0.1:8000; style-src 'unsafe-inline'">
+<style>html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }</style>
 </head>
 <body>
-<script>(async function () {
-  var __id = ${escapedId}
-  var __serverUrl = ${escapedServerUrl}
-
-  // Panel render functions keyed by panel id.
-  var __renders = {}
-  // Active cleanup functions keyed by panel id.
-  var __cleanups = {}
-
-  // Minimal KampAPI shim. Extensions call panels.register(); the host moves
-  // the iframe into the active container on mount, back to a hidden holding
-  // area on unmount, so the iframe is never reloaded between tab switches.
-  var KampAPI = {
-    serverUrl: __serverUrl,
-    panels: {
-      register: function (manifest) {
-        if (!manifest || typeof manifest.id !== 'string') return
-        __renders[manifest.id] = manifest.render
-        // Notify the host so it can register this panel in the panel layout.
-        window.parent.postMessage({
-          type: 'kamp:register-panel',
-          extensionId: __id,
-          manifest: {
-            id: manifest.id,
-            title: manifest.title,
-            defaultSlot: manifest.defaultSlot,
-            compatibleSlots: manifest.compatibleSlots
-          }
-        }, '*')
-      }
-    }
-  }
-
-  // Host → iframe: mount/unmount lifecycle messages.
-  window.addEventListener('message', function (e) {
-    // Only accept messages from the direct parent (the host renderer).
-    if (e.source !== window.parent) return
-    var msg = e.data
-    if (!msg || typeof msg.type !== 'string') return
-
-    if (msg.type === 'kamp:panel-mount' && msg.panelId) {
-      var render = __renders[msg.panelId]
-      if (typeof render === 'function') {
-        __cleanups[msg.panelId] = render(document.body)
-      }
-    } else if (msg.type === 'kamp:panel-unmount' && msg.panelId) {
-      var cleanup = __cleanups[msg.panelId]
-      if (typeof cleanup === 'function') cleanup()
-      delete __cleanups[msg.panelId]
-    }
-  })
-
-  // Load extension as an ES module via a blob URL. The main process already
-  // read the file contents; we never need a file:// import from the renderer.
-  var blob = new Blob([${escapedCode}], { type: 'text/javascript' })
-  var url = URL.createObjectURL(blob)
-  try {
-    var mod = await import(url)
-    if (typeof mod.register === 'function') mod.register(KampAPI)
-  } catch (err) {
-    console.error('[kamp sandbox ' + __id + ']', err)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-})()
-<` + `/script>
+<script>${SANDBOX_SHIM}<` +
+  `/script>
 </body>
 </html>`
+
+/**
+ * Creates a discovery iframe for an extension: loads the shim, sends kamp:init,
+ * and waits for the extension to call panels.register() (which sends kamp:register-panel
+ * back to the host). The iframe is removed once registration is complete.
+ *
+ * Returns a cleanup function that removes the iframe if registration hasn't
+ * completed yet (e.g. on component unmount).
+ */
+function createDiscoveryIframe(
+  ext: ExtensionInfo,
+  onRegister: (manifest: {
+    id: string
+    title: string
+    defaultSlot: string
+    compatibleSlots?: string[]
+  }) => void
+): () => void {
+  const iframe = document.createElement('iframe')
+  iframe.sandbox.add('allow-scripts')
+  iframe.srcdoc = SANDBOX_SRCDOC
+  iframe.style.cssText = 'position:absolute;width:0;height:0;border:none;'
+  iframe.title = `Discovery: ${ext.id}`
+
+  let done = false
+
+  function onMessage(event: MessageEvent): void {
+    const msg = event.data as Record<string, unknown> | null
+    if (!msg || msg.type !== 'kamp:register-panel') return
+    if (msg.extensionId !== ext.id) return
+    const manifest = msg.manifest as
+      | { id: string; title: string; defaultSlot: string; compatibleSlots?: string[] }
+      | undefined
+    if (!manifest?.id) return
+    done = true
+    window.removeEventListener('message', onMessage)
+    iframe.remove()
+    onRegister(manifest)
+  }
+
+  window.addEventListener('message', onMessage)
+
+  iframe.addEventListener(
+    'load',
+    () => {
+      iframe.contentWindow?.postMessage(
+        { type: 'kamp:init', id: ext.id, serverUrl: window.KampAPI.serverUrl, code: ext.code },
+        '*'
+      )
+    },
+    { once: true }
+  )
+
+  document.body.appendChild(iframe)
+
+  return () => {
+    if (!done) {
+      window.removeEventListener('message', onMessage)
+      iframe.remove()
+    }
+  }
 }
 
 interface Props {
@@ -107,84 +108,78 @@ interface Props {
 }
 
 /**
- * Renders each community (Phase 2) extension in its own sandboxed iframe.
+ * Registers each community (Phase 2) extension's panels with the host.
  *
- * All iframes live in a hidden holding div. When the user activates an
- * extension panel tab, ExtensionPanel's render() moves the iframe into the
- * visible container div. On deactivation, cleanup() moves it back here.
- * Moving an iframe within the same document does not reload it, so extension
- * state (timers, network sockets, DOM) persists across tab switches.
+ * For each extension, spins up a short-lived discovery iframe to run the
+ * extension code and collect its panels.register() calls. Once registration
+ * is complete the discovery iframe is discarded.
+ *
+ * When a panel tab is activated, render() creates a fresh sandboxed iframe,
+ * sends kamp:init + kamp:panel-mount, and renders the extension content.
+ * On deactivation, cleanup() sends kamp:panel-unmount and removes the iframe.
+ *
+ * State is lost on tab switch — the holding-area/move strategy was abandoned
+ * because Chromium reloads sandboxed cross-origin iframes on DOM move.
  */
-export function SandboxedExtensionLoader({ extensions }: Props): React.JSX.Element {
-  const holdingRef = useRef<HTMLDivElement>(null)
-  const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map())
+export function SandboxedExtensionLoader({ extensions }: Props): null {
+  // Track cleanup functions for in-flight discovery iframes.
+  const cleanupRefs = useRef<Map<string, () => void>>(new Map())
 
   useEffect(() => {
-    function onMessage(event: MessageEvent): void {
-      // Reject messages from anything other than our known sandbox iframes.
-      const knownWindows = Array.from(iframeRefs.current.values())
-        .map((el) => el.contentWindow)
-        .filter(Boolean)
-      if (!knownWindows.includes(event.source as Window | null)) return
+    for (const ext of extensions) {
+      if (cleanupRefs.current.has(ext.id)) continue // already discovering
 
-      const msg = event.data as Record<string, unknown> | null
-      if (!msg || typeof msg !== 'object') return
-
-      if (msg.type === 'kamp:register-panel') {
-        const extensionId = msg.extensionId as string | undefined
-        const manifest = msg.manifest as
-          | { id: string; title: string; defaultSlot: string; compatibleSlots?: string[] }
-          | undefined
-
-        if (!extensionId || !manifest?.id || !manifest?.title || !manifest?.defaultSlot) return
-        const iframeEl = iframeRefs.current.get(extensionId)
-        if (!iframeEl) return
-
-        const panelId = manifest.id
+      const cleanup = createDiscoveryIframe(ext, (manifest) => {
+        cleanupRefs.current.delete(ext.id)
 
         window.KampAPI.panels.register({
-          id: panelId,
+          id: manifest.id,
           title: manifest.title,
           defaultSlot: manifest.defaultSlot as SlotId,
           compatibleSlots: manifest.compatibleSlots as SlotId[] | undefined,
           render(container: HTMLElement): () => void {
-            // Move the live iframe into the active panel container.
-            // Does not reload the iframe — extension state is preserved.
-            container.appendChild(iframeEl)
-            iframeEl.style.display = 'block'
-            iframeEl.contentWindow?.postMessage({ type: 'kamp:panel-mount', panelId }, '*')
+            const panelId = manifest.id
+            const iframe = document.createElement('iframe')
+            iframe.sandbox.add('allow-scripts')
+            iframe.srcdoc = SANDBOX_SRCDOC
+            iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;'
+            iframe.title = `Extension: ${ext.id}`
+
+            iframe.addEventListener(
+              'load',
+              () => {
+                iframe.contentWindow?.postMessage(
+                  {
+                    type: 'kamp:init',
+                    id: ext.id,
+                    serverUrl: window.KampAPI.serverUrl,
+                    code: ext.code
+                  },
+                  '*'
+                )
+                iframe.contentWindow?.postMessage({ type: 'kamp:panel-mount', panelId }, '*')
+              },
+              { once: true }
+            )
+
+            container.appendChild(iframe)
 
             return () => {
-              // Send unmount signal before moving iframe back to the holding area.
-              iframeEl.contentWindow?.postMessage({ type: 'kamp:panel-unmount', panelId }, '*')
-              iframeEl.style.display = 'none'
-              holdingRef.current?.appendChild(iframeEl)
+              iframe.contentWindow?.postMessage({ type: 'kamp:panel-unmount', panelId }, '*')
+              iframe.remove()
             }
           }
         })
-      }
+      })
+
+      cleanupRefs.current.set(ext.id, cleanup)
     }
 
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    return () => {
+      cleanupRefs.current.forEach((fn) => fn())
+      cleanupRefs.current.clear()
+    }
   }, [extensions])
 
-  return (
-    // Hidden holding area. Iframes here stay loaded but invisible.
-    <div ref={holdingRef} style={{ display: 'none' }} aria-hidden="true">
-      {extensions.map((ext) => (
-        <iframe
-          key={ext.id}
-          ref={(el): void => {
-            if (el) iframeRefs.current.set(ext.id, el)
-            else iframeRefs.current.delete(ext.id)
-          }}
-          sandbox="allow-scripts"
-          srcDoc={buildSrcdoc(ext.id, ext.code, window.KampAPI.serverUrl)}
-          style={{ width: '100%', height: '100%', border: 'none', display: 'none' }}
-          title={`Extension: ${ext.id}`}
-        />
-      ))}
-    </div>
-  )
+  return null
 }

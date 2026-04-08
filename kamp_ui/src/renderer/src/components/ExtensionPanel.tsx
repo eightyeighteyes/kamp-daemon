@@ -17,5 +17,11 @@ export function ExtensionPanel({ panel }: { panel: PanelManifest }): React.JSX.E
     return panel.render(el)
   }, [panel])
 
-  return <div className="extension-panel" ref={containerRef} />
+  return (
+    <div
+      className="extension-panel"
+      ref={containerRef}
+      style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}
+    />
+  )
 }
