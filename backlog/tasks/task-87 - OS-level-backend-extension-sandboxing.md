@@ -1,10 +1,10 @@
 ---
 id: TASK-87
 title: OS-level backend extension sandboxing
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-05 16:27'
-updated_date: '2026-04-05 16:32'
+updated_date: '2026-04-08 17:21'
 labels:
   - feature
   - security
