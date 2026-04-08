@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Claude
 created_date: '2026-03-29 03:12'
-updated_date: '2026-04-07 21:54'
+updated_date: '2026-04-08 16:38'
 labels:
   - feature
   - ui
@@ -50,3 +50,17 @@ Add a settings UI where users can view installed extensions, enable/disable them
 - **Permission prompt (AC#5)**: Phase 2 extensions not yet in approved/denied sets go into a pending queue. App shows one prompt at a time via `permissionQueue[0]`. Approve → extension loads in its iframe; Deny → skipped, not prompted again.
 - **Settings schema**: extensions declare `kamp.settings` in package.json as an array of `{key, label, type, options?, default?, hint?}`. The host renders `text`, `number`, `boolean` (toggle), and `select` field types.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Sandboxed iframe debugging — lessons learned
+
+**srcdoc iframes inherit the parent document's CSP.** Even if the srcdoc carries its own `<meta http-equiv=Content-Security-Policy>`, the parent's CSP overrides it for script-src. The only way to permit an inline script is to hash-whitelist it in the parent's CSP (`'sha256-...'`). The hash must be recomputed every time the shim changes.
+
+**Sandboxed iframes without allow-same-origin reload on DOM move.** The original holding-area/move strategy (move iframe into visible container on mount, back to holding div on unmount) caused the iframe to reload every time it was moved in the DOM. Chromium treats these iframes as cross-origin and navigates them on reparent. Solution: create a fresh iframe on each panel mount.
+
+**Race condition: kamp:panel-mount arrives before async import() resolves.** Sending kamp:init and kamp:panel-mount synchronously in the same onLoad callback means panel-mount is processed by the shim before the dynamic import() inside kamp:init completes. The render fn (r[panelId]) is still empty. Fix: buffer the pending mount in the shim and fire it inside panels.register() if it arrived early.
+
+**iframe CSP needs img-src for server images.** The srcdoc CSP `default-src 'none'` blocks image loads. Must explicitly add `img-src http://127.0.0.1:8000` to allow album art from the kamp server.
+<!-- SECTION:NOTES:END -->
