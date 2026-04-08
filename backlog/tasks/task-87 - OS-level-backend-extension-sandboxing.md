@@ -1,10 +1,10 @@
 ---
 id: TASK-87
 title: OS-level backend extension sandboxing
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-05 16:27'
-updated_date: '2026-04-08 17:42'
+updated_date: '2026-04-08 20:26'
 labels:
   - feature
   - security
@@ -14,7 +14,7 @@ dependencies:
   - TASK-17
 documentation:
   - project/kampground-ideation.md
-ordinal: 12000
+ordinal: 19000
 ---
 
 ## Description
