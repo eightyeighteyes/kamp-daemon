@@ -68,8 +68,11 @@ def _landlock_available() -> bool:
 _SCMP_ACT_ALLOW = 0x7FFF0000
 _SCMP_ACT_KILL_PROCESS = 0x80000000
 
-# x86-64 syscall number for execve
+# x86-64 syscall numbers for process execution.
+# glibc >= 2.24 uses execveat(AT_FDCWD, ...) rather than execve, so both
+# must be blocked to prevent subprocess spawning.
 _NR_EXECVE = 59
+_NR_EXECVEAT = 322
 
 
 def _apply_seccomp_block_execve() -> None:
@@ -128,14 +131,16 @@ def _apply_seccomp_block_execve() -> None:
         return
 
     try:
-        ret = lib.seccomp_rule_add(ctx, _SCMP_ACT_KILL_PROCESS, _NR_EXECVE, 0)
-        if ret != 0:
-            _logger.warning(
-                "kamp sandbox: seccomp_rule_add failed (%d) — "
-                "seccomp restriction skipped",
-                ret,
-            )
-            return
+        for nr in (_NR_EXECVE, _NR_EXECVEAT):
+            ret = lib.seccomp_rule_add(ctx, _SCMP_ACT_KILL_PROCESS, nr, 0)
+            if ret != 0:
+                _logger.warning(
+                    "kamp sandbox: seccomp_rule_add failed for syscall %d (%d) — "
+                    "seccomp restriction skipped",
+                    nr,
+                    ret,
+                )
+                return
 
         ret = lib.seccomp_load(ctx)
         if ret != 0:

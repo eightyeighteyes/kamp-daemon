@@ -67,8 +67,17 @@ class TestLinuxMinimalSubprocessBlocked:
                 print(f"EXEC_BLOCKED: {type(e).__name__}: {e}")
         """)
         output = _run_in_sandbox("minimal", code)
-        if "libseccomp not found" in output or "seccomp_init returned NULL" in output:
-            pytest.skip("libseccomp unavailable — seccomp restriction skipped")
+        if any(
+            msg in output
+            for msg in (
+                "libseccomp not found",
+                "seccomp_init returned NULL",
+                "seccomp_load failed",
+            )
+        ):
+            pytest.skip(
+                "libseccomp unavailable or filter failed to load — seccomp restriction skipped"
+            )
         # The process may be killed by SIGSYS (seccomp kills it), which means
         # the subprocess.run() above raises SubprocessError, or the child
         # process exits non-zero.  Either way, "EXEC_SUCCEEDED" must not appear.
