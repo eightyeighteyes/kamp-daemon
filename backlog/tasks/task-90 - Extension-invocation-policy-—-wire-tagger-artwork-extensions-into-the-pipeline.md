@@ -1,10 +1,10 @@
 ---
 id: TASK-90
 title: Extension invocation policy — wire tagger/artwork extensions into the pipeline
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-06 12:54'
-updated_date: '2026-04-08 20:20'
+updated_date: '2026-04-08 20:33'
 labels:
   - feature
   - design
@@ -13,7 +13,7 @@ milestone: m-2
 dependencies:
   - TASK-85
   - TASK-17
-ordinal: 14000
+ordinal: 20000
 ---
 
 ## Description
