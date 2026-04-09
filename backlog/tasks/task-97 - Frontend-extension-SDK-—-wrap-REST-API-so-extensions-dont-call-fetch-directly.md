@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-04-09 01:18'
-updated_date: '2026-04-09 01:37'
+updated_date: '2026-04-09 01:38'
 labels: []
 milestone: m-2
 dependencies: []
@@ -33,11 +33,21 @@ Replace this with a typed SDK object passed to `register(api)` that exposes the 
 
 ## CSP / external network note
 
-The SDK approach is the correct solution for extensions (e.g. a Bandcamp extension) that need to contact external origins. Rather than relaxing the iframe CSP to allow external `connect-src`, extension-specific API methods (`api.bandcamp.*`) should proxy through the kamp server. The CSP stays locked to `127.0.0.1:8000`; the server handles the outbound request.
+The SDK approach is the correct solution for extensions (e.g. a Bandcamp extension) that need to contact external origins for **data**. Rather than relaxing the iframe CSP to allow external `connect-src`, extension-specific API methods (`api.bandcamp.*`) should proxy through the kamp server. The CSP stays locked to `127.0.0.1:8000`; the server handles the outbound request.
 
 This mirrors the backend pattern: `KampGround.fetch()` already proxies all network access through the daemon rather than letting the worker subprocess call out directly. The same principle applies here — the kamp server is the single network egress point for all extension traffic.
 
 Implication: as extension-specific namespaces are added to the SDK, corresponding proxy routes will need to be added to the kamp HTTP server.
+
+## Rendering external web pages
+
+The proxy pattern does **not** extend to rendering full external web pages (e.g. a Bandcamp browse panel). Rewriting HTML/CSS/JS through a server-side proxy is not viable. Three options exist:
+
+1. **Electron `<webview>` tag** — loads an external URL in a fully isolated renderer process. Requires `webviewTag: true` in `webPreferences` and an IPC surface (e.g. `api.webview.open(url)`) so the extension can request a URL without holding a raw string. Best choice for "browse Bandcamp inside kamp" use cases.
+2. **`shell.openExternal()`** — opens the URL in the system browser. Zero implementation cost but the user leaves kamp entirely.
+3. **Relax `frame-src` in the sandbox CSP** — dead end for most real sites; Bandcamp and the majority of public sites set `X-Frame-Options: SAMEORIGIN` or `frame-ancestors 'none'` and will refuse to be embedded.
+
+When the Bandcamp frontend extension is scoped, decide between options 1 and 2 before implementation begins. If a `<webview>` panel is needed, that surface should be designed as part of the SDK (`api.webview`) rather than letting extensions reach for the Electron API directly.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
@@ -48,4 +58,6 @@ Implication: as extension-specific namespaces are added to the SDK, correspondin
 - [ ] #5 `api.serverUrl` deprecated (type annotation + console.warn on access) but not yet removed
 - [ ] #6 Developer Guide updated to show SDK usage; raw fetch removed from examples
 <!-- SECTION:DESCRIPTION:END -->
+
+<!-- AC:END -->
 <!-- AC:END -->
