@@ -4,5 +4,5 @@
 # imports the package properly so relative imports resolve correctly.
 from kamp_daemon.__main__ import main
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
