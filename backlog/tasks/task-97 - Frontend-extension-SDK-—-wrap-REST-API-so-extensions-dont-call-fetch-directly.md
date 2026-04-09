@@ -26,7 +26,7 @@ Replace this with a typed SDK object passed to `register(api)` that exposes the 
   - `api.library.search(query)` → track list
   - `api.library.getAlbumArt(albumArtist, album)` → image URL or blob
 - The SDK is built in the preload / host shim and passed into the `register()` call; extensions never hold a raw `serverUrl`
-- `api.serverUrl` can remain for now as an escape hatch but should be marked deprecated in the types
+- `api.serverUrl` removed entirely — no one outside this repo is using it
 - Update `SandboxedExtensionLoader` (and the sandbox shim) to pass the SDK into the iframe instead of just `serverUrl`
 - Update the groover example extension to use the SDK
 - Update the Extension Developer Guide wiki page to document the SDK instead of raw fetch
@@ -55,7 +55,7 @@ When the Bandcamp frontend extension is scoped, decide between options 1 and 2 b
 - [ ] #2 SDK implementation wired into the preload and passed to first-party extensions via `register(api)`
 - [ ] #3 Sandbox shim updated to pass the SDK into community extensions (serialised or proxied via postMessage)
 - [ ] #4 `kamp-groover` example updated to use SDK methods instead of raw fetch
-- [ ] #5 `api.serverUrl` deprecated (type annotation + console.warn on access) but not yet removed
+- [ ] #5 `api.serverUrl` removed from `KampAPI` type and all call sites
 - [ ] #6 Developer Guide updated to show SDK usage; raw fetch removed from examples
 <!-- SECTION:DESCRIPTION:END -->
 
