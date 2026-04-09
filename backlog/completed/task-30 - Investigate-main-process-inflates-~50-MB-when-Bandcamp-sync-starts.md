@@ -16,6 +16,8 @@ dependencies: []
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**won't do**
+
 Subprocess isolation is implemented (syncer and pipeline both spawn via `multiprocessing.get_context("spawn")`) but the main process grows from ~35 MB to ~83 MB when sync starts and stays there after sync ends. An additional ~8 MB subprocess also lingers after sync completes.
 
 The subprocess workers themselves are not the resident cost — something in the parent or IPC setup is loading heavy modules or retaining allocations.
