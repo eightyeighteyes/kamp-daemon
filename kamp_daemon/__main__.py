@@ -11,6 +11,7 @@ Syncer, Config, etc.).
 from __future__ import annotations
 
 import argparse
+import asyncio
 import importlib.metadata
 import logging
 import os
@@ -32,6 +33,7 @@ from .syncer import Syncer
 # Stable Homebrew binary locations (Apple Silicon, then Intel). Checked in order
 # before falling back to PATH, to avoid pyenv shims shadowing the Homebrew install.
 _HOMEBREW_KAMP_PATHS = ["/opt/homebrew/bin/kamp", "/usr/local/bin/kamp"]
+_HOMEBREW_MPV_PATHS = ["/opt/homebrew/bin/mpv", "/usr/local/bin/mpv"]
 
 _SERVICE_LABEL = "com.kamp"
 _PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{_SERVICE_LABEL}.plist"
@@ -105,6 +107,17 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Disable the macOS menu bar icon (shown by default on macOS).",
+    )
+    daemon_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address for the HTTP server (default: 127.0.0.1)",
+    )
+    daemon_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for the HTTP server (default: 8000)",
     )
     daemon_sub = daemon_parser.add_subparsers(dest="daemon_command")
     daemon_sub.add_parser(
@@ -325,7 +338,12 @@ def main() -> None:
             if hasattr(args, "library") and args.library:
                 config.paths.library = args.library
             _cmd_daemon(
-                config, args.config, menu_bar=not getattr(args, "no_menu_bar", False)
+                config,
+                args.config,
+                menu_bar=not getattr(args, "no_menu_bar", False),
+                host=getattr(args, "host", "127.0.0.1"),
+                port=getattr(args, "port", 8000),
+                library_path=getattr(args, "library", None),
             )
 
 
@@ -495,6 +513,57 @@ def _cmd_server(
     port: int = 8000,
     library_path: Path | None = None,
 ) -> None:
+    # kamp server is now an alias for kamp daemon. The two were previously
+    # separate processes; they are now unified under kamp daemon.
+    print(
+        "Warning: 'kamp server' is deprecated. "
+        "Use 'kamp daemon [--host HOST] [--port PORT] [--library DIR]' instead.",
+        file=sys.stderr,
+    )
+    _cmd_daemon(
+        config,
+        config_path,
+        menu_bar=False,
+        host=host,
+        port=port,
+        library_path=library_path,
+    )
+
+
+def _cmd_sync(config: Config, config_path: Path, download_all: bool = False) -> None:
+    if config.bandcamp is None:
+        if sys.stdin.isatty():
+            config = Config.bandcamp_setup(config_path)
+        else:
+            print(
+                f"No [bandcamp] section in {config_path}. "
+                "Add one manually or run kamp sync interactively.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    syncer = Syncer(config)
+    if download_all:
+        # Clear state so sync_once() downloads everything, bypassing the
+        # first-run auto-mark that would otherwise skip all existing purchases.
+        state_file = _state_dir() / "bandcamp_state.json"
+        if state_file.exists():
+            state_file.unlink()
+            print("Sync state cleared — will re-download entire collection.")
+        syncer.sync_once(skip_auto_mark=True)
+    else:
+        syncer.sync_once()
+
+
+def _cmd_daemon(
+    config: Config,
+    config_path: Path,
+    menu_bar: bool = False,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    library_path: Path | None = None,
+) -> None:
+    import threading
     import uvicorn
 
     from kamp_core.library import LibraryIndex
@@ -503,11 +572,25 @@ def _cmd_server(
     from kamp_core.server import create_app
     from kamp_daemon.config import config_set as _config_set
 
+    _logger = logging.getLogger(__name__)
+    pkg_version = _get_version()
+    install_path = Path(__file__).resolve().parent
+    _logger.info(
+        "kamp %s (Python %s, %s)",
+        pkg_version,
+        sys.version.split()[0],
+        install_path,
+    )
+
+    # --- HTTP server component initialisation (formerly _cmd_server) ---
+
     lib_path = (library_path or config.paths.library).expanduser().resolve()
     db_path = _state_dir() / "library.db"
 
     index = LibraryIndex(db_path)
-    engine = MpvPlaybackEngine()
+    # Resolve the full mpv path before creating the engine so launchd-managed
+    # instances (which run with a minimal PATH) can find the Homebrew binary.
+    engine = MpvPlaybackEngine(mpv_bin=_resolve_mpv_binary())
     queue: PlaybackQueue = PlaybackQueue()
 
     # Restore the last session's queue and position, paused, so the user can
@@ -645,8 +728,6 @@ def _cmd_server(
                     )
             tick += 1
 
-    import threading
-
     threading.Thread(target=_state_saver, daemon=True, name="state-saver").start()
 
     # Persist library path changes back to config.toml so the next server start
@@ -755,53 +836,22 @@ def _cmd_server(
     lib_watcher = LibraryWatcher(lib_path, _on_library_change)
     lib_watcher.start()
 
+    # --- Start uvicorn in a background thread ---
+    # uvicorn.Server.serve() detects it is not on the main thread and skips
+    # installing its own signal handlers, so there is no conflict with
+    # DaemonCore's SIGTERM/SIGINT handlers below.
     print(f"Kamp API server starting on http://{host}:{port}")
     print(f"  Docs  → http://{host}:{port}/docs")
     print(f"  Library → {lib_path}")
-    uvicorn.run(app, host=host, port=port)
+    uv_server = uvicorn.Server(uvicorn.Config(app, host=host, port=port))
 
-    lib_watcher.stop()
-    _mc.stop()
-    engine.shutdown()
-    index.close()
+    def _run_uvicorn() -> None:
+        asyncio.run(uv_server.serve())
 
+    uv_thread = threading.Thread(target=_run_uvicorn, name="uvicorn", daemon=False)
+    uv_thread.start()
 
-def _cmd_sync(config: Config, config_path: Path, download_all: bool = False) -> None:
-    if config.bandcamp is None:
-        if sys.stdin.isatty():
-            config = Config.bandcamp_setup(config_path)
-        else:
-            print(
-                f"No [bandcamp] section in {config_path}. "
-                "Add one manually or run kamp sync interactively.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-    syncer = Syncer(config)
-    if download_all:
-        # Clear state so sync_once() downloads everything, bypassing the
-        # first-run auto-mark that would otherwise skip all existing purchases.
-        state_file = _state_dir() / "bandcamp_state.json"
-        if state_file.exists():
-            state_file.unlink()
-            print("Sync state cleared — will re-download entire collection.")
-        syncer.sync_once(skip_auto_mark=True)
-    else:
-        syncer.sync_once()
-
-
-def _cmd_daemon(config: Config, config_path: Path, menu_bar: bool = False) -> None:
-    _logger = logging.getLogger(__name__)
-    pkg_version = _get_version()
-    install_path = Path(__file__).resolve().parent
-    _logger.info(
-        "kamp %s (Python %s, %s)",
-        pkg_version,
-        sys.version.split()[0],
-        install_path,
-    )
-
+    # --- Start daemon pipeline and block until shutdown ---
     core = DaemonCore(config, config_path)
     if menu_bar and platform.system() == "Darwin":
         from .menu_bar import MenuBarApp
@@ -809,12 +859,22 @@ def _cmd_daemon(config: Config, config_path: Path, menu_bar: bool = False) -> No
         # Wire callbacks BEFORE core.start() launches threads so that the
         # first automatic Bandcamp sync (which fires immediately on thread
         # start) already has status_callback set.
-        app = MenuBarApp(core)
+        menu_bar_app = MenuBarApp(core)
         core.start()
-        app.run()
+        menu_bar_app.run()
     else:
         core.start()
         core.wait()
+
+    # --- Shutdown sequence ---
+    # Signal uvicorn to drain in-flight requests and stop its event loop.
+    uv_server.should_exit = True
+    uv_thread.join(timeout=10)
+
+    lib_watcher.stop()
+    _mc.stop()
+    engine.shutdown()
+    index.close()
 
 
 def _cmd_daemon_signal(sig: int, action: str) -> None:
@@ -995,6 +1055,19 @@ def _resolve_kamp_binary() -> str:
             "Fix: pip uninstall kamp && pyenv rehash, then re-run install-service."
         )
     return found or sys.argv[0]
+
+
+def _resolve_mpv_binary() -> str:
+    """Return the absolute path to the mpv binary.
+
+    launchd runs with a minimal PATH that excludes Homebrew, so 'mpv' alone
+    would not be found even when brew install mpv has been run. Check the
+    stable Homebrew locations first, then fall back to PATH.
+    """
+    for path in _HOMEBREW_MPV_PATHS:
+        if Path(path).exists():
+            return path
+    return shutil.which("mpv") or "mpv"
 
 
 def _cmd_install_service(config_path: Path, menu_bar: bool = False) -> None:
