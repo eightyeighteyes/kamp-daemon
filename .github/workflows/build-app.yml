@@ -156,17 +156,22 @@ jobs:
                 --force --sign "$IDENTITY" \
                 --options runtime --timestamp \
                 {}
-          echo "→ Signing Python framework (as bundle)..."
-          # Sign the framework as a bundle — the correct macOS way. This signs
-          # Versions/3.11/Python, Python.framework/Python, and
-          # Versions/Current/Python in one pass and creates the CodeResources
-          # manifest. Signing individual files inside the framework root causes
-          # "bundle format is ambiguous"; signing the bundle avoids that.
-          codesign --force --sign "$IDENTITY" --options runtime --timestamp \
-            kamp_ui/resources/kamp/_internal/Python.framework
-          echo "→ Signing standalone Python binary..."
-          codesign --force --sign "$IDENTITY" --options runtime --timestamp \
-            kamp_ui/resources/kamp/_internal/Python
+          echo "→ Signing Python binaries (individual files)..."
+          # PyInstaller's Python.framework is non-standard (incomplete Info.plist)
+          # so codesign rejects it as a bundle with "format is ambiguous". Sign
+          # each Mach-O binary inside the framework individually instead.
+          # Python.framework/Python and Versions/Current/Python are separate
+          # hard-linked copies in PyInstaller bundles, not symlinks — each needs
+          # its own codesign call.
+          for py_bin in \
+            kamp_ui/resources/kamp/_internal/Python.framework/Versions/3.11/Python \
+            kamp_ui/resources/kamp/_internal/Python.framework/Python \
+            kamp_ui/resources/kamp/_internal/Python.framework/Versions/Current/Python \
+            kamp_ui/resources/kamp/_internal/Python; do
+            if [ -f "$py_bin" ]; then
+              codesign --force --sign "$IDENTITY" --options runtime --timestamp "$py_bin"
+            fi
+          done
           echo "→ Signing main executables..."
           codesign --force --sign "$IDENTITY" \
             --options runtime --timestamp \
