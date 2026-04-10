@@ -156,12 +156,15 @@ jobs:
                 --force --sign "$IDENTITY" \
                 --options runtime --timestamp \
                 {}
-          echo "→ Signing framework Python binary..."
-          find kamp_ui/resources/kamp -type f -name "Python" \
-            | xargs -I{} codesign \
-                --force --sign "$IDENTITY" \
-                --options runtime --timestamp \
-                {}
+          echo "→ Signing Python binaries..."
+          # Sign the versioned Python binary inside the framework explicitly.
+          # find -name "Python" also matches Python.framework/Python (a symlink
+          # at the framework root) which causes codesign to error with "bundle
+          # format is ambiguous". Hardcode the two real paths instead.
+          codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+            kamp_ui/resources/kamp/_internal/Python.framework/Versions/3.11/Python
+          codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+            kamp_ui/resources/kamp/_internal/Python
           echo "→ Signing main executables..."
           codesign --force --sign "$IDENTITY" \
             --options runtime --timestamp \
