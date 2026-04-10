@@ -7,6 +7,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# kamp_ui/build/ holds Electron build resources (icon, entitlements) — not a Python build dir
+!kamp_ui/build/
 wheels/
 sdist/
 .eggs/
