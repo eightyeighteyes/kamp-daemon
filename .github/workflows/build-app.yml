@@ -156,13 +156,15 @@ jobs:
                 --force --sign "$IDENTITY" \
                 --options runtime --timestamp \
                 {}
-          echo "→ Signing Python binaries..."
-          # Sign the versioned Python binary inside the framework explicitly.
-          # find -name "Python" also matches Python.framework/Python (a symlink
-          # at the framework root) which causes codesign to error with "bundle
-          # format is ambiguous". Hardcode the two real paths instead.
+          echo "→ Signing Python framework (as bundle)..."
+          # Sign the framework as a bundle — the correct macOS way. This signs
+          # Versions/3.11/Python, Python.framework/Python, and
+          # Versions/Current/Python in one pass and creates the CodeResources
+          # manifest. Signing individual files inside the framework root causes
+          # "bundle format is ambiguous"; signing the bundle avoids that.
           codesign --force --sign "$IDENTITY" --options runtime --timestamp \
-            kamp_ui/resources/kamp/_internal/Python.framework/Versions/3.11/Python
+            kamp_ui/resources/kamp/_internal/Python.framework
+          echo "→ Signing standalone Python binary..."
           codesign --force --sign "$IDENTITY" --options runtime --timestamp \
             kamp_ui/resources/kamp/_internal/Python
           echo "→ Signing main executables..."
