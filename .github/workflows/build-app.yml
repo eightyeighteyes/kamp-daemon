@@ -86,6 +86,52 @@ jobs:
       - name: Generate icon.icns
         run: bash scripts/make_icns.sh kamp_ui/resources/icon_1024.png
 
+      - name: Import signing certificate
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          echo "$CSC_LINK" | base64 --decode > /tmp/cert.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          KEYCHAIN_PASS=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security import /tmp/cert.p12 -P "$CSC_KEY_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm /tmp/cert.p12
+
+      - name: Pre-sign PyInstaller bundle and native resources
+        # Sign all Mach-O binaries in parallel before electron-builder runs.
+        # electron-builder then uses signIgnore to skip these already-signed files
+        # and only signs the outer .app shell — cutting signing time from ~45 min
+        # to ~2 min. Safe for single-arch builds because nothing rewrites the
+        # Mach-O files after this point (no @electron/universal merge step).
+        run: |
+          IDENTITY="Developer ID Application"
+          echo "→ Signing .so and .dylib files (parallel)..."
+          find kamp_ui/resources/kamp -type f \( -name "*.so" -o -name "*.dylib" \) \
+            | xargs -P8 -I{} codesign \
+                --force --sign "$IDENTITY" \
+                --options runtime --timestamp \
+                {}
+          echo "→ Signing framework binaries (no extension)..."
+          find kamp_ui/resources/kamp -type f -name "Python" \
+            | xargs -I{} codesign \
+                --force --sign "$IDENTITY" \
+                --options runtime --timestamp \
+                {}
+          echo "→ Signing main executables..."
+          codesign --force --sign "$IDENTITY" \
+            --options runtime --timestamp \
+            kamp_ui/resources/kamp/kamp \
+            kamp_ui/resources/mpv \
+            kamp_ui/resources/node
+          echo "→ Pre-signing complete"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -105,8 +151,6 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           DEBUG: electron-builder
-        # Single-arch build — electron-builder signs the whole bundle natively
-        # with no pre-signing, signIgnore, or x64ArchFiles workarounds needed.
         run: npm run build:mac -- --${{ matrix.arch }}
         working-directory: kamp_ui
 

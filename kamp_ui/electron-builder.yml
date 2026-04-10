@@ -59,6 +59,12 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   hardenedRuntime: true
   notarize: true
+  # Resources are pre-signed in parallel before electron-builder runs.
+  # Skip re-signing them here — electron-builder only signs the outer .app shell.
+  signIgnore:
+    - "Contents/Resources/kamp"
+    - "Contents/Resources/mpv"
+    - "Contents/Resources/node"
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
