@@ -57,6 +57,11 @@ mac:
   target:
     - dmg
   entitlementsInherit: build/entitlements.mac.plist
+  # PyInstaller .so/.dylib files and mpv are arm64-only (built on the arm64 CI
+  # runner). @electron/universal sees them as "identical in both builds" and
+  # would error without this. x64ArchFiles tells the merger to pass them through
+  # as-is; Intel Macs run them transparently via Rosetta 2.
+  x64ArchFiles: "Contents/Resources/{kamp/**,mpv}"
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
