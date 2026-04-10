@@ -59,16 +59,12 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   hardenedRuntime: true
   notarize: true
-  # Resources are pre-signed in parallel before electron-builder runs.
-  # signIgnore skips already-signed files so electron-builder only handles
-  # the outer .app shell + Python.framework (which can't be pre-signed due
-  # to its non-standard PyInstaller structure).
+  # All kamp resources are pre-signed in parallel before electron-builder runs.
+  # signIgnore skips them so electron-builder only signs the outer .app shell.
+  # Python.framework binaries are pre-signed with --identifier to bypass the
+  # "bundle format is ambiguous" error from the non-standard PyInstaller layout.
   signIgnore:
-    # Skip everything in _internal/ EXCEPT Python.framework — pre-signed above.
-    # Python.framework is excluded from this pattern so electron-builder signs
-    # it using its own framework-aware signing logic.
-    - "Contents/Resources/kamp/_internal/(?!Python\\.framework)"
-    - "Contents/Resources/kamp/kamp"
+    - "Contents/Resources/kamp"
     - "Contents/Resources/mpv"
     - "Contents/Resources/node"
   extendInfo:
