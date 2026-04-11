@@ -186,10 +186,14 @@ jobs:
           echo "→ Signing standalone kamp Python binary..."
           codesign --force --sign "$IDENTITY" --options runtime --timestamp \
             kamp_ui/resources/kamp/_internal/Python
-          echo "→ Signing main executables..."
+          echo "→ Signing kamp binary (with entitlements for PyObjC/libffi)..."
           codesign --force --sign "$IDENTITY" \
             --options runtime --timestamp \
-            kamp_ui/resources/kamp/kamp \
+            --entitlements kamp_ui/build/entitlements.mac.plist \
+            kamp_ui/resources/kamp/kamp
+          echo "→ Signing mpv and node..."
+          codesign --force --sign "$IDENTITY" \
+            --options runtime --timestamp \
             kamp_ui/resources/mpv \
             kamp_ui/resources/node
           END=$(date +%s)
