@@ -49,8 +49,11 @@ def _load_and_register(
     # --- Import-time execution probe ---
     # Derive the module name from the entry point value (e.g. "my_ext.tagger:MyTagger"
     # → "my_ext.tagger") and probe it before loading the class into this process.
+    # Built-in kamp extensions ship inside the binary and are as trusted as the
+    # daemon code itself — skip the probe for first-party extensions so that
+    # frozen-binary differences in the import path don't falsely reject them.
     module_name = ep.value.split(":")[0]
-    if not probe_extension(module_name, package_name=dist_name):
+    if dist_name != "kamp" and not probe_extension(module_name, package_name=dist_name):
         return
 
     # --- Hash verification ---
