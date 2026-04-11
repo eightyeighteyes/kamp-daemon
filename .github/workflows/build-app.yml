@@ -147,12 +147,11 @@ jobs:
         # ~40 min (serial) to ~3-5 min (parallel). Safe for single-arch builds
         # because nothing rewrites the Mach-O files after this point.
         #
-        # Python.framework/Versions/3.11/Python is a Mach-O dylib (libpython).
-        # Signing Python.framework as a bundle is unreliable with PyInstaller's
-        # non-standard layout — the bundle sign completes in ~0.1s (suspiciously
-        # fast) and notarization still rejects Versions/3.11/Python as unsigned.
-        # Instead, sign the binary directly with --identifier to give it its own
-        # embedded Developer ID signature that notarization can verify.
+        # PyInstaller's Python.framework has multiple regular-file copies of the
+        # Python Mach-O dylib (at Versions/3.11/Python, Versions/Current/Python,
+        # and Python at the framework root). All copies have PyInstaller's ad-hoc
+        # signature, which notarization rejects. Use find -type f to sign ALL of
+        # them so notarization never encounters an unsigned or ad-hoc copy.
         run: |
           IDENTITY="Developer ID Application"
           echo "→ Files to sign: $(find kamp_ui/resources/kamp -type f \( -name "*.so" -o -name "*.dylib" \) | wc -l)"
@@ -163,13 +162,15 @@ jobs:
                 --force --sign "$IDENTITY" \
                 --options runtime --timestamp \
                 {}
-          echo "→ Signing Python.framework/Versions/3.11/Python directly..."
-          codesign --force --sign "$IDENTITY" \
-            --options runtime --timestamp \
-            --identifier "org.python.python" \
-            kamp_ui/resources/kamp/_internal/Python.framework/Versions/3.11/Python
-          echo "→ Verifying Python.framework/Versions/3.11/Python signature..."
-          codesign -dv kamp_ui/resources/kamp/_internal/Python.framework/Versions/3.11/Python 2>&1 || echo "WARNING: verification failed"
+          echo "→ Signing all Python Mach-O copies in Python.framework..."
+          find kamp_ui/resources/kamp/_internal/Python.framework -type f -name "Python" \
+            | xargs -I{} codesign --force --sign "$IDENTITY" \
+                --options runtime --timestamp \
+                --identifier "org.python.python" \
+                {}
+          echo "→ Verifying Python.framework copies signed:"
+          find kamp_ui/resources/kamp/_internal/Python.framework -type f -name "Python" \
+            | xargs -I{} sh -c 'echo "  {}:"; codesign -dv "{}" 2>&1 | grep -E "(Authority|Identifier)" || echo "  WARNING: no signature"'
           echo "→ Signing standalone kamp Python binary..."
           codesign --force --sign "$IDENTITY" --options runtime --timestamp \
             kamp_ui/resources/kamp/_internal/Python
