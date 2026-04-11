@@ -148,10 +148,14 @@ jobs:
         # because nothing rewrites the Mach-O files after this point.
         #
         # PyInstaller's Python.framework has multiple regular-file copies of the
-        # Python Mach-O dylib (at Versions/3.11/Python, Versions/Current/Python,
-        # and Python at the framework root). All copies have PyInstaller's ad-hoc
-        # signature, which notarization rejects. Use find -type f to sign ALL of
-        # them so notarization never encounters an unsigned or ad-hoc copy.
+        # Python Mach-O dylib: Versions/3.11/Python, Versions/Current/Python,
+        # and Python at the framework root. All carry PyInstaller's ad-hoc
+        # signature, which notarization rejects.
+        #
+        # The root copy (Python.framework/Python) triggers codesign's "bundle
+        # format is ambiguous" error when signed in place — codesign sees the
+        # .framework parent directory and treats the path as a framework bundle.
+        # Sign it via a temp copy at a neutral path to avoid the context check.
         run: |
           IDENTITY="Developer ID Application"
           echo "→ Files to sign: $(find kamp_ui/resources/kamp -type f \( -name "*.so" -o -name "*.dylib" \) | wc -l)"
@@ -162,15 +166,24 @@ jobs:
                 --force --sign "$IDENTITY" \
                 --options runtime --timestamp \
                 {}
-          echo "→ Signing all Python Mach-O copies in Python.framework..."
-          find kamp_ui/resources/kamp/_internal/Python.framework -type f -name "Python" \
+          echo "→ Signing Python.framework/Versions/*/Python copies..."
+          find kamp_ui/resources/kamp/_internal/Python.framework/Versions \
+            -type f -name "Python" \
             | xargs -I{} codesign --force --sign "$IDENTITY" \
                 --options runtime --timestamp \
                 --identifier "org.python.python" \
                 {}
-          echo "→ Verifying Python.framework copies signed:"
-          find kamp_ui/resources/kamp/_internal/Python.framework -type f -name "Python" \
-            | xargs -I{} sh -c 'echo "  {}:"; codesign -dv "{}" 2>&1 | grep -E "(Authority|Identifier)" || echo "  WARNING: no signature"'
+          echo "→ Signing Python.framework/Python root copy (via temp to avoid bundle ambiguity)..."
+          FWROOT=kamp_ui/resources/kamp/_internal/Python.framework
+          TMPFW=$(mktemp)
+          cp "$FWROOT/Python" "$TMPFW"
+          codesign --force --sign "$IDENTITY" \
+            --options runtime --timestamp \
+            --identifier "org.python.python" \
+            "$TMPFW"
+          cp "$TMPFW" "$FWROOT/Python"
+          chmod 755 "$FWROOT/Python"
+          rm "$TMPFW"
           echo "→ Signing standalone kamp Python binary..."
           codesign --force --sign "$IDENTITY" --options runtime --timestamp \
             kamp_ui/resources/kamp/_internal/Python
