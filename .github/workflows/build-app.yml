@@ -191,9 +191,12 @@ jobs:
             --options runtime --timestamp \
             --entitlements kamp_ui/build/entitlements.mac.plist \
             kamp_ui/resources/kamp/kamp
-          echo "→ Signing mpv and node..."
+          echo "→ Signing mpv and node (with entitlements)..."
+          # mpv needs disable-library-validation (links against unsigned Homebrew dylibs).
+          # node needs allow-jit (V8 allocates executable pages via mprotect).
           codesign --force --sign "$IDENTITY" \
             --options runtime --timestamp \
+            --entitlements kamp_ui/build/entitlements.mac.plist \
             kamp_ui/resources/mpv \
             kamp_ui/resources/node
           END=$(date +%s)
