@@ -128,15 +128,15 @@ def _fetch_collection(
     return items
 
 
-def _get_download_links(
-    username: str, session: requests.Session
-) -> dict[int, str]:
+def _get_download_links(username: str, session: requests.Session) -> dict[int, str]:
     url = f"https://bandcamp.com/{username}/"
     print(f"\n[3] GET {url}  (collection page for download links)")
     resp = session.get(url, timeout=20)
     print(f"    status={resp.status_code}  content-length={len(resp.text)}")
     # Same CSS selector as the Playwright code: a[href*="bandcamp.com/download?"][href*="sitem_id="]
-    pattern = re.compile(r'href="(https://[^"]*bandcamp\.com/download\?[^"]*sitem_id=(\d+)[^"]*)"')
+    pattern = re.compile(
+        r'href="(https://[^"]*bandcamp\.com/download\?[^"]*sitem_id=(\d+)[^"]*)"'
+    )
     links: dict[int, str] = {}
     for match in pattern.finditer(resp.text):
         links[int(match.group(2))] = html_lib.unescape(match.group(1))
@@ -179,7 +179,9 @@ def _check_download_page(redownload_url: str, session: requests.Session) -> bool
         # Look for format-related keys to understand the structure.
         for key in ("download_url", "url", "formats", "digital_formats", "tralbum_id"):
             if key in blob_str:
-                print(f"      hint: key {key!r} appears in blob — inspect the JSON file")
+                print(
+                    f"      hint: key {key!r} appears in blob — inspect the JSON file"
+                )
         return False
 
 
@@ -189,7 +191,9 @@ def _check_download_page(redownload_url: str, session: requests.Session) -> bool
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Spike: Bandcamp HTTP-only sync validation")
+    parser = argparse.ArgumentParser(
+        description="Spike: Bandcamp HTTP-only sync validation"
+    )
     parser.add_argument("username", help="Bandcamp username")
     parser.add_argument("--cookie-file", type=Path, help="Netscape cookies.txt path")
     parser.add_argument(
@@ -210,6 +214,7 @@ def main() -> int:
         else:
             # Try the default kamp state dir.
             from kamp_daemon.config import _state_dir
+
             sf = _state_dir() / "bandcamp_session.json"
         if not sf.exists():
             sys.exit(
@@ -236,7 +241,9 @@ def main() -> int:
     # --- Step 3: download links ---
     links = _get_download_links(args.username, session)
     if not links:
-        print("\n  (no download links found — collection page may be empty or session expired)")
+        print(
+            "\n  (no download links found — collection page may be empty or session expired)"
+        )
 
     # --- Step 4: CDN URL check (the critical unknown) ---
     # Use the first item that has a matching download link.
@@ -263,8 +270,12 @@ def main() -> int:
     print("=" * 60)
     print(f"  fan_id extraction (requests GET + pagedata):  ✓")
     print(f"  collection fetch (requests POST):             ✓")
-    print(f"  download links (HTML regex on collection pg): {'✓' if links else '✗ (no items?)'}")
-    print(f"  CDN URL in download-page pagedata:            {'✓ PROCEED' if cdn_found else '✗ NEEDS INVESTIGATION'}")
+    print(
+        f"  download links (HTML regex on collection pg): {'✓' if links else '✗ (no items?)'}"
+    )
+    print(
+        f"  CDN URL in download-page pagedata:            {'✓ PROCEED' if cdn_found else '✗ NEEDS INVESTIGATION'}"
+    )
     if not cdn_found and redownload_url:
         print(f"\n  Inspect /tmp/kamp_spike_download_pagedata.json to understand")
         print(f"  the download page structure and find an alternative CDN URL path.")
