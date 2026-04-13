@@ -3,14 +3,15 @@ id: TASK-125
 title: >-
   move musicbrainz, last.fm and bandcamp session features to 'Services' section
   of preferences
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-13 01:59'
-updated_date: '2026-04-13 22:28'
+updated_date: '2026-04-13 22:41'
 labels: []
 milestone: m-9
 dependencies: []
 priority: medium
+ordinal: 6500
 ---
 
 ## Description
