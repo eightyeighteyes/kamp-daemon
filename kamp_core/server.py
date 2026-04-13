@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import threading as _threading
 import uuid as _uuid
 from collections.abc import Callable
 from contextlib import suppress
@@ -701,20 +702,30 @@ def create_app(
     # -----------------------------------------------------------------------
     # The Python daemon subprocess cannot reach bandcamp.com directly in the
     # built .app because PyInstaller's OpenSSL has a different TLS fingerprint
-    # (JA3/JA4) that Cloudflare flags.  These three endpoints implement a
+    # (JA3/JA4) that Cloudflare flags.  These two endpoints implement a
     # request/response relay via Electron's net module (Chromium network stack),
     # which has a real browser fingerprint and holds the cf_clearance cookie.
     #
     # Flow:
-    #   1. daemon → POST /proxy-fetch (blocks until result arrives)
-    #   2. Electron polls GET /pending-fetch (every ~200 ms)
-    #   3. Electron executes net.fetch, POSTs result to /fetch-result
-    #   4. /proxy-fetch unblocks and returns the result to the daemon
+    #   1. daemon → POST /proxy-fetch (registers request, broadcasts over WS, blocks)
+    #   2. preload WS handler receives "bandcamp.proxy-fetch" → ipcRenderer.invoke
+    #   3. Electron main ipcMain.handle executes net.fetch with session.defaultSession
+    #   4. Electron main POSTs result to /fetch-result
+    #   5. /proxy-fetch unblocks and returns the result to the daemon
 
     @app.post("/api/v1/bandcamp/proxy-fetch")
     async def bandcamp_proxy_fetch(req: BandcampProxyFetchRequest) -> dict[str, Any]:
+        nonlocal _event_loop
+        # Capture the running loop here so _broadcast (which uses
+        # call_soon_threadsafe) works even before any WS client has connected.
+        if _event_loop is None:
+            _event_loop = asyncio.get_running_loop()
+
         req_id = str(_uuid.uuid4())
-        event: asyncio.Event = asyncio.Event()
+        # threading.Event (not asyncio.Event) so fetch-result can unblock
+        # proxy-fetch regardless of which event loop each request runs in.
+        # run_in_executor keeps the server's event loop free while waiting.
+        event: _threading.Event = _threading.Event()
         _state["bandcamp_proxy_requests"][req_id] = {
             "id": req_id,
             "url": req.url,
@@ -724,9 +735,22 @@ def create_app(
             "event": event,
             "result": None,
         }
-        try:
-            await asyncio.wait_for(event.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
+        # Notify the Electron preload via the existing WebSocket push channel.
+        # The preload forwards to ipcMain which executes net.fetch and posts
+        # the result back to /fetch-result.
+        _broadcast(
+            {
+                "type": "bandcamp.proxy-fetch",
+                "id": req_id,
+                "url": req.url,
+                "method": req.method,
+                "headers": req.headers,
+                "body": req.body,
+            }
+        )
+        loop = asyncio.get_running_loop()
+        signalled = await loop.run_in_executor(None, event.wait, 30.0)
+        if not signalled:
             _state["bandcamp_proxy_requests"].pop(req_id, None)
             raise HTTPException(
                 status_code=504,
@@ -738,28 +762,6 @@ def create_app(
                 status_code=502, detail="Proxy fetch returned no result"
             )
         return cast(dict[str, Any], entry["result"])
-
-    @app.get("/api/v1/bandcamp/pending-fetch")
-    async def bandcamp_pending_fetch() -> Response:
-        """Return the first queued proxy-fetch request (200) or nothing (204).
-
-        Electron polls this endpoint every ~200 ms.  When a request is found the
-        caller should execute it via net.fetch and POST the result to /fetch-result.
-        """
-        pending: dict[str, Any] = _state["bandcamp_proxy_requests"]
-        for entry in pending.values():
-            if entry["result"] is None and not entry["event"].is_set():
-                payload = {
-                    "id": entry["id"],
-                    "url": entry["url"],
-                    "method": entry["method"],
-                    "headers": entry["headers"],
-                    "body": entry["body"],
-                }
-                return Response(
-                    content=_json.dumps(payload), media_type="application/json"
-                )
-        return Response(status_code=204)
 
     @app.post("/api/v1/bandcamp/fetch-result")
     async def bandcamp_fetch_result(req: BandcampProxyFetchResult) -> dict[str, Any]:
