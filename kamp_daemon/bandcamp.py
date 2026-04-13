@@ -322,6 +322,12 @@ def _get_fan_id(username: str, session: _requests.Session) -> int:
     """GET the user's Bandcamp profile page and extract fan_id from pagedata JSON."""
     url = f"https://bandcamp.com/{username}"
     resp = session.get(url, timeout=20)
+    logger.debug(
+        "_get_fan_id: status=%s url=%s content-length=%d",
+        resp.status_code,
+        resp.url,
+        len(resp.text),
+    )
     resp.raise_for_status()
     blob = _extract_pagedata(resp.text, url)
     fan_id: int = blob["fan_data"]["fan_id"]
@@ -331,6 +337,13 @@ def _get_fan_id(username: str, session: _requests.Session) -> int:
 def _extract_pagedata(html: str, url: str) -> dict[str, Any]:
     match = re.search(r'id="pagedata"[^>]*data-blob="([^"]+)"', html)
     if not match:
+        # Log the start of the response so we can diagnose bot-detection pages,
+        # Cloudflare challenges, or unexpected redirects.
+        logger.error(
+            "_extract_pagedata: no pagedata in %s — response head: %r",
+            url,
+            html[:500],
+        )
         raise BandcampAPIError(f"Could not find pagedata blob in {url}")
     result: dict[str, Any] = json.loads(html_lib.unescape(match.group(1)))
     return result

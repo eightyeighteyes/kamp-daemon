@@ -87,7 +87,7 @@ a = Analysis(
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=["hooks/rthook_ssl_certifi.py"],
     excludes=excludes,
     noarchive=False,
 )
