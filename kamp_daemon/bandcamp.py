@@ -336,7 +336,15 @@ def _get_fan_id(session: _requests.Session) -> int:
             f"Bandcamp session rejected ({resp.status_code}) — please log in again."
         )
     resp.raise_for_status()
-    data: dict[str, Any] = resp.json()
+    try:
+        data: dict[str, Any] = resp.json()
+    except Exception as exc:
+        logger.error(
+            "_get_fan_id: JSON decode failed — status=%s response_head=%r",
+            resp.status_code,
+            resp.text[:500],
+        )
+        raise BandcampAPIError(f"collection_summary returned non-JSON: {exc}") from exc
     fan_id: int = data["fan_id"]
     return fan_id
 
