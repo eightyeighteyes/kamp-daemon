@@ -3,7 +3,12 @@ import { useStore } from '../store'
 import type { ExtensionInfo, ExtensionSettingSchema } from '../../../shared/kampAPI'
 import type { ExtensionStateHook } from '../hooks/useExtensionState'
 import { useExtensionInstall } from '../hooks/useExtensionInstall'
-import { connectLastfm, disconnectLastfm, getBandcampStatus, disconnectBandcamp } from '../api/client'
+import {
+  connectLastfm,
+  disconnectLastfm,
+  getBandcampStatus,
+  disconnectBandcamp
+} from '../api/client'
 
 // Keys whose values must be integers — sent as strings over the wire but
 // stored as numbers in the config.
@@ -721,11 +726,19 @@ function BandcampSection({
       <div className="prefs-row-header">
         <span className="prefs-label">Session</span>
       </div>
-      {connectedUsername !== undefined && (
-        connectedUsername !== null ? (
+      {connectedUsername !== undefined &&
+        (connectedUsername !== null ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 13 }}>
-              Connected{connectedUsername ? <> as <strong>{connectedUsername}</strong></> : ''}
+              Connected
+              {connectedUsername ? (
+                <>
+                  {' '}
+                  as <strong>{connectedUsername}</strong>
+                </>
+              ) : (
+                ''
+              )}
             </span>
             <button
               className="prefs-choose-btn prefs-choose-btn--destructive"
@@ -745,9 +758,12 @@ function BandcampSection({
               {busy ? 'Waiting…' : 'Connect to Bandcamp'}
             </button>
           </div>
-        )
+        ))}
+      {error && (
+        <p className="prefs-hint" style={{ color: 'var(--error)' }}>
+          {error}
+        </p>
       )}
-      {error && <p className="prefs-hint" style={{ color: 'var(--error)' }}>{error}</p>}
     </div>
   )
 }
@@ -849,7 +865,11 @@ function LastfmSection({
               onKeyDown={(e) => e.key === 'Enter' && void handleConnect()}
             />
           </div>
-          {error && <p className="prefs-hint" style={{ color: 'var(--error)' }}>{error}</p>}
+          {error && (
+            <p className="prefs-hint" style={{ color: 'var(--error)' }}>
+              {error}
+            </p>
+          )}
           <div className="prefs-row" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <button
               className="prefs-choose-btn"
@@ -940,7 +960,8 @@ export function PreferencesDialog({
   if (!prefsOpen) return null
 
   // Show a loading placeholder while config is being fetched (General/Services tabs).
-  const configLoading = configValues === null && (activeTab === 'general' || activeTab === 'services')
+  const configLoading =
+    configValues === null && (activeTab === 'general' || activeTab === 'services')
 
   const hasBandcamp = configValues !== null && configValues['bandcamp.format'] !== null
 
