@@ -28,17 +28,19 @@ from __future__ import annotations
 import html as html_lib
 import json
 import logging
-import os
 import re
 import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import requests as _requests
 
-from .config import BandcampConfig, _state_dir
+from .config import BandcampConfig
+
+if TYPE_CHECKING:
+    from kamp_core.library import LibraryIndex
 
 logger = logging.getLogger(__name__)
 
@@ -177,16 +179,17 @@ class NeedsLoginError(Exception):
 def mark_collection_synced(
     bc_config: BandcampConfig,
     state_file: Path,
+    index: "LibraryIndex",
 ) -> int:
     """Record every item in the Bandcamp collection as already downloaded.
 
     Fetches the full collection and writes all sale_item_ids to *state_file*
     without downloading anything.  Returns the number of items marked.
     """
-    session_file = _ensure_session(bc_config)
-    session = _make_requests_session(session_file)
+    session_data = _ensure_session(bc_config, index)
+    session = _make_requests_session(session_data)
     fan_id = _get_fan_id(session)
-    collection = _fetch_collection(fan_id, session)
+    collection = _fetch_collection(fan_id, session, index)
 
     state = _load_state(state_file)
     newly_marked = 0
@@ -210,19 +213,20 @@ def sync_new_purchases(
     bc_config: BandcampConfig,
     watch_dir: Path,
     state_file: Path,
+    index: "LibraryIndex",
     status_callback: Callable[[str], None] | None = None,
 ) -> list[Path]:
     """Download any purchases not yet recorded in *state_file* to *watch_dir*.
 
     Returns a list of paths to the downloaded ZIP files.
     """
-    session_file = _ensure_session(bc_config)
-    session = _make_requests_session(session_file)
+    session_data = _ensure_session(bc_config, index)
+    session = _make_requests_session(session_data)
     fan_id = _get_fan_id(session)
     logger.info("Fetched fan_id=%s for user %r", fan_id, bc_config.username)
 
     state = _load_state(state_file)
-    collection = _fetch_collection(fan_id, session)
+    collection = _fetch_collection(fan_id, session, index)
 
     new_items = [item for item in collection if str(item["sale_item_id"]) not in state]
 
@@ -277,28 +281,24 @@ def sync_new_purchases(
 # ---------------------------------------------------------------------------
 
 
-def _session_file() -> Path:
-    return _state_dir() / "bandcamp_session.json"
+def _ensure_session(bc_config: BandcampConfig, index: "LibraryIndex") -> dict[str, Any]:
+    """Return valid session data for the Bandcamp account.
 
-
-def _ensure_session(bc_config: BandcampConfig) -> Path:
-    """Return a valid session file path.
-
-    If ``cookie_file`` is configured, synthesize a session from it (escape hatch
-    for users managing cookies manually).  Otherwise, check for a saved session
-    and validate it; if absent or expired, raise ``NeedsLoginError`` so the caller
+    If ``cookie_file`` is configured, synthesize session data from it (escape
+    hatch for users managing cookies manually).  Otherwise, read from the DB
+    and validate; if absent or expired, raise ``NeedsLoginError`` so the caller
     can trigger the Electron BrowserWindow login flow.
     """
     if bc_config.cookie_file:
         return _session_from_cookie_file(bc_config.cookie_file)
 
-    sf = _session_file()
-    if sf.exists() and _validate_session(sf):
-        return sf
+    data = index.get_session("bandcamp")
+    if data is not None and _validate_session(data):
+        return data
 
-    if sf.exists():
+    if data is not None:
         logger.info("Bandcamp session expired — login required.")
-        sf.unlink()
+        index.clear_session("bandcamp")
     else:
         logger.info("No Bandcamp session found — login required.")
 
@@ -309,9 +309,9 @@ def _ensure_session(bc_config: BandcampConfig) -> Path:
 
 
 def _make_requests_session(
-    session_file: Path,
-) -> Union[_requests.Session, _ProxySession]:
-    """Build an HTTP session authenticated with cookies from *session_file*.
+    session_data: dict[str, Any],
+) -> Union[_requests.Session, "_ProxySession"]:
+    """Build an HTTP session authenticated with cookies from *session_data*.
 
     In the PyInstaller bundle (``sys.frozen`` is True), returns a ``_ProxySession``
     that routes all requests through the local kamp server, which forwards them
@@ -319,14 +319,15 @@ def _make_requests_session(
     returns a normal ``requests.Session`` with the cookies loaded directly.
     """
     if _is_frozen():
-        # Electron's session.defaultSession already holds the Bandcamp cookies
-        # (set during the interactive login flow).  No need to load them here.
+        # In the bundled app, Electron's session.defaultSession holds the
+        # Bandcamp cookies (set during the interactive login flow) and
+        # _ProxySession routes requests through Electron's net module which
+        # automatically attaches them.
         return _ProxySession()
 
-    state = json.loads(session_file.read_text())
     session = _requests.Session()
     session.headers["User-Agent"] = _UA
-    for cookie in state.get("cookies", []):
+    for cookie in session_data.get("cookies", []):
         session.cookies.set(
             cookie["name"],
             cookie["value"],
@@ -336,22 +337,17 @@ def _make_requests_session(
     return session
 
 
-def _validate_session(session_file: Path) -> bool:
-    """Return True if *session_file* represents a live Bandcamp session.
+def _validate_session(session_data: dict[str, Any]) -> bool:
+    """Return True if *session_data* represents a live Bandcamp session.
 
     Two-step check:
     1. Fast cookie inspection — no network round-trip.
     2. Live API probe — a definitive server-side confirmation.
        Network errors are treated optimistically (cookies look valid → True).
     """
-    try:
-        state = json.loads(session_file.read_text())
-    except Exception:
-        return False
-
     # Step 1: check for a non-expired js_logged_in=1 cookie.
     now = time.time()
-    cookies: list[dict[str, Any]] = state.get("cookies", [])
+    cookies: list[dict[str, Any]] = session_data.get("cookies", [])
 
     def _cookie_valid(c: dict[str, Any]) -> bool:
         if c.get("name") != "js_logged_in" or c.get("value") != "1":
@@ -382,14 +378,12 @@ def _validate_session(session_file: Path) -> bool:
     return True
 
 
-def _session_from_cookie_file(cookie_file: Path) -> Path:
-    """Build a synthetic session JSON from a Netscape cookies.txt file.
+def _session_from_cookie_file(cookie_file: Path) -> dict[str, Any]:
+    """Build session data from a Netscape cookies.txt file.
 
-    Returns a temp file path.  This is the escape hatch for users who manage
-    cookies manually rather than using the interactive login flow.
+    Returns the session dict directly.  This is the escape hatch for users who
+    manage cookies manually rather than using the interactive login flow.
     """
-    import tempfile
-
     cookies: list[dict[str, Any]] = []
     try:
         for line in cookie_file.read_text().splitlines():
@@ -418,13 +412,7 @@ def _session_from_cookie_file(cookie_file: Path) -> Path:
     if not cookies:
         raise CookieError(f"No Bandcamp cookies found in {cookie_file}")
 
-    state: dict[str, Any] = {"cookies": cookies, "origins": []}
-    fd, tmp = tempfile.mkstemp(suffix=".json", prefix="kamp-session-")
-    tf = Path(tmp)
-    os.close(fd)
-    tf.write_text(json.dumps(state))
-    os.chmod(tf, 0o600)
-    return tf
+    return {"cookies": cookies, "origins": []}
 
 
 # ---------------------------------------------------------------------------
@@ -478,12 +466,14 @@ def _extract_pagedata(html: str, url: str) -> dict[str, Any]:
     return result
 
 
-def _fetch_collection(fan_id: int, session: _AnySession) -> list[dict[str, Any]]:
+def _fetch_collection(
+    fan_id: int, session: _AnySession, index: "LibraryIndex"
+) -> list[dict[str, Any]]:
     """Fetch all collection items (visible + hidden), deduplicated by sale_item_id."""
     seen: set[int] = set()
     items: list[dict[str, Any]] = []
     for endpoint in (_COLLECTION_URL, _HIDDEN_URL):
-        for item in _paginate(endpoint, fan_id, session):
+        for item in _paginate(endpoint, fan_id, session, index):
             item_id: int = item["sale_item_id"]
             if item_id not in seen:
                 seen.add(item_id)
@@ -491,7 +481,9 @@ def _fetch_collection(fan_id: int, session: _AnySession) -> list[dict[str, Any]]
     return items
 
 
-def _paginate(endpoint: str, fan_id: int, session: _AnySession) -> list[dict[str, Any]]:
+def _paginate(
+    endpoint: str, fan_id: int, session: _AnySession, index: "LibraryIndex"
+) -> list[dict[str, Any]]:
     """POST paginated requests to *endpoint* and return all items."""
     items: list[dict[str, Any]] = []
     older_than_token = f"{int(time.time())}:0:a::"
@@ -510,8 +502,8 @@ def _paginate(endpoint: str, fan_id: int, session: _AnySession) -> list[dict[str
         )
 
         if resp.status_code in (401, 403, 302):
-            # Session expired mid-sync — clear so the next run triggers re-login.
-            _session_file().unlink(missing_ok=True)
+            # Session expired mid-sync — clear DB row so the next run re-prompts login.
+            index.clear_session("bandcamp")
             raise BandcampAPIError(
                 f"Bandcamp session expired (HTTP {resp.status_code}) — "
                 "session cleared. Click Login in the kamp menu bar to re-authenticate."

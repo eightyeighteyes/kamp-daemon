@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -84,6 +84,14 @@ CREATE TABLE IF NOT EXISTS extension_audit_log (
     old_value    TEXT    NOT NULL DEFAULT '',
     new_value    TEXT    NOT NULL DEFAULT '',
     timestamp    REAL    NOT NULL
+);
+
+-- Per-service session storage (Bandcamp, Last.fm, future integrations).
+-- Keyed by service name; session_json holds the full cookie/token payload.
+CREATE TABLE IF NOT EXISTS sessions (
+    service      TEXT NOT NULL PRIMARY KEY,
+    session_json TEXT NOT NULL,
+    updated_at   REAL NOT NULL
 );
 
 -- Enforce append-only invariant at the DB level so no code path can silently
@@ -310,6 +318,14 @@ class LibraryIndex:
             # top of _migrate, so we only need to bump the version here.
             self._conn.execute("UPDATE schema_version SET version = 7")
             self._conn.commit()
+            version = 7
+
+        if version < 8:
+            # v7 → v8: sessions table added for secure per-service auth storage.
+            # The table is created by _DDL via executescript at the top of
+            # _migrate, so we only need to bump the version here.
+            self._conn.execute("UPDATE schema_version SET version = 8")
+            self._conn.commit()
 
     def _rebuild_fts(self) -> None:
         """Rebuild the FTS index from the current contents of the tracks table."""
@@ -318,6 +334,38 @@ class LibraryIndex:
             "INSERT INTO tracks_fts(rowid, title, artist, album_artist, album) "
             "SELECT id, title, artist, album_artist, album FROM tracks"
         )
+
+    # ------------------------------------------------------------------
+    # Session management
+    # ------------------------------------------------------------------
+
+    def get_session(self, service: str) -> dict[str, Any] | None:
+        """Return the stored session data for *service*, or None if absent."""
+        row = self._conn.execute(
+            "SELECT session_json FROM sessions WHERE service = ?", (service,)
+        ).fetchone()
+        if row is None:
+            return None
+        return dict(json.loads(row["session_json"]))  # type: ignore[no-any-return]
+
+    def set_session(self, service: str, data: dict[str, Any]) -> None:
+        """Persist session data for *service*, replacing any existing row."""
+        self._conn.execute(
+            """
+            INSERT INTO sessions (service, session_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(service) DO UPDATE SET
+                session_json = excluded.session_json,
+                updated_at   = excluded.updated_at
+            """,
+            (service, json.dumps(data), _time.time()),
+        )
+        self._conn.commit()
+
+    def clear_session(self, service: str) -> None:
+        """Remove the session row for *service* (no-op if absent)."""
+        self._conn.execute("DELETE FROM sessions WHERE service = ?", (service,))
+        self._conn.commit()
 
     def upsert_track(self, track: Track) -> None:
         """Insert or replace a single track record keyed on file_path."""
