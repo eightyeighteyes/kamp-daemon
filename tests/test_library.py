@@ -123,7 +123,7 @@ class TestLibraryIndex:
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
 
-        assert version == 7
+        assert version == 8
 
     def test_upsert_adds_track(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
@@ -938,7 +938,7 @@ class TestSearch:
         ]
         index.close()
 
-        assert version == 7
+        assert version == 8
         assert len(results) == 1
         assert results[0].title == "Title"
 
@@ -995,7 +995,7 @@ class TestSearch:
         ).fetchone()
         index.close()
 
-        assert version == 7
+        assert version == 8
         assert row is not None
         # date_added will be NULL since the file path is fake; that is expected.
         assert row[0] is None
@@ -1288,7 +1288,7 @@ class TestRecordPlayed:
         ).fetchone()
         index.close()
 
-        assert version == 7
+        assert version == 8
         assert row is not None
         assert row[0] == 0
 
@@ -1401,7 +1401,7 @@ class TestFavorite:
         row = index._conn.execute("SELECT favorite FROM tracks WHERE id = 1").fetchone()
         index.close()
 
-        assert version == 7
+        assert version == 8
         assert row is not None
         assert row[0] == 0  # existing tracks default to not-favorited
 
@@ -1582,8 +1582,72 @@ class TestMtimeReindex:
         ).fetchone()
         index.close()
 
-        assert version == 7
+        assert version == 8
         assert row is not None
         # file_mtime is intentionally left NULL on migration so the next scan
         # treats all existing tracks as changed and re-reads their tags.
         assert row[0] is None
+
+
+# ---------------------------------------------------------------------------
+# Session management
+# ---------------------------------------------------------------------------
+
+
+class TestSessionManagement:
+    def _make_index(self, tmp_path: Path) -> LibraryIndex:
+        return LibraryIndex(tmp_path / "library.db")
+
+    def test_get_session_returns_none_when_absent(self, tmp_path: Path) -> None:
+        index = self._make_index(tmp_path)
+        assert index.get_session("bandcamp") is None
+        index.close()
+
+    def test_set_and_get_session(self, tmp_path: Path) -> None:
+        index = self._make_index(tmp_path)
+        data = {"cookies": [{"name": "js_logged_in", "value": "1"}], "origins": []}
+        index.set_session("bandcamp", data)
+        result = index.get_session("bandcamp")
+        assert result == data
+        index.close()
+
+    def test_set_session_overwrites_existing(self, tmp_path: Path) -> None:
+        index = self._make_index(tmp_path)
+        index.set_session("bandcamp", {"cookies": [{"name": "old", "value": "1"}]})
+        updated = {"cookies": [{"name": "new", "value": "2"}]}
+        index.set_session("bandcamp", updated)
+        assert index.get_session("bandcamp") == updated
+        index.close()
+
+    def test_clear_session_removes_row(self, tmp_path: Path) -> None:
+        index = self._make_index(tmp_path)
+        index.set_session("bandcamp", {"cookies": []})
+        index.clear_session("bandcamp")
+        assert index.get_session("bandcamp") is None
+        index.close()
+
+    def test_clear_session_noop_when_absent(self, tmp_path: Path) -> None:
+        index = self._make_index(tmp_path)
+        index.clear_session("bandcamp")  # must not raise
+        index.close()
+
+    def test_multiple_services_are_independent(self, tmp_path: Path) -> None:
+        index = self._make_index(tmp_path)
+        bc_data = {"cookies": [{"name": "js_logged_in", "value": "1"}]}
+        lfm_data = {"session_key": "abc123"}
+        index.set_session("bandcamp", bc_data)
+        index.set_session("lastfm", lfm_data)
+        assert index.get_session("bandcamp") == bc_data
+        assert index.get_session("lastfm") == lfm_data
+        index.clear_session("bandcamp")
+        assert index.get_session("bandcamp") is None
+        assert index.get_session("lastfm") == lfm_data
+        index.close()
+
+    def test_schema_version_8_after_migration(self, tmp_path: Path) -> None:
+        index = self._make_index(tmp_path)
+        version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
+        index.close()
+        assert version == 8

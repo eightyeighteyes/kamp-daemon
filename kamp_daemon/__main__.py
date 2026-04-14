@@ -601,6 +601,23 @@ def _cmd_daemon(
     db_path = _state_dir() / "library.db"
 
     index = LibraryIndex(db_path)
+
+    # Migrate legacy bandcamp_session.json → sessions DB table (one-time).
+    # After migration the file is deleted so subsequent starts skip this block.
+    _legacy_session = _state_dir() / "bandcamp_session.json"
+    if _legacy_session.exists():
+        try:
+            import json as _json_mod
+
+            _session_data = _json_mod.loads(_legacy_session.read_text())
+            index.set_session("bandcamp", _session_data)
+            _legacy_session.unlink()
+            _logger.info(
+                "Migrated bandcamp_session.json to database and removed legacy file."
+            )
+        except Exception as _exc:
+            _logger.warning("Failed to migrate bandcamp_session.json: %s", _exc)
+
     # Resolve the full mpv path before creating the engine so launchd-managed
     # instances (which run with a minimal PATH) can find the Homebrew binary.
     engine = MpvPlaybackEngine(mpv_bin=_resolve_mpv_binary())
@@ -775,13 +792,9 @@ def _cmd_daemon(
         _scrobbler_ref[0] = None
 
     def _on_bandcamp_login_complete(payload: dict[str, object]) -> None:
-        import json as _json
-
-        state_dir = _state_dir()
-        state_dir.mkdir(parents=True, exist_ok=True)
-        session_file = state_dir / "bandcamp_session.json"
-        session_file.write_text(_json.dumps(payload))
-        _logger.info("Bandcamp session saved from Electron login flow.")
+        # Persist cookies to DB so they are never written to plaintext on disk.
+        index.set_session("bandcamp", dict(payload))
+        _logger.info("Bandcamp session saved to database from Electron login flow.")
 
     # Build the initial preference values dict from the loaded config.
     # Bandcamp and Last.fm fields are None when the section is absent.

@@ -104,10 +104,10 @@ def _download_page_html(sale_item_id: int, fmt: str = "mp3-v0") -> str:
     return _make_pagedata_html(blob)
 
 
-def _make_session_file(tmp_path: Path) -> Path:
-    """Create a fake session JSON with valid-looking cookies."""
+def _make_session_data() -> dict[str, Any]:
+    """Return a fake session dict with valid-looking cookies."""
     future = int(time.time()) + 86400
-    state = {
+    return {
         "cookies": [
             {
                 "name": "js_logged_in",
@@ -130,9 +130,6 @@ def _make_session_file(tmp_path: Path) -> Path:
         ],
         "origins": [],
     }
-    sf = tmp_path / "session.json"
-    sf.write_text(json.dumps(state))
-    return sf
 
 
 def _make_requests_mock(
@@ -214,63 +211,49 @@ class TestState:
 
 
 class TestValidateSession:
-    def test_missing_file_returns_false(self, tmp_path: Path) -> None:
-        assert not _validate_session(tmp_path / "nonexistent.json")
+    def test_empty_cookies_returns_false(self) -> None:
+        assert not _validate_session({"cookies": [], "origins": []})
 
-    def test_corrupted_file_returns_false(self, tmp_path: Path) -> None:
-        sf = tmp_path / "session.json"
-        sf.write_text("not json")
-        assert not _validate_session(sf)
+    def test_missing_js_logged_in_returns_false(self) -> None:
+        assert not _validate_session({"cookies": [], "origins": []})
 
-    def test_missing_js_logged_in_returns_false(self, tmp_path: Path) -> None:
-        sf = tmp_path / "session.json"
-        sf.write_text(json.dumps({"cookies": [], "origins": []}))
-        assert not _validate_session(sf)
-
-    def test_expired_cookie_returns_false(self, tmp_path: Path) -> None:
-        sf = tmp_path / "session.json"
+    def test_expired_cookie_returns_false(self) -> None:
         past = int(time.time()) - 1
-        state = {
+        data = {
             "cookies": [{"name": "js_logged_in", "value": "1", "expires": past}],
             "origins": [],
         }
-        sf.write_text(json.dumps(state))
-        assert not _validate_session(sf)
+        assert not _validate_session(data)
 
-    def test_session_cookie_expires_minus_one_is_valid(self, tmp_path: Path) -> None:
+    def test_session_cookie_expires_minus_one_is_valid(self) -> None:
         """Session cookies with expires=-1 must be treated as valid."""
-        sf = tmp_path / "session.json"
-        state = {
+        data = {
             "cookies": [{"name": "js_logged_in", "value": "1", "expires": -1}],
             "origins": [],
         }
-        sf.write_text(json.dumps(state))
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         with patch("kamp_daemon.bandcamp._requests.get", return_value=mock_resp):
-            assert _validate_session(sf)
+            assert _validate_session(data)
 
-    def test_valid_cookies_but_api_401_returns_false(self, tmp_path: Path) -> None:
-        sf = _make_session_file(tmp_path)
+    def test_valid_cookies_but_api_401_returns_false(self) -> None:
         mock_resp = MagicMock()
         mock_resp.status_code = 401
         with patch("kamp_daemon.bandcamp._requests.get", return_value=mock_resp):
-            assert not _validate_session(sf)
+            assert not _validate_session(_make_session_data())
 
-    def test_valid_cookies_and_api_200_returns_true(self, tmp_path: Path) -> None:
-        sf = _make_session_file(tmp_path)
+    def test_valid_cookies_and_api_200_returns_true(self) -> None:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         with patch("kamp_daemon.bandcamp._requests.get", return_value=mock_resp):
-            assert _validate_session(sf)
+            assert _validate_session(_make_session_data())
 
-    def test_network_error_treated_as_valid(self, tmp_path: Path) -> None:
+    def test_network_error_treated_as_valid(self) -> None:
         """If the live API check fails with a network error, trust the cookies."""
-        sf = _make_session_file(tmp_path)
         with patch(
             "kamp_daemon.bandcamp._requests.get", side_effect=OSError("network error")
         ):
-            assert _validate_session(sf)
+            assert _validate_session(_make_session_data())
 
 
 # ---------------------------------------------------------------------------
@@ -439,12 +422,12 @@ class TestSyncNewPurchases:
     ) -> list[Path]:
         watch_folder = tmp_path / "watch"
         state_file = tmp_path / "state.json"
-        session_file = _make_session_file(tmp_path)
         if state:
             _save_state(state_file, state)
 
         config = _bc_config(tmp_path)
         mock_session = _make_requests_mock(items)
+        index = MagicMock()
 
         def fake_download(
             item: dict[str, Any],
@@ -458,13 +441,16 @@ class TestSyncNewPurchases:
             return path
 
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch(
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            return sync_new_purchases(config, watch_folder, state_file)
+            return sync_new_purchases(config, watch_folder, state_file, index)
 
     def test_downloads_new_items(self, tmp_path: Path) -> None:
         items = [_item(1, "Artist A", "Album 1"), _item(2, "Artist B", "Album 2")]
@@ -488,10 +474,10 @@ class TestSyncNewPurchases:
     def test_state_updated_after_download(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
         watch_folder = tmp_path / "watch"
-        session_file = _make_session_file(tmp_path)
         config = _bc_config(tmp_path)
         items = [_item(99)]
         mock_session = _make_requests_mock(items)
+        index = MagicMock()
 
         def fake_download(
             item: dict[str, Any],
@@ -505,21 +491,24 @@ class TestSyncNewPurchases:
             return path
 
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch(
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            sync_new_purchases(config, watch_folder, state_file)
+            sync_new_purchases(config, watch_folder, state_file, index)
 
         assert "99" in _load_state(state_file)
 
     def test_state_persists_across_calls(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
         watch_folder = tmp_path / "watch"
-        session_file = _make_session_file(tmp_path)
         config = _bc_config(tmp_path)
+        index = MagicMock()
         call_num = 0
 
         def fake_download(
@@ -537,29 +526,35 @@ class TestSyncNewPurchases:
 
         mock1 = _make_requests_mock([_item(42)])
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch("kamp_daemon.bandcamp._make_requests_session", return_value=mock1),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            sync_new_purchases(config, watch_folder, state_file)
+            sync_new_purchases(config, watch_folder, state_file, index)
 
         mock2 = _make_requests_mock([_item(42)])
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch("kamp_daemon.bandcamp._make_requests_session", return_value=mock2),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            paths = sync_new_purchases(config, watch_folder, state_file)
+            paths = sync_new_purchases(config, watch_folder, state_file, index)
 
         assert paths == []
 
     def test_skips_failed_download_continues_others(self, tmp_path: Path) -> None:
         watch_folder = tmp_path / "watch"
         state_file = tmp_path / "state.json"
-        session_file = _make_session_file(tmp_path)
         config = _bc_config(tmp_path)
         items = [_item(1), _item(2)]
         mock_session = _make_requests_mock(items)
+        index = MagicMock()
         call_num = 0
 
         def fake_download(
@@ -578,13 +573,16 @@ class TestSyncNewPurchases:
             return path
 
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch(
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            paths = sync_new_purchases(config, watch_folder, state_file)
+            paths = sync_new_purchases(config, watch_folder, state_file, index)
 
         assert len(paths) == 1
 
@@ -592,7 +590,6 @@ class TestSyncNewPurchases:
         """Items missing from the HTML scrape should be warned and skipped."""
         watch_folder = tmp_path / "watch"
         state_file = tmp_path / "state.json"
-        session_file = _make_session_file(tmp_path)
         config = _bc_config(tmp_path)
         items = [_item(1), _item(2)]
 
@@ -642,14 +639,18 @@ class TestSyncNewPurchases:
             path.write_bytes(b"fake")
             return path
 
+        index = MagicMock()
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch(
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            paths = sync_new_purchases(config, watch_folder, state_file)
+            paths = sync_new_purchases(config, watch_folder, state_file, index)
 
         assert len(paths) == 1  # only item 2 downloaded
 
@@ -662,18 +663,21 @@ class TestSyncNewPurchases:
 class TestMarkCollectionSynced:
     def test_marks_all_items_without_downloading(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
-        session_file = _make_session_file(tmp_path)
         config = _bc_config(tmp_path)
         items = [_item(1, "Artist A", "Album 1"), _item(2, "Artist B", "Album 2")]
         mock_session = _make_requests_mock(items)
+        index = MagicMock()
 
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch(
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
         ):
-            count = mark_collection_synced(config, state_file)
+            count = mark_collection_synced(config, state_file, index)
 
         assert count == 2
         state = _load_state(state_file)
@@ -684,18 +688,21 @@ class TestMarkCollectionSynced:
     def test_skips_already_recorded_items(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
         _save_state(state_file, {"1": 0.0})
-        session_file = _make_session_file(tmp_path)
         config = _bc_config(tmp_path)
         items = [_item(1), _item(2)]
         mock_session = _make_requests_mock(items)
+        index = MagicMock()
 
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch(
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
         ):
-            count = mark_collection_synced(config, state_file)
+            count = mark_collection_synced(config, state_file, index)
 
         assert count == 1
         assert "2" in _load_state(state_file)
@@ -703,24 +710,30 @@ class TestMarkCollectionSynced:
     def test_subsequent_sync_downloads_nothing(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
         watch_folder = tmp_path / "watch"
-        session_file = _make_session_file(tmp_path)
         config = _bc_config(tmp_path)
         items = [_item(1), _item(2)]
+        index = MagicMock()
 
         mock1 = _make_requests_mock(items)
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch("kamp_daemon.bandcamp._make_requests_session", return_value=mock1),
         ):
-            mark_collection_synced(config, state_file)
+            mark_collection_synced(config, state_file, index)
 
         mock2 = _make_requests_mock(items)
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch("kamp_daemon.bandcamp._make_requests_session", return_value=mock2),
             patch("kamp_daemon.bandcamp._download_item"),
         ):
-            paths = sync_new_purchases(config, watch_folder, state_file)
+            paths = sync_new_purchases(config, watch_folder, state_file, index)
 
         assert paths == []
 
@@ -731,29 +744,27 @@ class TestMarkCollectionSynced:
 
 
 class TestNeedsLoginError:
-    def test_raised_when_no_session_file(self, tmp_path: Path) -> None:
+    def test_raised_when_no_session_in_db(self, tmp_path: Path) -> None:
         config = _bc_config(tmp_path)
-        with (
-            patch(
-                "kamp_daemon.bandcamp._session_file", return_value=tmp_path / "no.json"
-            ),
-        ):
-            with pytest.raises(NeedsLoginError):
-                sync_new_purchases(config, tmp_path / "watch", tmp_path / "state.json")
+        index = MagicMock()
+        index.get_session.return_value = None
+        with pytest.raises(NeedsLoginError):
+            sync_new_purchases(
+                config, tmp_path / "watch", tmp_path / "state.json", index
+            )
 
     def test_raised_when_session_expired(self, tmp_path: Path) -> None:
         config = _bc_config(tmp_path)
-        # Create a session file with an expired cookie.
-        sf = tmp_path / "session.json"
         past = int(time.time()) - 1
-        sf.write_text(
-            json.dumps(
-                {"cookies": [{"name": "js_logged_in", "value": "1", "expires": past}]}
+        expired_data = {
+            "cookies": [{"name": "js_logged_in", "value": "1", "expires": past}]
+        }
+        index = MagicMock()
+        index.get_session.return_value = expired_data
+        with pytest.raises(NeedsLoginError):
+            sync_new_purchases(
+                config, tmp_path / "watch", tmp_path / "state.json", index
             )
-        )
-        with patch("kamp_daemon.bandcamp._session_file", return_value=sf):
-            with pytest.raises(NeedsLoginError):
-                sync_new_purchases(config, tmp_path / "watch", tmp_path / "state.json")
 
 
 # ---------------------------------------------------------------------------
@@ -762,20 +773,16 @@ class TestNeedsLoginError:
 
 
 class TestMakeRequestsSession:
-    def test_loads_cookies_from_session_file(self, tmp_path: Path) -> None:
-        sf = _make_session_file(tmp_path)
-        session = _make_requests_session(sf)
+    def test_loads_cookies_from_session_data(self) -> None:
+        session = _make_requests_session(_make_session_data())
         assert session.cookies.get("js_logged_in", domain=".bandcamp.com") == "1"
 
-    def test_user_agent_header_set(self, tmp_path: Path) -> None:
-        sf = _make_session_file(tmp_path)
-        session = _make_requests_session(sf)
+    def test_user_agent_header_set(self) -> None:
+        session = _make_requests_session(_make_session_data())
         assert "User-Agent" in session.headers
 
-    def test_empty_cookies_list(self, tmp_path: Path) -> None:
-        sf = tmp_path / "session.json"
-        sf.write_text(json.dumps({"cookies": [], "origins": []}))
-        session = _make_requests_session(sf)
+    def test_empty_cookies_list(self) -> None:
+        session = _make_requests_session({"cookies": [], "origins": []})
         assert len(list(session.cookies)) == 0
 
 
@@ -785,33 +792,37 @@ class TestMakeRequestsSession:
 
 
 class TestEnsureSession:
-    def test_returns_session_file_when_valid(self, tmp_path: Path) -> None:
-        sf = _make_session_file(tmp_path)
-        config = _bc_config(tmp_path)
-        with patch("kamp_daemon.bandcamp._session_file", return_value=sf):
-            with patch("kamp_daemon.bandcamp._validate_session", return_value=True):
-                result = _ensure_session(config)
-        assert result == sf
+    def _mock_index(self, session_data: dict[str, Any] | None) -> MagicMock:
+        index = MagicMock()
+        index.get_session.return_value = session_data
+        return index
 
-    def test_raises_when_session_invalid_and_deletes_file(self, tmp_path: Path) -> None:
-        sf = _make_session_file(tmp_path)
+    def test_returns_session_data_when_valid(self, tmp_path: Path) -> None:
+        data = _make_session_data()
+        index = self._mock_index(data)
         config = _bc_config(tmp_path)
-        with patch("kamp_daemon.bandcamp._session_file", return_value=sf):
-            with patch("kamp_daemon.bandcamp._validate_session", return_value=False):
-                with pytest.raises(NeedsLoginError):
-                    _ensure_session(config)
-        assert not sf.exists()
+        with patch("kamp_daemon.bandcamp._validate_session", return_value=True):
+            result = _ensure_session(config, index)
+        assert result == data
 
-    def test_raises_when_no_session_file(self, tmp_path: Path) -> None:
-        absent = tmp_path / "absent.json"
+    def test_raises_and_clears_session_when_invalid(self, tmp_path: Path) -> None:
+        data = _make_session_data()
+        index = self._mock_index(data)
         config = _bc_config(tmp_path)
-        with patch("kamp_daemon.bandcamp._session_file", return_value=absent):
+        with patch("kamp_daemon.bandcamp._validate_session", return_value=False):
             with pytest.raises(NeedsLoginError):
-                _ensure_session(config)
+                _ensure_session(config, index)
+        index.clear_session.assert_called_once_with("bandcamp")
 
-    def test_cookie_file_path_bypasses_session_check(self, tmp_path: Path) -> None:
-        """When cookie_file is set, _ensure_session skips the session file logic."""
-        # Write a minimal Netscape cookies.txt
+    def test_raises_when_no_session_in_db(self, tmp_path: Path) -> None:
+        index = self._mock_index(None)
+        config = _bc_config(tmp_path)
+        with pytest.raises(NeedsLoginError):
+            _ensure_session(config, index)
+        index.clear_session.assert_not_called()
+
+    def test_cookie_file_path_bypasses_db_check(self, tmp_path: Path) -> None:
+        """When cookie_file is set, _ensure_session skips the DB session check."""
         cookie_file = tmp_path / "cookies.txt"
         future = int(time.time()) + 86400
         cookie_file.write_text(
@@ -823,9 +834,12 @@ class TestEnsureSession:
             format="mp3-v0",
             poll_interval_minutes=0,
         )
-        result = _ensure_session(config)
-        # Should return a temp file path without raising
-        assert result.exists()
+        index = MagicMock()
+        result = _ensure_session(config, index)
+        # Should return session data dict without touching the index
+        assert isinstance(result, dict)
+        assert "cookies" in result
+        index.get_session.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -845,8 +859,7 @@ class TestSessionFromCookieFile:
             self._netscape_line("js_logged_in", "1", future)
             + self._netscape_line("client_id", "abc123", future)
         )
-        result = _session_from_cookie_file(cookie_file)
-        state = json.loads(result.read_text())
+        state = _session_from_cookie_file(cookie_file)
         names = {c["name"] for c in state["cookies"]}
         assert names == {"js_logged_in", "client_id"}
 
@@ -857,8 +870,7 @@ class TestSessionFromCookieFile:
             "# Netscape HTTP Cookie File\n"
             "\n" + self._netscape_line("js_logged_in", "1", future)
         )
-        result = _session_from_cookie_file(cookie_file)
-        state = json.loads(result.read_text())
+        state = _session_from_cookie_file(cookie_file)
         assert len(state["cookies"]) == 1
 
     def test_ignores_non_bandcamp_cookies(self, tmp_path: Path) -> None:
@@ -868,8 +880,7 @@ class TestSessionFromCookieFile:
             f".example.com\tTRUE\t/\tTRUE\t{future}\ttoken\tXXX\n"
             + self._netscape_line("js_logged_in", "1", future)
         )
-        result = _session_from_cookie_file(cookie_file)
-        state = json.loads(result.read_text())
+        state = _session_from_cookie_file(cookie_file)
         assert all("bandcamp" in c["domain"] for c in state["cookies"])
 
     def test_raises_cookie_error_on_missing_file(self, tmp_path: Path) -> None:
@@ -888,8 +899,7 @@ class TestSessionFromCookieFile:
         cookie_file.write_text(
             ".bandcamp.com\tTRUE\t/\tTRUE\tnot-a-number\tjs_logged_in\t1\n"
         )
-        result = _session_from_cookie_file(cookie_file)
-        state = json.loads(result.read_text())
+        state = _session_from_cookie_file(cookie_file)
         assert state["cookies"][0]["expires"] == -1.0
 
 
@@ -916,8 +926,9 @@ class TestPaginate:
     def test_single_page(self) -> None:
         items = [_item(1), _item(2)]
         session = self._make_post_mock([items])
+        index = MagicMock()
         result = _paginate(
-            "https://bandcamp.com/fancollection/1/collection_items", 123, session
+            "https://bandcamp.com/fancollection/1/collection_items", 123, session, index
         )
         assert [r["sale_item_id"] for r in result] == [1, 2]
 
@@ -925,9 +936,13 @@ class TestPaginate:
         page1 = [_item(i) for i in range(1, 6)]  # 5 items — matches batch size
         page2 = [_item(6)]
         session = self._make_post_mock([page1, page2])
+        index = MagicMock()
         with patch("kamp_daemon.bandcamp._COLLECTION_PAGE_BATCH", 5):
             result = _paginate(
-                "https://bandcamp.com/fancollection/1/collection_items", 123, session
+                "https://bandcamp.com/fancollection/1/collection_items",
+                123,
+                session,
+                index,
             )
         assert [r["sale_item_id"] for r in result] == [1, 2, 3, 4, 5, 6]
 
@@ -938,10 +953,15 @@ class TestPaginate:
         resp.raise_for_status = MagicMock()
         resp.json.return_value = {"items": [], "last_token": ""}
         session.post.return_value = resp
+        index = MagicMock()
         with pytest.raises(BandcampAPIError, match="session expired"):
             _paginate(
-                "https://bandcamp.com/fancollection/1/collection_items", 123, session
+                "https://bandcamp.com/fancollection/1/collection_items",
+                123,
+                session,
+                index,
             )
+        index.clear_session.assert_called_once_with("bandcamp")
 
     def test_raises_on_api_error_field(self) -> None:
         session = MagicMock()
@@ -954,9 +974,13 @@ class TestPaginate:
             "items": [],
         }
         session.post.return_value = resp
+        index = MagicMock()
         with pytest.raises(BandcampAPIError, match="Collection API error"):
             _paginate(
-                "https://bandcamp.com/fancollection/1/collection_items", 123, session
+                "https://bandcamp.com/fancollection/1/collection_items",
+                123,
+                session,
+                index,
             )
 
     def test_breaks_when_last_token_missing(self) -> None:
@@ -968,9 +992,13 @@ class TestPaginate:
         resp.raise_for_status = MagicMock()
         resp.json.return_value = {"items": page, "last_token": ""}
         session.post.return_value = resp
+        index = MagicMock()
         with patch("kamp_daemon.bandcamp._COLLECTION_PAGE_BATCH", 5):
             result = _paginate(
-                "https://bandcamp.com/fancollection/1/collection_items", 123, session
+                "https://bandcamp.com/fancollection/1/collection_items",
+                123,
+                session,
+                index,
             )
         assert len(result) == 5
         assert session.post.call_count == 1
@@ -1003,7 +1031,8 @@ class TestFetchCollection:
             return resp
 
         session.post.side_effect = post_side
-        result = _fetch_collection(12345, session)
+        index = MagicMock()
+        result = _fetch_collection(12345, session, index)
         ids = [r["sale_item_id"] for r in result]
         assert ids.count(99) == 1
         assert 100 in ids
@@ -1105,10 +1134,10 @@ class TestSyncStatusCallback:
     def test_status_callback_called_per_item(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
         watch_folder = tmp_path / "watch"
-        session_file = _make_session_file(tmp_path)
         config = _bc_config(tmp_path)
         items = [_item(1, "Band A", "Album A"), _item(2, "Band B", "Album B")]
         mock_session = _make_requests_mock(items)
+        index = MagicMock()
 
         statuses: list[str] = []
 
@@ -1124,14 +1153,17 @@ class TestSyncStatusCallback:
             return p
 
         with (
-            patch("kamp_daemon.bandcamp._ensure_session", return_value=session_file),
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
             patch(
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
             sync_new_purchases(
-                config, watch_folder, state_file, status_callback=statuses.append
+                config, watch_folder, state_file, index, status_callback=statuses.append
             )
 
         assert len(statuses) == 2
@@ -1160,28 +1192,22 @@ class TestIsFrozen:
 
 
 class TestMakeRequestsSessionFrozen:
-    def test_returns_proxy_session_when_frozen(self, tmp_path: Path) -> None:
+    def test_returns_proxy_session_when_frozen(self) -> None:
         import sys
 
         from kamp_daemon.bandcamp import _ProxySession, _make_requests_session
 
-        session_file = tmp_path / "session.json"
-        session_file.write_text('{"cookies": []}')
-
         with patch.object(sys, "frozen", True, create=True):
-            sess = _make_requests_session(session_file)
+            sess = _make_requests_session({"cookies": []})
 
         assert isinstance(sess, _ProxySession)
 
-    def test_returns_requests_session_when_not_frozen(self, tmp_path: Path) -> None:
+    def test_returns_requests_session_when_not_frozen(self) -> None:
         import requests
 
         from kamp_daemon.bandcamp import _make_requests_session
 
-        session_file = tmp_path / "session.json"
-        session_file.write_text('{"cookies": []}')
-
-        sess = _make_requests_session(session_file)
+        sess = _make_requests_session({"cookies": []})
         assert isinstance(sess, requests.Session)
 
 

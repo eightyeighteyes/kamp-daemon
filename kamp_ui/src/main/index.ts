@@ -151,6 +151,17 @@ async function openBandcampLogin(): Promise<BandcampLoginResult> {
           body: JSON.stringify(payload)
         })
         if (!res.ok) throw new Error(`login-complete returned ${res.status}`)
+        // Cookies are now persisted in the DB.  Remove them from the Electron
+        // session store so they don't linger as plaintext in the Chromium
+        // profile on disk.
+        // NOTE: in the PyInstaller bundle, _ProxySession routes requests via
+        // net.fetch which uses session.defaultSession — those requests will fail
+        // until the next startup reloads cookies from DB into the session.
+        // This is acceptable; the frozen-bundle cookie-reload path is tracked
+        // separately as a future improvement.
+        for (const c of payload.cookies) {
+          await session.defaultSession.cookies.remove('https://bandcamp.com', c.name)
+        }
         await settle({ ok: true })
       } catch (err) {
         await settle({ ok: false, error: String(err) })

@@ -35,6 +35,7 @@ def _sync_worker(
     bc_config: BandcampConfig,
     watch_dir: Path,
     state_file: Path,
+    db_path: Path,
     status_q: Any,
     log_q: Any,
     result_q: Any,
@@ -43,16 +44,21 @@ def _sync_worker(
     # Route all log records to the parent via log_q for a consolidated log stream.
     _root = logging.getLogger()
     _root.setLevel(logging.DEBUG)
-    _root.addHandler(logging.handlers.QueueHandler(log_q))
+    handler = logging.handlers.QueueHandler(log_q)
+    _root.addHandler(handler)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("musicbrainzngs").setLevel(logging.WARNING)
     try:
+        from kamp_core.library import LibraryIndex
+
         from .bandcamp import sync_new_purchases
 
+        index = LibraryIndex(db_path)
         paths = sync_new_purchases(
             bc_config=bc_config,
             watch_dir=watch_dir,
             state_file=state_file,
+            index=index,
             status_callback=lambda msg: status_q.put(msg),
         )
         result_q.put(("ok", paths))
@@ -63,11 +69,16 @@ def _sync_worker(
             result_q.put(("needs_login", str(exc)))
         else:
             result_q.put(("error", str(exc)))
+    finally:
+        # Remove the QueueHandler so it doesn't linger when the worker runs
+        # in-process during tests — otherwise _replay_log_queue would loop.
+        _root.removeHandler(handler)
 
 
 def _mark_synced_worker(
     bc_config: BandcampConfig,
     state_file: Path,
+    db_path: Path,
     status_q: Any,
     log_q: Any,
     result_q: Any,
@@ -75,16 +86,22 @@ def _mark_synced_worker(
     """Entry point for the mark-synced subprocess."""
     _root = logging.getLogger()
     _root.setLevel(logging.DEBUG)
-    _root.addHandler(logging.handlers.QueueHandler(log_q))
+    handler = logging.handlers.QueueHandler(log_q)
+    _root.addHandler(handler)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("musicbrainzngs").setLevel(logging.WARNING)
     try:
+        from kamp_core.library import LibraryIndex
+
         from .bandcamp import mark_collection_synced
 
-        mark_collection_synced(bc_config=bc_config, state_file=state_file)
+        index = LibraryIndex(db_path)
+        mark_collection_synced(bc_config=bc_config, state_file=state_file, index=index)
         result_q.put(("ok", None))
     except Exception as exc:  # noqa: BLE001
         result_q.put(("error", str(exc)))
+    finally:
+        _root.removeHandler(handler)
 
 
 def _spawn_worker(  # pragma: no cover
@@ -241,9 +258,10 @@ class Syncer:
         if self.status_callback is not None:
             self.status_callback("Syncing\u2026")
 
+        db_path = _state_dir() / "library.db"
         proc, status_q, log_q, result_q = _spawn_worker(
             _sync_worker,
-            (bc, self._config.paths.watch_folder, state_file),
+            (bc, self._config.paths.watch_folder, state_file, db_path),
         )
 
         # Drain both queues while the subprocess runs.  log_q MUST be drained
@@ -303,10 +321,11 @@ class Syncer:
             logger.warning("No [bandcamp] section in config — nothing to mark.")
             return
         state_file = _state_dir() / "bandcamp_state.json"
+        db_path = _state_dir() / "library.db"
 
         proc, _status_q, log_q, result_q = _spawn_worker(
             _mark_synced_worker,
-            (bc, state_file),
+            (bc, state_file, db_path),
         )
 
         # Drain log_q while the subprocess runs — same pattern as sync_once().
@@ -362,17 +381,27 @@ class Syncer:
 
 
 def logout() -> None:
-    """Delete the Bandcamp session and sync-state files.
+    """Clear the Bandcamp session from DB and delete the sync-state file.
 
     After logout the next sync will re-authenticate interactively and
-    re-examine the full collection.  Both files are removed together —
-    a session without state (or vice versa) would leave the system in
-    an inconsistent half-logged-in state.
+    re-examine the full collection.  Both the DB session row and the
+    sync-state file are removed together — a session without state (or
+    vice versa) would leave the system in an inconsistent half-logged-in
+    state.
     """
+    from kamp_core.library import LibraryIndex
+
     state = _state_dir()
-    session_file = state / "bandcamp_session.json"
+    db_path = state / "library.db"
     state_file = state / "bandcamp_state.json"
 
+    if db_path.exists():
+        index = LibraryIndex(db_path)
+        index.clear_session("bandcamp")
+        logger.info("Bandcamp logout: session cleared from database.")
+
+    # Remove legacy session file if it still exists (e.g. migration failed).
+    session_file = state / "bandcamp_session.json"
     removed: list[str] = []
     for f in (session_file, state_file):
         if f.exists():
@@ -382,4 +411,4 @@ def logout() -> None:
     if removed:
         logger.info("Bandcamp logout: removed %s.", ", ".join(removed))
     else:
-        logger.info("Bandcamp logout: no session or state files found.")
+        logger.info("Bandcamp logout: no state files found.")

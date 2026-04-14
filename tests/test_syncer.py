@@ -584,23 +584,38 @@ class TestMarkSynced:
 
 
 class TestLogout:
-    def test_deletes_session_and_state_files(self, tmp_path: Path) -> None:
-        """logout() removes both files when both exist."""
-        (tmp_path / "bandcamp_session.json").write_text("{}")
+    def test_clears_db_session_and_state_file(self, tmp_path: Path) -> None:
+        """logout() clears the DB session row and removes the state file."""
+        from kamp_core.library import LibraryIndex
+
+        db_path = tmp_path / "library.db"
+        index = LibraryIndex(db_path)
+        index.set_session(
+            "bandcamp", {"cookies": [{"name": "js_logged_in", "value": "1"}]}
+        )
         (tmp_path / "bandcamp_state.json").write_text("{}")
+
         with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
             logout()
-        assert not (tmp_path / "bandcamp_session.json").exists()
+
+        assert index.get_session("bandcamp") is None
         assert not (tmp_path / "bandcamp_state.json").exists()
 
-    def test_noop_when_no_files(self, tmp_path: Path) -> None:
-        """logout() does not raise when neither file exists."""
+    def test_noop_when_db_absent(self, tmp_path: Path) -> None:
+        """logout() does not raise when library.db does not exist."""
         with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
             logout()  # must not raise
 
-    def test_deletes_only_existing_file(self, tmp_path: Path) -> None:
-        """logout() removes whichever file(s) exist without erroring on absent ones."""
+    def test_removes_legacy_session_file_if_present(self, tmp_path: Path) -> None:
+        """logout() removes a legacy bandcamp_session.json if it still exists."""
         (tmp_path / "bandcamp_session.json").write_text("{}")
         with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
             logout()
         assert not (tmp_path / "bandcamp_session.json").exists()
+
+    def test_removes_state_file_without_db(self, tmp_path: Path) -> None:
+        """logout() removes bandcamp_state.json even when library.db is absent."""
+        (tmp_path / "bandcamp_state.json").write_text("{}")
+        with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
+            logout()
+        assert not (tmp_path / "bandcamp_state.json").exists()
