@@ -240,6 +240,12 @@ def create_app(
         "bandcamp_proxy_requests": {},
     }
 
+    # Proxy-fetch events that were broadcast but had no WS client connected to
+    # receive them.  Keyed by request ID so they can be removed when answered.
+    # A newly-connected WS client receives these immediately so that requests
+    # made before the client connected are not silently dropped.
+    _pending_proxy_fetches: dict[str, dict[str, Any]] = {}
+
     # Active WebSocket queues — one asyncio.Queue per connected client.
     # Events are broadcast to all queues so push notifications wake every client.
     _ws_queues: set[asyncio.Queue[dict[str, Any]]] = set()
@@ -794,20 +800,24 @@ def create_app(
         broadcast_cookies: list[Any] = (
             session_data.get("cookies", []) if session_data else []
         )
+        # Build the push event.  Save it in _pending_proxy_fetches *before*
+        # broadcasting so that a WS client connecting after _broadcast() (but
+        # before the request is answered) still receives it on connect.  The
+        # entry is removed when /fetch-result arrives.
+        proxy_event: dict[str, Any] = {
+            "type": "bandcamp.proxy-fetch",
+            "id": req_id,
+            "url": req.url,
+            "method": req.method,
+            "headers": req.headers,
+            "body": req.body,
+            "cookies": broadcast_cookies,
+        }
+        _pending_proxy_fetches[req_id] = proxy_event
         # Notify the Electron preload via the existing WebSocket push channel.
         # The preload forwards to ipcMain which executes net.fetch and posts
         # the result back to /fetch-result.
-        _broadcast(
-            {
-                "type": "bandcamp.proxy-fetch",
-                "id": req_id,
-                "url": req.url,
-                "method": req.method,
-                "headers": req.headers,
-                "body": req.body,
-                "cookies": broadcast_cookies,
-            }
-        )
+        _broadcast(proxy_event)
         loop = asyncio.get_running_loop()
         # Allow up to 60s for Electron to complete net.fetch and post the
         # result.  Real Bandcamp API calls can take 20–30s; the subprocess
@@ -837,6 +847,8 @@ def create_app(
             "body": req.body,
             "content_type": req.content_type,
         }
+        # Remove from pending — this request has been answered.
+        _pending_proxy_fetches.pop(req.id, None)
         entry["event"].set()
         return {"ok": True}
 
@@ -854,6 +866,11 @@ def create_app(
         await ws.accept()
         # Push initial snapshot immediately on connect.
         await ws.send_json({"type": "player.state", **_state_snapshot().model_dump()})
+        # Replay any proxy-fetch events that fired before this client connected.
+        # This closes the startup-race window: the daemon may have posted a
+        # proxy request before the Electron preload established its WS connection.
+        for pending_event in list(_pending_proxy_fetches.values()):
+            await ws.send_json(pending_event)
         last_library_version: int = _state["library_version"]
         try:
             while True:
