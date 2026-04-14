@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.0](https://github.com/eightyeighteyes/kamp/compare/v1.8.0...v1.9.0) (2026-04-14)
+
+
+### Features
+
+* add Services tab to Preferences (TASK-125) ([#205](https://github.com/eightyeighteyes/kamp/issues/205)) ([f86a740](https://github.com/eightyeighteyes/kamp/commit/f86a740daf80b85e38d8832a396d577bea372d06))
+* extract Bandcamp username from session after login (TASK-121) ([#209](https://github.com/eightyeighteyes/kamp/issues/209)) ([c07acf2](https://github.com/eightyeighteyes/kamp/commit/c07acf21264dc3876202ccd07b6d4ea088ff093c))
+* move Bandcamp session to DB (TASK-120) ([#208](https://github.com/eightyeighteyes/kamp/issues/208)) ([6a24a9f](https://github.com/eightyeighteyes/kamp/commit/6a24a9f39f100b5751b8cdab2cd9691f03fac043))
+* move Groover + Stats panel out of app bundle; prep Groover for npm ([#211](https://github.com/eightyeighteyes/kamp/issues/211)) ([d0411d3](https://github.com/eightyeighteyes/kamp/commit/d0411d382ccba223c97b56de526c50c3a09e1079))
+* remove Download Format and Sync Frequency from menu bar (TASK-123) ([#207](https://github.com/eightyeighteyes/kamp/issues/207)) ([d8c84e7](https://github.com/eightyeighteyes/kamp/commit/d8c84e766ab0ba51ed4094bf66c65110ed8e86c2))
+* rename staging folder to watch folder (TASK-124) ([#206](https://github.com/eightyeighteyes/kamp/issues/206)) ([70544ba](https://github.com/eightyeighteyes/kamp/commit/70544bad54816c4fdc10b46542180b5b1afb4f8b))
+* replace Playwright with plain HTTP for Bandcamp sync (TASK-119) ([#202](https://github.com/eightyeighteyes/kamp/issues/202)) ([715b6b2](https://github.com/eightyeighteyes/kamp/commit/715b6b2bc780cfa2c6b2e4b322f15df9cd5d4c4f))
+* route Bandcamp HTTP requests through Electron net module (TASK-127) ([#203](https://github.com/eightyeighteyes/kamp/issues/203)) ([430bab1](https://github.com/eightyeighteyes/kamp/commit/430bab1a48947f7a092bab2a251d9c1848a47291))
+* self-contained macOS .app bundle (TASK-49) ([#194](https://github.com/eightyeighteyes/kamp/issues/194)) ([6470926](https://github.com/eightyeighteyes/kamp/commit/6470926a3108b73fd8bb896ee49d48e71729f3e1))
+* separate arm64 and x64 builds via matrix job (TASK-117) ([#201](https://github.com/eightyeighteyes/kamp/issues/201)) ([1d2505b](https://github.com/eightyeighteyes/kamp/commit/1d2505b4cb4ffbc40b8df864625c1d3e0b45fb6d))
+* skip ID3 tags when MusicBrainz conflicts with existing file tags (TASK-88) ([#193](https://github.com/eightyeighteyes/kamp/issues/193)) ([6fc616c](https://github.com/eightyeighteyes/kamp/commit/6fc616ceae220bb65a30b01be448b6e1169470f6))
+* unify kamp daemon and server into a single process (TASK-96) ([#190](https://github.com/eightyeighteyes/kamp/issues/190)) ([51b6dac](https://github.com/eightyeighteyes/kamp/commit/51b6dacbfe83509f8a1da3933c7817798ad5bfe3))
+
+
+### Bug Fixes
+
+* broaden x64ArchFiles to Contents/Resources/** for universal build ([#198](https://github.com/eightyeighteyes/kamp/issues/198)) ([95fc268](https://github.com/eightyeighteyes/kamp/commit/95fc2680c0bef46cafcbbf6ddcdc2bd6465a1886))
+* build universal macOS app for Intel + Apple Silicon ([#196](https://github.com/eightyeighteyes/kamp/issues/196)) ([e32aec7](https://github.com/eightyeighteyes/kamp/commit/e32aec73c061b57b3337596b81926f37d289caea))
+* commit entitlements plist and app icon for CI build ([#195](https://github.com/eightyeighteyes/kamp/issues/195)) ([f3ce29b](https://github.com/eightyeighteyes/kamp/commit/f3ce29b406cf2ca4c5f4d208ec39e12b38c42eea))
+* pre-sign PyInstaller bundle in parallel to avoid 1-hour codesign timeout ([#200](https://github.com/eightyeighteyes/kamp/issues/200)) ([f44d3d0](https://github.com/eightyeighteyes/kamp/commit/f44d3d063ac0c29597c1577913d812ad29e797b4))
+* prefer exact cover stem over substring matches in local artwork selection (TASK-89) ([#192](https://github.com/eightyeighteyes/kamp/issues/192)) ([a763d32](https://github.com/eightyeighteyes/kamp/commit/a763d32c068fc64bdcabd979601fce3034db5f28))
+* reload Bandcamp cookies from DB into Electron session before proxy-fetch (TASK-129) ([#210](https://github.com/eightyeighteyes/kamp/issues/210)) ([3119d12](https://github.com/eightyeighteyes/kamp/commit/3119d12ac238b48a15da9ceefbbd70edf16ee4d2))
+* remove contact email from config and fix post-ingest pipeline bugs (TASK-126) ([#204](https://github.com/eightyeighteyes/kamp/issues/204)) ([86ac058](https://github.com/eightyeighteyes/kamp/commit/86ac0588d48f21d9427b654d428e8d3b3c434f93))
+* x64ArchFiles for universal build with arm64-only PyInstaller bundle ([#197](https://github.com/eightyeighteyes/kamp/issues/197)) ([6fd1e3b](https://github.com/eightyeighteyes/kamp/commit/6fd1e3bc92d78468576b917cdf26cc79a3e8932f))
+
+
+### Documentation
+
+* code signing and notarization guide ([#199](https://github.com/eightyeighteyes/kamp/issues/199)) ([9ebcb64](https://github.com/eightyeighteyes/kamp/commit/9ebcb64ed5c71790398a4cb96a1b8ee4bb4eecc2))
+
 ## [1.8.0](https://github.com/eightyeighteyes/kamp/compare/v1.7.0...v1.8.0) (2026-04-09)
 
 
