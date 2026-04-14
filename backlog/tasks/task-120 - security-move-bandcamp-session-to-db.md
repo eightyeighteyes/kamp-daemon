@@ -1,14 +1,15 @@
 ---
 id: TASK-120
 title: 'security: move bandcamp session to db'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-13 01:47'
-updated_date: '2026-04-14 01:48'
+updated_date: '2026-04-14 02:12'
 labels: []
 milestone: m-1
 dependencies: []
 priority: high
+ordinal: 2000
 ---
 
 ## Description
