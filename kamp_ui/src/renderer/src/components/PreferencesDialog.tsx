@@ -3,12 +3,7 @@ import { useStore } from '../store'
 import type { ExtensionInfo, ExtensionSettingSchema } from '../../../shared/kampAPI'
 import type { ExtensionStateHook } from '../hooks/useExtensionState'
 import { useExtensionInstall } from '../hooks/useExtensionInstall'
-import {
-  connectLastfm,
-  disconnectLastfm,
-  getBandcampStatus,
-  disconnectBandcamp
-} from '../api/client'
+import { connectLastfm, disconnectLastfm, disconnectBandcamp } from '../api/client'
 
 // Keys whose values must be integers — sent as strings over the wire but
 // stored as numbers in the config.
@@ -666,28 +661,16 @@ function ExtensionsPanel({
 // ---------------------------------------------------------------------------
 
 function BandcampSection({
+  connectedUsername,
   onConnected,
   onDisconnected
 }: {
+  connectedUsername: string | null
   onConnected: () => void
   onDisconnected: () => void
 }): React.JSX.Element {
-  const [connectedUsername, setConnectedUsername] = useState<string | null | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const loadStatus = useCallback(async (): Promise<void> => {
-    try {
-      const s = await getBandcampStatus()
-      setConnectedUsername(s.connected ? (s.username ?? '') : null)
-    } catch {
-      setConnectedUsername(null)
-    }
-  }, [])
-
-  useEffect(() => {
-    void loadStatus()
-  }, [loadStatus])
 
   const handleConnect = async (): Promise<void> => {
     setBusy(true)
@@ -695,7 +678,6 @@ function BandcampSection({
     try {
       const result = await window.api.bandcamp.beginLogin()
       if (result.ok) {
-        await loadStatus()
         onConnected()
       } else {
         setError(result.error ?? 'Login cancelled.')
@@ -712,7 +694,6 @@ function BandcampSection({
     setError(null)
     try {
       await disconnectBandcamp()
-      setConnectedUsername(null)
       onDisconnected()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Disconnect failed.')
@@ -726,39 +707,26 @@ function BandcampSection({
       <div className="prefs-row-header">
         <span className="prefs-label">Session</span>
       </div>
-      {connectedUsername !== undefined &&
-        (connectedUsername !== null ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 13 }}>
-              Connected
-              {connectedUsername ? (
-                <>
-                  {' '}
-                  as <strong>{connectedUsername}</strong>
-                </>
-              ) : (
-                ''
-              )}
-            </span>
-            <button
-              className="prefs-choose-btn prefs-choose-btn--destructive"
-              onClick={() => void handleDisconnect()}
-              disabled={busy}
-            >
-              Disconnect
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              className="prefs-choose-btn"
-              onClick={() => void handleConnect()}
-              disabled={busy}
-            >
-              {busy ? 'Waiting…' : 'Connect to Bandcamp'}
-            </button>
-          </div>
-        ))}
+      {connectedUsername ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 13 }}>
+            Connected as <strong>{connectedUsername}</strong>
+          </span>
+          <button
+            className="prefs-choose-btn prefs-choose-btn--destructive"
+            onClick={() => void handleDisconnect()}
+            disabled={busy}
+          >
+            Disconnect
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className="prefs-choose-btn" onClick={() => void handleConnect()} disabled={busy}>
+            {busy ? 'Waiting…' : 'Connect to Bandcamp'}
+          </button>
+        </div>
+      )}
       {error && (
         <p className="prefs-hint" style={{ color: 'var(--error)' }}>
           {error}
@@ -1135,6 +1103,7 @@ export function PreferencesDialog({
                         onSave={handleSave}
                       />
                       <BandcampSection
+                        connectedUsername={configValues?.['bandcamp.username'] ?? null}
                         onConnected={() => void loadConfig()}
                         onDisconnected={() => void loadConfig()}
                       />
