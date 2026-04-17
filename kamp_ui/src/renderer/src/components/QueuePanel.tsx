@@ -68,6 +68,7 @@ export function QueuePanel(): React.JSX.Element {
   }, [menu])
 
   function handleDrop(e: React.DragEvent, dropIdx: number): void {
+    e.stopPropagation()
     e.currentTarget.classList.remove('drag-over')
     const queueIdx = e.dataTransfer.getData('text/kamp-queue-idx')
     const trackPath = e.dataTransfer.getData('text/kamp-track-path')
@@ -89,6 +90,37 @@ export function QueuePanel(): React.JSX.Element {
           file_path?: string
         }
         void insertAlbumAt(album_artist, album, dropIdx, file_path)
+      } catch {
+        // malformed drag data — ignore
+      }
+    }
+  }
+
+  function handleListDrop(e: React.DragEvent): void {
+    // Fires only when dropping on the empty space below all track rows (li handlers
+    // stop propagation, so this never fires when the target is a track row).
+    e.currentTarget.classList.remove('queue-tail-drop')
+    const queueIdx = e.dataTransfer.getData('text/kamp-queue-idx')
+    const trackPath = e.dataTransfer.getData('text/kamp-track-path')
+    const albumJson = e.dataTransfer.getData('text/kamp-album')
+    if (queueIdx !== '') {
+      const from = Number(queueIdx)
+      const last = tracks.length - 1
+      if (from !== last) void moveQueueTrack(from, last)
+    } else if (trackPath) {
+      void addToQueue(trackPath)
+    } else if (albumJson) {
+      try {
+        const {
+          album_artist,
+          album,
+          file_path = ''
+        } = JSON.parse(albumJson) as {
+          album_artist: string
+          album: string
+          file_path?: string
+        }
+        void addAlbumToQueue(album_artist, album, file_path)
       } catch {
         // malformed drag data — ignore
       }
@@ -140,6 +172,18 @@ export function QueuePanel(): React.JSX.Element {
             e.preventDefault()
             setMenu({ x: e.clientX, y: e.clientY, trackIdx: null })
           }}
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.currentTarget.classList.add('queue-tail-drop')
+          }}
+          onDragLeave={(e) => {
+            // Only remove the indicator when the pointer leaves the <ol> entirely,
+            // not when entering a child <li> (which stops its own drag events).
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              e.currentTarget.classList.remove('queue-tail-drop')
+            }
+          }}
+          onDrop={handleListDrop}
         >
           {tracks.map((track, idx) => {
             const isCurrent = idx === position
@@ -158,9 +202,11 @@ export function QueuePanel(): React.JSX.Element {
                 }}
                 onDragOver={(e) => {
                   e.preventDefault()
+                  e.stopPropagation()
                   e.currentTarget.classList.add('drag-over')
                 }}
                 onDragLeave={(e) => {
+                  e.stopPropagation()
                   e.currentTarget.classList.remove('drag-over')
                 }}
                 onDrop={(e) => handleDrop(e, idx)}
