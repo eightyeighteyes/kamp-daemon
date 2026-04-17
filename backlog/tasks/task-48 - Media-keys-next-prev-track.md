@@ -1,10 +1,10 @@
 ---
 id: TASK-48
 title: 'Media keys: next/prev track'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-30 23:47'
-updated_date: '2026-04-17 00:38'
+updated_date: '2026-04-17 15:55'
 labels:
   - feature
   - macos
