@@ -425,9 +425,7 @@ export default function App(): React.JSX.Element {
   // Determine what to render in the main content area.
   function renderMainContent(): React.JSX.Element {
     if (showSetup) return <SetupScreen />
-    const extPanel = activeExtPanel
-      ? mainPanels.find((p) => p.id === activeExtPanel)
-      : null
+    const extPanel = activeExtPanel ? mainPanels.find((p) => p.id === activeExtPanel) : null
     // Library and NowPlaying are always mounted so <img> elements (and their
     // artLoaded state) survive view switches. The inactive pane is hidden via
     // display:none (.view-pane) and the active one uses display:contents
@@ -438,9 +436,7 @@ export default function App(): React.JSX.Element {
       <>
         {/* key=panel.id forces a fresh component+DOM node on extension panel
             switch so the previous extension's container is never reused. */}
-        {extPanel?.kind === 'extension' && (
-          <ExtensionPanel key={extPanel.id} panel={extPanel} />
-        )}
+        {extPanel?.kind === 'extension' && <ExtensionPanel key={extPanel.id} panel={extPanel} />}
         {searchQuery && <SearchView />}
         <div className={isLibraryPane ? 'view-pane view-pane--active' : 'view-pane'}>
           <LibraryView />
