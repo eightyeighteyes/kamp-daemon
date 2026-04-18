@@ -426,6 +426,9 @@ class LibraryIndex:
         """Remove the session row for *service* (no-op if absent)."""
         self._conn.execute("DELETE FROM sessions WHERE service = ?", (service,))
         self._conn.commit()
+        # Truncate the WAL so deleted credential data (cookies, session keys) is
+        # not recoverable from the WAL file after disconnect.
+        self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     # ------------------------------------------------------------------
     # Settings (application configuration)

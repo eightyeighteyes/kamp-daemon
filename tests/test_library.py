@@ -1797,6 +1797,18 @@ class TestSessionManagement:
         index.clear_session("bandcamp")  # must not raise
         index.close()
 
+    def test_clear_session_truncates_wal(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "library.db"
+        index = LibraryIndex(db_path)
+        index.set_session(
+            "bandcamp", {"cookies": [{"name": "js_logged_in", "value": "1"}]}
+        )
+        wal_path = db_path.with_suffix(".db-wal")
+        index.clear_session("bandcamp")
+        wal_size = wal_path.stat().st_size if wal_path.exists() else 0
+        assert wal_size == 0, f"WAL not truncated after clear_session: {wal_size} bytes"
+        index.close()
+
     def test_multiple_services_are_independent(self, tmp_path: Path) -> None:
         index = self._make_index(tmp_path)
         bc_data = {"cookies": [{"name": "js_logged_in", "value": "1"}]}
