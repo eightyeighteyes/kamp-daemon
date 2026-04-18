@@ -179,6 +179,42 @@ class TestAlbumArtEndpoint:
             res = c.get("/api/v1/album-art?album_artist=Artist&album=Album")
         assert res.status_code == 404
 
+    def test_versioned_request_returns_immutable_cache_header(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """?v= stamp → Cache-Control: public, max-age=31536000, immutable."""
+        track = _track(1)
+        track.embedded_art = True
+        mock_index.tracks_for_album.return_value = [track]
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        with patch(
+            "kamp_core.server.extract_art", return_value=(b"IMGDATA", "image/jpeg")
+        ):
+            res = c.get("/api/v1/album-art?album_artist=Artist&album=Album&v=1234567.0")
+        assert res.status_code == 200
+        cc = res.headers.get("cache-control", "")
+        assert "public" in cc
+        assert "immutable" in cc
+        assert "max-age=31536000" in cc
+
+    def test_unversioned_request_returns_no_store_cache_header(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """No ?v= stamp → Cache-Control: no-store so stale art is never served."""
+        track = _track(1)
+        track.embedded_art = True
+        mock_index.tracks_for_album.return_value = [track]
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        with patch(
+            "kamp_core.server.extract_art", return_value=(b"IMGDATA", "image/jpeg")
+        ):
+            res = c.get("/api/v1/album-art?album_artist=Artist&album=Album")
+        assert res.status_code == 200
+        cc = res.headers.get("cache-control", "")
+        assert "no-store" in cc
+
 
 class TestArtistsEndpoint:
     def test_returns_empty_list_when_no_artists(self, client: TestClient) -> None:
