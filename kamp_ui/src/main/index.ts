@@ -523,6 +523,17 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('bandcamp:begin-login', () => openBandcampLogin())
 
+  type BandcampCookie = {
+    name: string
+    value: string
+    domain: string
+    path: string
+    expires: number
+    httpOnly: boolean
+    secure: boolean
+    sameSite: string
+  }
+
   ipcMain.handle(
     'bandcamp:proxy-fetch',
     async (
@@ -533,26 +544,16 @@ app.whenReady().then(async () => {
         method: string
         headers: Record<string, string>
         body: string | null
-        // Cookies are embedded in the broadcast by the server so no extra
-        // HTTP round-trip is needed to load them from the DB.
-        cookies?: Array<{
-          name: string
-          value: string
-          domain: string
-          path: string
-          expires: number
-          httpOnly: boolean
-          secure: boolean
-          sameSite: string
-        }>
       }
     ) => {
       // In the PyInstaller bundle, cookies are stored in library.db rather than
       // in session.defaultSession (cleared after login to avoid plaintext on disk).
-      // The server embeds them in the proxy-fetch broadcast so we can inject them
-      // into session.defaultSession before net.fetch and remove them afterward.
+      // Fetch them from the daemon endpoint rather than reading from the WS payload
+      // so auth cookies are never broadcast to all WS clients.
+      const cookieResp = await net.fetch('http://127.0.0.1:8000/api/v1/bandcamp/session-cookies')
+      const { cookies } = (await cookieResp.json()) as { cookies: BandcampCookie[] }
       const injectedNames: string[] = []
-      for (const c of req.cookies ?? []) {
+      for (const c of cookies) {
         const sameSiteLower = c.sameSite?.toLowerCase()
         const sameSite = (['lax', 'strict', 'no_restriction', 'unspecified'] as const).includes(
           sameSiteLower as never

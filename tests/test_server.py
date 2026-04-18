@@ -1666,8 +1666,8 @@ class TestBandcampProxyEndpoints:
             assert msg["method"] == "GET"
             req_id = msg["id"]
             assert req_id
-            # No session configured — cookies list should be empty.
-            assert msg["cookies"] == []
+            # Cookies must not appear in the broadcast payload.
+            assert "cookies" not in msg
 
             # Simulate Electron posting the net.fetch result.
             result_r = c.post(
@@ -1687,10 +1687,10 @@ class TestBandcampProxyEndpoints:
         assert proxy_response["body"] == '{"fan_id": 42}'
         assert proxy_response["content_type"] == "application/json"
 
-    def test_proxy_broadcast_includes_session_cookies(
+    def test_proxy_broadcast_excludes_cookies(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
     ) -> None:
-        """Cookies from the stored session are embedded in the proxy-fetch broadcast."""
+        """Cookies must never appear in the proxy-fetch WS broadcast payload."""
         import threading
 
         cookies = [{"name": "js_logged_in", "value": "1", "domain": ".bandcamp.com"}]
@@ -1733,7 +1733,8 @@ class TestBandcampProxyEndpoints:
             )
             t.join(timeout=5)
 
-        assert broadcast["cookies"] == cookies
+        # Cookies must not be broadcast — Electron fetches /session-cookies directly.
+        assert "cookies" not in broadcast
 
     def test_late_joining_client_receives_pending_proxy_fetch(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
