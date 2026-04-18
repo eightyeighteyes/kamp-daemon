@@ -1,10 +1,10 @@
 ---
 id: TASK-130
 title: update github actions to use node 24
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-14 03:22'
-updated_date: '2026-04-18 17:14'
+updated_date: '2026-04-18 23:05'
 labels:
   - chore
   - ci
@@ -12,6 +12,7 @@ labels:
 milestone: m-29
 dependencies: []
 priority: high
+ordinal: 5000
 ---
 
 ## Description
