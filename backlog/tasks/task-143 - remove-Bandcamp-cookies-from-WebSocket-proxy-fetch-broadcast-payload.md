@@ -1,10 +1,10 @@
 ---
 id: TASK-143
 title: remove Bandcamp cookies from WebSocket proxy-fetch broadcast payload
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-18 18:01'
-updated_date: '2026-04-18 18:12'
+updated_date: '2026-04-18 22:56'
 labels:
   - security
   - chore
@@ -14,6 +14,7 @@ dependencies: []
 references:
   - doc-1 - Database Security Audit — v1.11.0 (FINDING-01)
 priority: high
+ordinal: 4000
 ---
 
 ## Description
