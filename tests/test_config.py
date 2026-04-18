@@ -1,119 +1,162 @@
-"""Tests for kamp_daemon.config."""
+"""Tests for kamp_daemon.config (DB-backed configuration)."""
 
 from pathlib import Path
 
 import pytest
 
+from kamp_core.library import LibraryIndex
 from kamp_daemon.config import (
-    DEFAULT_CONFIG_CONTENT,
+    _CONFIG_DEFAULTS,
     Config,
     LastfmConfig,
+    BandcampConfig,
     config_set,
     config_show,
 )
 
 
-class TestFirstRunSetup:
-    def test_creates_config_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """first_run_setup writes a TOML file at the given path."""
-        inputs = iter(["~/staging", "~/music"])
-        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-        path = tmp_path / "config.toml"
-        Config.first_run_setup(path)
-        assert path.exists()
-        assert "watch_folder" in path.read_text()
+@pytest.fixture()
+def db(tmp_path: Path) -> LibraryIndex:
+    """Return a fresh LibraryIndex backed by a temp DB."""
+    index = LibraryIndex(tmp_path / "library.db")
+    yield index
+    index.close()
 
-    def test_returns_config_with_user_values(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+
+# ---------------------------------------------------------------------------
+# Config.write_defaults / Config.load
+# ---------------------------------------------------------------------------
+
+
+class TestWriteDefaults:
+    def test_writes_all_13_keys(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        settings = db.get_all_settings()
+        assert len(settings) == len(_CONFIG_DEFAULTS)
+        for key in _CONFIG_DEFAULTS:
+            assert key in settings
+
+    def test_does_not_overwrite_existing_keys(self, db: LibraryIndex) -> None:
+        db.set_setting("paths.watch_folder", "/custom/staging")
+        Config.write_defaults(db)
+        assert db.get_setting("paths.watch_folder") == "/custom/staging"
+
+
+class TestLoad:
+    def test_load_with_defaults(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config = Config.load(db)
+        assert config.paths.watch_folder == Path("~/Music/staging").expanduser()
+        assert config.paths.library == Path("~/Music").expanduser()
+        assert config.musicbrainz.trust_musicbrainz_when_tags_conflict is True
+        assert config.artwork.min_dimension == 1000
+        assert config.artwork.max_bytes == 1_000_000
+        assert config.bandcamp is not None
+        assert config.bandcamp.format == "mp3-v0"
+        assert config.bandcamp.poll_interval_minutes == 0
+        assert config.lastfm is None
+        assert config.ui.active_view == "library"
+        assert config.ui.sort_order == "album_artist"
+        assert config.ui.queue_panel_open == 0
+
+    def test_load_raises_when_no_config_and_no_toml(
+        self, db: LibraryIndex, tmp_path: Path
     ) -> None:
-        """Returned Config reflects the prompted values."""
+        with pytest.raises(FileNotFoundError):
+            Config.load(db, legacy_config_path=tmp_path / "nonexistent.toml")
+
+    def test_load_respects_custom_values(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        db.set_setting("paths.watch_folder", "/my/staging")
+        db.set_setting("artwork.min_dimension", "500")
+        config = Config.load(db)
+        assert str(config.paths.watch_folder) == "/my/staging"
+        assert config.artwork.min_dimension == 500
+
+    def test_load_backfills_new_keys(self, db: LibraryIndex) -> None:
+        # Simulate a DB from an older release missing a key.
+        db.set_setting("paths.watch_folder", "/staging")
+        db.set_setting("paths.library", "/library")
+        # Missing all other keys — load() should back-fill defaults.
+        config = Config.load(db)
+        assert config.artwork.min_dimension == 1000
+
+    def test_load_lastfm_when_session_key_present(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        db.set_setting("lastfm.username", "myuser")
+        db.set_setting("lastfm.session_key", "mysecret")
+        config = Config.load(db)
+        assert config.lastfm is not None
+        assert isinstance(config.lastfm, LastfmConfig)
+        assert config.lastfm.username == "myuser"
+        assert config.lastfm.session_key == "mysecret"
+
+    def test_load_lastfm_none_when_session_key_empty(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        db.set_setting("lastfm.session_key", "")
+        config = Config.load(db)
+        assert config.lastfm is None
+
+
+# ---------------------------------------------------------------------------
+# first_run_setup / bandcamp_setup
+# ---------------------------------------------------------------------------
+
+
+class TestFirstRunSetup:
+    def test_returns_config_with_user_values(
+        self, db: LibraryIndex, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         inputs = iter(["~/staging", "~/lib"])
         monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-        config = Config.first_run_setup(tmp_path / "config.toml")
-        assert "staging" in str(config.paths.watch_folder)  # user typed ~/staging
+        config = Config.first_run_setup(db)
+        assert "staging" in str(config.paths.watch_folder)
         assert "lib" in str(config.paths.library)
 
     def test_blank_input_uses_default(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, db: LibraryIndex, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Pressing Enter at a prompt accepts the shown default."""
         monkeypatch.setattr("builtins.input", lambda _: "")
-        config = Config.first_run_setup(tmp_path / "config.toml")
+        config = Config.first_run_setup(db)
         assert config.paths.watch_folder == Path("~/Music/staging").expanduser()
         assert config.paths.library == Path("~/Music").expanduser()
 
-    def test_written_toml_is_valid(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_writes_all_defaults_to_db(
+        self, db: LibraryIndex, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The written TOML file can be loaded back by Config.load()."""
-        inputs = iter(["~/staging", "~/music"])
-        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-        path = tmp_path / "config.toml"
-        Config.first_run_setup(path)
-        # Round-trip: load should succeed without error
-        loaded = Config.load(path)
-        assert "staging" in str(loaded.paths.watch_folder)
-
-    def test_creates_parent_directories(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """first_run_setup creates intermediate directories if needed."""
         monkeypatch.setattr("builtins.input", lambda _: "")
-        path = tmp_path / "nested" / "dir" / "config.toml"
-        Config.first_run_setup(path)
-        assert path.exists()
+        Config.first_run_setup(db)
+        settings = db.get_all_settings()
+        assert len(settings) == len(_CONFIG_DEFAULTS)
 
-
-def _base_config(tmp_path: Path) -> Path:
-    """Write a minimal valid config (without [bandcamp]) and return its path."""
-    path = tmp_path / "config.toml"
-    path.write_text(
-        DEFAULT_CONFIG_CONTENT.replace('"~/Music/staging"', '"/staging"').replace(
-            '"~/Music"', '"/library"'
-        )
-    )
-    return path
+    def test_setup_then_load_round_trips(
+        self, db: LibraryIndex, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        inputs = iter(["~/staging2", "~/lib2"])
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+        Config.first_run_setup(db)
+        config = Config.load(db)
+        assert "staging2" in str(config.paths.watch_folder)
+        assert "lib2" in str(config.paths.library)
 
 
 class TestBandcampSetup:
-    def test_appends_bandcamp_section_to_existing_config(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_writes_format_and_poll_interval(
+        self, db: LibraryIndex, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """bandcamp_setup appends [bandcamp] without clobbering existing content."""
-        path = _base_config(tmp_path)
-        # username is no longer prompted — inputs: cookie_file, format, poll_interval
-        inputs = iter(["", "mp3-320", "60"])
+        Config.write_defaults(db)
+        inputs = iter(["mp3-320", "60"])
         monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-
-        config = Config.bandcamp_setup(path)
-
+        config = Config.bandcamp_setup(db)
         assert config.bandcamp is not None
-        # username is None at setup time; extracted automatically after login
-        assert config.bandcamp.username is None
         assert config.bandcamp.format == "mp3-320"
         assert config.bandcamp.poll_interval_minutes == 60
-        assert config.bandcamp.cookie_file is None
-        assert "[paths]" in path.read_text()
-
-    def test_returns_config_with_cookie_file_when_provided(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """cookie_file is written and parsed when the user provides a path."""
-        path = _base_config(tmp_path)
-        inputs = iter(["/tmp/cookie", "mp3-v0", "0"])
-        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-
-        config = Config.bandcamp_setup(path)
-
-        assert config.bandcamp is not None
-        assert config.bandcamp.cookie_file == Path("/tmp/cookie")
 
 
 # ---------------------------------------------------------------------------
-# config_show / config_set tests
+# TOML migration
 # ---------------------------------------------------------------------------
+
 
 _TOML_WITH_BANDCAMP = """\
 [paths]
@@ -121,10 +164,10 @@ watch_folder = "~/Music/staging"
 library = "~/Music"
 
 [musicbrainz]
-contact = "user@example.com"  # Update with your contact email
+contact = "user@example.com"
 
 [artwork]
-min_dimension = 1000   # minimum width and height in pixels
+min_dimension = 1000
 max_bytes = 1000000
 
 [library]
@@ -132,180 +175,10 @@ path_template = "{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}"
 
 [bandcamp]
 username = "myuser"
+cookie_file = "/tmp/cookies.txt"
 format = "mp3-v0"
 poll_interval_minutes = 60
 """
-
-
-class TestConfigShow:
-    def test_show_includes_section_headers(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_BANDCAMP)
-        output = config_show(path)
-        assert "[paths]" in output
-        assert "[musicbrainz]" in output
-        assert "[artwork]" in output
-
-    def test_show_includes_key_value_pairs(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_BANDCAMP)
-        output = config_show(path)
-        assert "staging" in output
-        assert "user@example.com" in output
-
-    def test_show_includes_bandcamp_when_present(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_BANDCAMP)
-        output = config_show(path)
-        assert "[bandcamp]" in output
-        assert "myuser" in output
-
-    def test_show_omits_bandcamp_when_absent(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        output = config_show(path)
-        assert "bandcamp" not in output
-
-
-class TestConfigSet:
-    def test_set_string_key_updates_value(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        config_set(path, "paths.watch_folder", "~/new/staging")
-        assert "~/new/staging" in path.read_text()
-
-    def test_set_int_key_updates_value(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        config_set(path, "artwork.min_dimension", "500")
-        text = path.read_text()
-        assert "min_dimension = 500" in text
-
-    def test_set_preserves_other_keys(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        config_set(path, "paths.watch_folder", "~/new/staging")
-        text = path.read_text()
-        assert "library" in text
-        assert "path_template" in text
-
-    def test_set_preserves_comments(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        config_set(path, "paths.watch_folder", "~/new/staging")
-        # Comments on other lines must survive
-        assert "# Available variables" in path.read_text()
-
-    def test_set_unknown_key_raises_key_error(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        with pytest.raises(KeyError, match="Unknown config key"):
-            config_set(path, "paths.nonexistent", "x")
-
-    def test_set_wrong_type_raises_value_error(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        with pytest.raises(ValueError, match="requires an integer"):
-            config_set(path, "artwork.min_dimension", "not-an-int")
-
-    def test_set_bandcamp_key_on_missing_section_raises(self, tmp_path: Path) -> None:
-        """config_set raises KeyError when [bandcamp] section is not in the file."""
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        with pytest.raises(KeyError, match="bandcamp"):
-            config_set(path, "bandcamp.username", "foo")
-
-    def test_set_ui_key_on_missing_section_appends_section(
-        self, tmp_path: Path
-    ) -> None:
-        """config_set appends [ui] when absent instead of raising (existing configs)."""
-        path = tmp_path / "config.toml"
-        # Simulate a config file that predates the [ui] section.
-        path.write_text(DEFAULT_CONFIG_CONTENT.split("\n[ui]")[0])
-        config_set(path, "ui.active_view", "now-playing")
-        loaded = Config.load(path)
-        assert loaded.ui.active_view == "now-playing"
-
-    def test_round_trip_load_after_set(self, tmp_path: Path) -> None:
-        """Config.load() succeeds and reflects the new value after config_set."""
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        config_set(path, "paths.watch_folder", "~/round/trip")
-        loaded = Config.load(path)
-        assert "round/trip" in str(loaded.paths.watch_folder)
-
-    def test_set_path_value_round_trips(self, tmp_path: Path) -> None:
-        """A path set via config_set is written as a string and loaded back correctly."""
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        config_set(path, "paths.watch_folder", "~/new/staging")
-        loaded = Config.load(path)
-        assert "new/staging" in str(loaded.paths.watch_folder)
-
-    def test_set_field_missing_from_section_appends_key(self, tmp_path: Path) -> None:
-        """config_set appends a missing key into an existing non-optional section.
-
-        This handles configs that predate a new field (e.g. ui.sort_order added
-        after the user's config was created).
-        """
-        path = tmp_path / "config.toml"
-        path.write_text("[artwork]\nmax_bytes = 1000000\n")
-        config_set(path, "artwork.min_dimension", "500")
-        assert "min_dimension = 500" in path.read_text()
-
-    def test_set_ui_sort_order_on_config_missing_the_key(self, tmp_path: Path) -> None:
-        """config_set appends ui.sort_order when [ui] exists but lacks the key."""
-        path = tmp_path / "config.toml"
-        # Simulate a config that has [ui] with only active_view (pre-TASK-58)
-        path.write_text('[ui]\nactive_view = "library"\n')
-        config_set(path, "ui.sort_order", "last_played")
-        loaded_text = path.read_text()
-        assert 'sort_order = "last_played"' in loaded_text
-        # active_view must be untouched
-        assert 'active_view = "library"' in loaded_text
-
-    def test_set_does_not_clobber_same_fieldname_in_other_section(
-        self, tmp_path: Path
-    ) -> None:
-        """Setting a key only modifies the correct section."""
-        # Verify that setting paths.library doesn't touch library.path_template.
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        config_set(path, "paths.library", "~/NewLib")
-        text = path.read_text()
-        assert "path_template" in text  # library section untouched
-        assert "~/NewLib" in text
-
-    def test_set_bandcamp_format_valid_value_succeeds(self, tmp_path: Path) -> None:
-        """config_set accepts a valid bandcamp.format value."""
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_BANDCAMP)
-        config_set(path, "bandcamp.format", "flac")
-        assert 'format = "flac"' in path.read_text()
-
-    def test_set_bandcamp_format_invalid_value_raises(self, tmp_path: Path) -> None:
-        """config_set rejects an unrecognised bandcamp.format value."""
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_BANDCAMP)
-        with pytest.raises(ValueError, match="Invalid value 'm5q'"):
-            config_set(path, "bandcamp.format", "m5q")
-
-    def test_set_bandcamp_format_error_lists_valid_choices(
-        self, tmp_path: Path
-    ) -> None:
-        """The ValueError message includes the supported formats."""
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_BANDCAMP)
-        with pytest.raises(ValueError, match="mp3-v0"):
-            config_set(path, "bandcamp.format", "bad")
-
-    def test_set_lastfm_key_on_missing_section_raises(self, tmp_path: Path) -> None:
-        """config_set raises when [lastfm] section is absent (optional section)."""
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        with pytest.raises(KeyError):
-            config_set(path, "lastfm.session_key", "abc123")
-
 
 _TOML_WITH_LASTFM = """\
 [paths]
@@ -328,80 +201,192 @@ session_key = "abc123sessionkey"
 """
 
 
-class TestLastfmConfig:
-    def test_load_parses_lastfm_section(self, tmp_path: Path) -> None:
-        """Config.load() populates lastfm when the [lastfm] section is present."""
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_LASTFM)
-        config = Config.load(path)
+class TestTomlMigration:
+    def test_migrates_from_toml_when_settings_empty(
+        self, db: LibraryIndex, tmp_path: Path
+    ) -> None:
+        """Fresh DB + existing config.toml → settings populated on first load."""
+        toml_path = tmp_path / "config.toml"
+        toml_path.write_text(_TOML_WITH_BANDCAMP)
+        config = Config.load(db, legacy_config_path=toml_path)
+        assert str(config.paths.watch_folder).endswith("Music/staging")
+        assert config.bandcamp is not None
+        assert config.bandcamp.format == "mp3-v0"
+        assert config.bandcamp.poll_interval_minutes == 60
+
+    def test_deprecated_keys_dropped_during_migration(
+        self, db: LibraryIndex, tmp_path: Path
+    ) -> None:
+        """bandcamp.username and bandcamp.cookie_file are not migrated."""
+        toml_path = tmp_path / "config.toml"
+        toml_path.write_text(_TOML_WITH_BANDCAMP)
+        Config.load(db, legacy_config_path=toml_path)
+        assert db.get_setting("bandcamp.username") is None
+        assert db.get_setting("bandcamp.cookie_file") is None
+
+    def test_all_13_active_keys_present_after_migration(
+        self, db: LibraryIndex, tmp_path: Path
+    ) -> None:
+        toml_path = tmp_path / "config.toml"
+        toml_path.write_text(_TOML_WITH_BANDCAMP)
+        Config.load(db, legacy_config_path=toml_path)
+        settings = db.get_all_settings()
+        from kamp_daemon.config import _CONFIG_KEY_TYPES
+
+        for key in _CONFIG_KEY_TYPES:
+            assert key in settings, f"Missing key after migration: {key}"
+
+    def test_toml_not_read_again_when_settings_populated(
+        self, db: LibraryIndex, tmp_path: Path
+    ) -> None:
+        """Once settings are in the DB, the TOML file is ignored."""
+        toml_path = tmp_path / "config.toml"
+        toml_path.write_text(_TOML_WITH_BANDCAMP)
+        Config.load(db, legacy_config_path=toml_path)
+
+        # Write a different value to the DB.
+        db.set_setting("artwork.min_dimension", "9999")
+        # Delete the TOML so any re-read would crash.
+        toml_path.unlink()
+
+        config = Config.load(db, legacy_config_path=toml_path)
+        assert config.artwork.min_dimension == 9999
+
+    def test_migrates_lastfm_section(self, db: LibraryIndex, tmp_path: Path) -> None:
+        toml_path = tmp_path / "config.toml"
+        toml_path.write_text(_TOML_WITH_LASTFM)
+        config = Config.load(db, legacy_config_path=toml_path)
         assert config.lastfm is not None
-        assert isinstance(config.lastfm, LastfmConfig)
         assert config.lastfm.username == "myuser"
         assert config.lastfm.session_key == "abc123sessionkey"
 
-    def test_load_lastfm_none_when_section_absent(self, tmp_path: Path) -> None:
-        """Config.load() returns lastfm=None when [lastfm] section is missing."""
-        path = tmp_path / "config.toml"
-        path.write_text(DEFAULT_CONFIG_CONTENT)
-        config = Config.load(path)
-        assert config.lastfm is None
-
-    def test_load_lastfm_none_when_session_key_empty(self, tmp_path: Path) -> None:
-        """Config.load() returns lastfm=None when session_key is empty string."""
-        path = tmp_path / "config.toml"
-        path.write_text(
-            _TOML_WITH_LASTFM.replace(
-                'session_key = "abc123sessionkey"', 'session_key = ""'
-            )
-        )
-        config = Config.load(path)
-        assert config.lastfm is None
-
-    def test_config_set_lastfm_username(self, tmp_path: Path) -> None:
-        """config_set can update lastfm.username when [lastfm] section exists."""
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_LASTFM)
-        config_set(path, "lastfm.username", "newuser")
-        assert 'username = "newuser"' in path.read_text()
-
-    def test_config_set_lastfm_session_key(self, tmp_path: Path) -> None:
-        """config_set can update lastfm.session_key when [lastfm] section exists."""
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_LASTFM)
-        config_set(path, "lastfm.session_key", "newkey")
-        assert 'session_key = "newkey"' in path.read_text()
-
-
-class TestLegacyConfig:
-    def test_load_succeeds_with_legacy_contact_key(self, tmp_path: Path) -> None:
-        """Existing config.toml files with musicbrainz.contact load without error."""
-        path = tmp_path / "config.toml"
-        path.write_text(_TOML_WITH_BANDCAMP)  # _TOML_WITH_BANDCAMP has contact = "..."
-        config = Config.load(path)
-        assert config.musicbrainz is not None
-
-    def test_load_accepts_legacy_staging_key(self, tmp_path: Path) -> None:
-        """Existing config.toml files with paths.staging load without modification."""
-        path = tmp_path / "config.toml"
-        path.write_text(
-            _TOML_WITH_BANDCAMP.replace(
-                'watch_folder = "~/Music/staging"',
-                'staging = "~/Music/staging"',
-            )
-        )
-        config = Config.load(path)
-        assert config.paths.watch_folder == Path("~/Music/staging").expanduser()
-
-    def test_load_watch_folder_takes_precedence_over_legacy_staging(
-        self, tmp_path: Path
+    def test_migrates_legacy_staging_key(
+        self, db: LibraryIndex, tmp_path: Path
     ) -> None:
-        """When both keys are present, watch_folder wins over the legacy staging key."""
-        path = tmp_path / "config.toml"
-        path.write_text(
+        """The legacy paths.staging key is migrated to paths.watch_folder."""
+        toml_path = tmp_path / "config.toml"
+        toml_path.write_text(
             _TOML_WITH_BANDCAMP.replace(
-                'watch_folder = "~/Music/staging"',
-                'watch_folder = "~/Music/watch"\nstaging = "~/Music/staging"',
+                'watch_folder = "~/Music/staging"', 'staging = "~/Music/staging"'
             )
         )
-        config = Config.load(path)
-        assert config.paths.watch_folder == Path("~/Music/watch").expanduser()
+        config = Config.load(db, legacy_config_path=toml_path)
+        assert str(config.paths.watch_folder).endswith("Music/staging")
+
+
+# ---------------------------------------------------------------------------
+# config_show
+# ---------------------------------------------------------------------------
+
+
+class TestConfigShow:
+    def test_includes_all_section_headers(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        output = config_show(db)
+        assert "[paths]" in output
+        assert "[musicbrainz]" in output
+        assert "[artwork]" in output
+        assert "[library]" in output
+        assert "[bandcamp]" in output
+        assert "[lastfm]" in output
+        assert "[ui]" in output
+
+    def test_includes_key_value_pairs(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        output = config_show(db)
+        assert "watch_folder" in output
+        assert "min_dimension" in output
+
+    def test_shows_updated_value_after_set(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "artwork.min_dimension", "500")
+        output = config_show(db)
+        assert "500" in output
+
+
+# ---------------------------------------------------------------------------
+# config_set
+# ---------------------------------------------------------------------------
+
+
+class TestConfigSet:
+    def test_set_string_key(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "paths.watch_folder", "/new/staging")
+        assert db.get_setting("paths.watch_folder") == "/new/staging"
+
+    def test_set_int_key(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "artwork.min_dimension", "500")
+        assert db.get_setting("artwork.min_dimension") == "500"
+
+    def test_set_bool_key(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "musicbrainz.trust-musicbrainz-when-tags-conflict", "false")
+        assert (
+            db.get_setting("musicbrainz.trust-musicbrainz-when-tags-conflict")
+            == "false"
+        )
+
+    def test_round_trip_load_after_set(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "paths.watch_folder", "~/round/trip")
+        config = Config.load(db)
+        assert "round/trip" in str(config.paths.watch_folder)
+
+    def test_unknown_key_raises_key_error(self, db: LibraryIndex) -> None:
+        with pytest.raises(KeyError, match="Unknown config key"):
+            config_set(db, "paths.nonexistent", "x")
+
+    def test_wrong_type_raises_value_error(self, db: LibraryIndex) -> None:
+        with pytest.raises(ValueError, match="requires an integer"):
+            config_set(db, "artwork.min_dimension", "not-an-int")
+
+    def test_bool_wrong_value_raises_value_error(self, db: LibraryIndex) -> None:
+        with pytest.raises(ValueError, match="requires true or false"):
+            config_set(db, "musicbrainz.trust-musicbrainz-when-tags-conflict", "yes")
+
+    def test_bandcamp_format_valid_value_succeeds(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "bandcamp.format", "flac")
+        assert db.get_setting("bandcamp.format") == "flac"
+
+    def test_bandcamp_format_invalid_value_raises(self, db: LibraryIndex) -> None:
+        with pytest.raises(ValueError, match="Invalid value 'm5q'"):
+            config_set(db, "bandcamp.format", "m5q")
+
+    def test_bandcamp_format_error_lists_valid_choices(self, db: LibraryIndex) -> None:
+        with pytest.raises(ValueError, match="mp3-v0"):
+            config_set(db, "bandcamp.format", "bad")
+
+    def test_ui_active_view_valid(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "ui.active_view", "now-playing")
+        config = Config.load(db)
+        assert config.ui.active_view == "now-playing"
+
+    def test_ui_sort_order_valid(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "ui.sort_order", "last_played")
+        config = Config.load(db)
+        assert config.ui.sort_order == "last_played"
+
+    def test_deprecated_username_raises(self, db: LibraryIndex) -> None:
+        with pytest.raises(KeyError, match="deprecated"):
+            config_set(db, "bandcamp.username", "foo")
+
+    def test_deprecated_cookie_file_raises(self, db: LibraryIndex) -> None:
+        with pytest.raises(KeyError, match="deprecated"):
+            config_set(db, "bandcamp.cookie_file", "/tmp/cookies.txt")
+
+    def test_set_lastfm_username(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "lastfm.username", "newuser")
+        assert db.get_setting("lastfm.username") == "newuser"
+
+    def test_set_lastfm_session_key(self, db: LibraryIndex) -> None:
+        Config.write_defaults(db)
+        config_set(db, "lastfm.session_key", "newkey")
+        config = Config.load(db)
+        assert config.lastfm is not None
+        assert config.lastfm.session_key == "newkey"

@@ -96,38 +96,36 @@ playwright install chromium
 
 ## Configuration
 
-On first run, kamp creates a config file with defaults at:
+All configuration is stored in the SQLite database alongside library and playback state (`~/.local/share/kamp/library.db` on macOS/Linux; `%LOCALAPPDATA%\kamp\library.db` on Windows). On first run, kamp prompts for watch folder and library paths and writes defaults for all other settings.
 
-| Platform | Path |
-|---|---|
-| macOS / Linux | `~/.config/kamp/config.toml` |
-| Windows | `%APPDATA%\kamp\config.toml` |
+If you have an existing `config.toml` from a prior install, kamp migrates it automatically on the first startup and leaves the file in place as a backup.
 
-Edit it before starting:
+### View or update from the command line
 
-```toml
-[paths]
-watch_folder = "~/Music/staging"   # drop ZIPs/folders here for automatic ingest
-library = "~/Music"           # finished files land here
-
-[musicbrainz]
-# trust-musicbrainz-when-tags-conflict = true
-
-[artwork]
-min_dimension = 1000          # minimum cover art width and height in pixels
-max_bytes = 2_000_000         # maximum cover art file size (1 MB)
-
-[library]
-# Variables: {artist} {album_artist} {album} {year} {track} {disc} {title} {ext}
-path_template = "{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}"
-
-# Optional: enable Bandcamp auto-download
-[bandcamp]
-username = "your-bandcamp-username"
-format = "mp3-v0"             # mp3-v0 | mp3-320 | flac
-poll_interval_minutes = 60    # 0 = polling disabled; use `kamp sync` manually
-# cookie_file = "~/.config/kamp/cookies.txt"  # advanced: bypass interactive login
+```bash
+kamp config show
+kamp config set paths.watch_folder ~/Downloads/staging
+kamp config set artwork.min_dimension 500
+kamp config set bandcamp.format flac
 ```
+
+Available keys:
+
+| Key | Type | Default |
+|-----|------|---------|
+| `paths.watch_folder` | string | `~/Music/staging` |
+| `paths.library` | string | `~/Music` |
+| `musicbrainz.trust-musicbrainz-when-tags-conflict` | bool | `true` |
+| `artwork.min_dimension` | int | `1000` |
+| `artwork.max_bytes` | int | `1000000` |
+| `library.path_template` | string | `{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}` |
+| `bandcamp.format` | string | `mp3-v0` |
+| `bandcamp.poll_interval_minutes` | int | `0` |
+| `lastfm.username` | string | — |
+| `lastfm.session_key` | string | — |
+| `ui.active_view` | string | `library` |
+| `ui.sort_order` | string | `album_artist` |
+| `ui.queue_panel_open` | int | `0` |
 
 ---
 
@@ -141,7 +139,7 @@ kamp
 kamp daemon
 ```
 
-Watches the watch folder for new ZIPs and folders, and (if `[bandcamp]` is configured) polls Bandcamp for new purchases on the configured interval.
+Watches the watch folder for new ZIPs and folders, and polls Bandcamp for new purchases on the configured interval (set `bandcamp.poll_interval_minutes` to 0 to disable polling).
 
 Override paths without editing the config:
 
@@ -156,7 +154,7 @@ On macOS the daemon shows a `music.note.list` status-bar icon by default. The me
 | Item | Action |
 |---|---|
 | **Stop / Play** | Pause or resume the ingest pipeline without stopping the process |
-| **Bandcamp Sync** | Trigger an immediate sync; grayed out if `[bandcamp]` is not configured |
+| **Bandcamp Sync** | Trigger an immediate sync; requires Bandcamp login |
 | **Sync Status** | Read-only: "Status: Idle" or "Status: Syncing…" (icon pulses during sync) |
 | **Bandcamp Logout** | Delete the saved session and sync state; the next sync will re-authenticate |
 | **About Tune-Shifter** | Opens the project GitHub page |
@@ -191,16 +189,6 @@ kamp uninstall-service # remove it permanently
 ### Preferences dialog (UI)
 
 Open the Preferences dialog from **kamp → Preferences** in the macOS menu bar, or with **Cmd+,** (macOS) / **Ctrl+,** (Linux/Windows). Changes take effect immediately — no Apply or OK button. Settings marked **↺ restart** require restarting the kamp server to take effect.
-
-### View or update config from the command line
-
-```bash
-kamp config show
-kamp config set paths.watch_folder ~/Downloads/staging
-kamp config set artwork.min_dimension 500
-```
-
-Keys use dot notation (`section.field`). Run `kamp config set --help` to see all valid keys.
 
 ### Test notifications (macOS)
 

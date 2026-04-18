@@ -29,12 +29,7 @@ def _make_config(tmp_path: Path, poll_interval: int = 0) -> Config:
         library=LibraryConfig(
             path_template="{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}"
         ),
-        bandcamp=BandcampConfig(
-            username="user",
-            cookie_file=None,
-            format="mp3-v0",
-            poll_interval_minutes=poll_interval,
-        ),
+        bandcamp=BandcampConfig(format="mp3-v0", poll_interval_minutes=poll_interval),
     )
 
 

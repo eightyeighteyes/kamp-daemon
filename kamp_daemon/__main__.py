@@ -84,7 +84,10 @@ def main() -> None:
         metavar="PATH",
         type=Path,
         default=DEFAULT_CONFIG_PATH,
-        help=f"Path to config file (default: {DEFAULT_CONFIG_PATH})",
+        help=(
+            f"Legacy config.toml path used for one-time migration (default: {DEFAULT_CONFIG_PATH}). "
+            "Configuration is now stored in the SQLite database."
+        ),
     )
     parser.add_argument(
         "--log-level",
@@ -297,21 +300,24 @@ def main() -> None:
         _cmd_test_notify(getattr(args, "type"))
         return
 
+    from kamp_core.library import LibraryIndex as _LibraryIndex
+
+    _init_db = _LibraryIndex(_state_dir() / "library.db")
     try:
-        config = Config.load(args.config)
+        config = Config.load(_init_db, legacy_config_path=args.config)
     except FileNotFoundError:
         if sys.stdin.isatty():
-            config = Config.first_run_setup(args.config)
+            config = Config.first_run_setup(_init_db)
         else:
-            # Non-interactive (script/service): default file was already written
-            # by Config.load(); print guidance and exit.
             print(
-                f"Config file created at {args.config}. "
-                "Edit it with your watch folder and library paths, "
-                "then re-run kamp.",
+                "No configuration found. Run kamp interactively to complete setup.",
                 file=sys.stderr,
             )
+            _init_db.close()
             sys.exit(1)
+    finally:
+        # Close the init DB; each long-running command opens its own connection.
+        _init_db.close()
 
     # app_name, app_version, and contact are not user-configurable — hardcoded
     # here so the User-Agent we send to MusicBrainz always accurately identifies
@@ -326,7 +332,6 @@ def main() -> None:
         library_override = getattr(args, "library", None)
         _cmd_server(
             config,
-            config_path=args.config,
             host=args.host,
             port=args.port,
             library_path=library_override,
@@ -334,9 +339,7 @@ def main() -> None:
         return
 
     if command == "sync":
-        _cmd_sync(
-            config, args.config, download_all=getattr(args, "download_all", False)
-        )
+        _cmd_sync(config, download_all=getattr(args, "download_all", False))
     else:
         daemon_command = getattr(args, "daemon_command", None)
         if daemon_command == "pause":
@@ -351,7 +354,6 @@ def main() -> None:
                 config.paths.library = args.library
             _cmd_daemon(
                 config,
-                args.config,
                 menu_bar=not getattr(args, "no_menu_bar", False),
                 host=getattr(args, "host", "127.0.0.1"),
                 port=getattr(args, "port", 8000),
@@ -362,24 +364,24 @@ def main() -> None:
 def _cmd_config(
     args: argparse.Namespace, config_parser: argparse.ArgumentParser
 ) -> None:
+    from kamp_core.library import LibraryIndex
+
     config_command = getattr(args, "config_command", None)
-    if config_command == "show":
-        if not args.config.exists():
-            print(f"No config file found at {args.config}.", file=sys.stderr)
-            sys.exit(1)
-        print(config_show(args.config))
-    elif config_command == "set":
-        if not args.config.exists():
-            print(f"No config file found at {args.config}.", file=sys.stderr)
-            sys.exit(1)
-        try:
-            config_set(args.config, args.key, args.value)
-            print(f"Set {args.key} = {args.value}")
-        except (KeyError, ValueError) as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        config_parser.print_help()
+    db = LibraryIndex(_state_dir() / "library.db")
+    try:
+        if config_command == "show":
+            print(config_show(db))
+        elif config_command == "set":
+            try:
+                config_set(db, args.key, args.value)
+                print(f"Set {args.key} = {args.value}")
+            except (KeyError, ValueError) as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            config_parser.print_help()
+    finally:
+        db.close()
 
 
 def _cmd_rollback(extension_id: str) -> None:
@@ -520,7 +522,6 @@ def _write_test_mp3(path: Path, *, with_mbid: bool = False) -> None:
 
 def _cmd_server(
     config: Config,
-    config_path: Path,
     host: str = "127.0.0.1",
     port: int = 8000,
     library_path: Path | None = None,
@@ -534,7 +535,6 @@ def _cmd_server(
     )
     _cmd_daemon(
         config,
-        config_path,
         menu_bar=False,
         host=host,
         port=port,
@@ -542,19 +542,8 @@ def _cmd_server(
     )
 
 
-def _cmd_sync(config: Config, config_path: Path, download_all: bool = False) -> None:
+def _cmd_sync(config: Config, download_all: bool = False) -> None:
     from .syncer import Syncer  # lazy — keeps playwright out of the .app bundle
-
-    if config.bandcamp is None:
-        if sys.stdin.isatty():
-            config = Config.bandcamp_setup(config_path)
-        else:
-            print(
-                f"No [bandcamp] section in {config_path}. "
-                "Add one manually or run kamp sync interactively.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
 
     syncer = Syncer(config)
     if download_all:
@@ -571,7 +560,6 @@ def _cmd_sync(config: Config, config_path: Path, download_all: bool = False) -> 
 
 def _cmd_daemon(
     config: Config,
-    config_path: Path,
     menu_bar: bool = False,
     host: str = "127.0.0.1",
     port: int = 8000,
@@ -735,35 +723,25 @@ def _cmd_daemon(
 
     threading.Thread(target=_state_saver, daemon=True, name="state-saver").start()
 
-    # Persist library path changes back to config.toml so the next server start
-    # picks up the user's choice without requiring a manual config edit.
     def _on_library_path_set(path: Path) -> None:
-        _config_set(config_path, "paths.library", str(path))
+        _config_set(index, "paths.library", str(path))
 
     def _on_ui_state_set(key: str, value: str) -> None:
-        _config_set(config_path, key, value)
+        _config_set(index, key, value)
 
     def _on_config_set(key: str, value: str) -> None:
         # Raises KeyError / ValueError on invalid key or value — server
         # catches these and returns HTTP 422 to the client.
-        _config_set(config_path, key, value)
+        _config_set(index, key, value)
 
     def _on_lastfm_connect(username: str, password: str) -> None:
         session_key = _lastfm_authenticate(username, password)
-        # Append [lastfm] section if absent — config_set raises for missing optional sections.
-        text = config_path.read_text()
-        if "[lastfm]" not in text:
-            with open(config_path, "a") as f:
-                f.write(
-                    f'\n[lastfm]\nusername = "{username}"\nsession_key = "{session_key}"\n'
-                )
-        else:
-            _config_set(config_path, "lastfm.username", username)
-            _config_set(config_path, "lastfm.session_key", session_key)
+        _config_set(index, "lastfm.username", username)
+        _config_set(index, "lastfm.session_key", session_key)
         _scrobbler_ref[0] = Scrobbler(session_key)
 
     def _on_lastfm_disconnect() -> None:
-        _config_set(config_path, "lastfm.session_key", "")
+        _config_set(index, "lastfm.session_key", "")
         _scrobbler_ref[0] = None
 
     def _on_bandcamp_login_complete(payload: dict[str, object]) -> None:
@@ -789,14 +767,9 @@ def _cmd_daemon(
     def _on_bandcamp_disconnect() -> None:
         index.clear_session("bandcamp")
 
-    # Build the initial preference values dict from the loaded config.
-    # Bandcamp and Last.fm fields are None when the section is absent.
-    # For bandcamp.username, prefer the value stored in the session (extracted
-    # automatically after login) over any value in config.toml.
-    _bc_session = index.get_session("bandcamp") if config.bandcamp else None
-    _bc_username: str | None = (
-        _bc_session.get("username") if _bc_session else None
-    ) or (config.bandcamp.username if config.bandcamp else None)
+    # Bandcamp username comes only from the session (set after Electron login flow).
+    _bc_session = index.get_session("bandcamp")
+    _bc_username: str | None = _bc_session.get("username") if _bc_session else None
     _config_values: dict[str, object] = {
         "paths.watch_folder": str(config.paths.watch_folder),
         "paths.library": str(config.paths.library),
@@ -903,7 +876,7 @@ def _cmd_daemon(
     uv_thread.start()
 
     # --- Start daemon pipeline and block until shutdown ---
-    core = DaemonCore(config, config_path)
+    core = DaemonCore(config)
     if menu_bar and platform.system() == "Darwin":
         from .menu_bar import MenuBarApp
 
@@ -1124,8 +1097,15 @@ def _resolve_mpv_binary() -> str:
 
 
 def _cmd_install_service(config_path: Path, menu_bar: bool = False) -> None:
-    if not config_path.exists():
-        Config.first_run_setup(config_path)
+    from kamp_core.library import LibraryIndex
+
+    db = LibraryIndex(_state_dir() / "library.db")
+    try:
+        settings = db.get_all_settings()
+        if not settings and sys.stdin.isatty():
+            Config.first_run_setup(db)
+    finally:
+        db.close()
     exec_path = _resolve_kamp_binary()
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     menu_bar_arg = "" if menu_bar else "\n        <string>--no-menu-bar</string>"

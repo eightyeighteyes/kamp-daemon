@@ -1,13 +1,25 @@
-"""Configuration loading and defaults for kamp."""
+"""Configuration loading and defaults for kamp.
+
+All application configuration is stored in the SQLite ``settings`` table
+(see TASK-132).  ``config.toml``, if present from a prior install, is read
+once on startup and migrated; afterwards the file is left in place but never
+written again.
+"""
 
 from __future__ import annotations
 
+import logging
 import os
-import re
 import sys
-import tomllib
+import tomllib  # stdlib since 3.11; used only for one-time TOML migration
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from kamp_core.library import LibraryIndex
+
+logger = logging.getLogger(__name__)
 
 
 def _state_dir() -> Path:
@@ -20,7 +32,7 @@ def _state_dir() -> Path:
 
 
 def _default_config_path() -> Path:
-    """Return a platform-appropriate default config file path."""
+    """Return the legacy config.toml path (used only for one-time TOML migration)."""
     if sys.platform == "win32":  # pragma: no cover
         appdata = os.environ.get("APPDATA")
         base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
@@ -28,27 +40,8 @@ def _default_config_path() -> Path:
     return Path("~/.config/kamp/config.toml").expanduser()
 
 
+# Retained for one-time TOML migration and backwards-compat with existing plists.
 DEFAULT_CONFIG_PATH = _default_config_path()
-
-DEFAULT_CONFIG_CONTENT = """\
-[paths]
-watch_folder = "~/Music/staging"   # drop ZIPs/folders here for automatic ingest
-library = "~/Music"
-
-[musicbrainz]
-# trust-musicbrainz-when-tags-conflict = true  # set to false to skip ID3 tags on artist/album mismatch
-
-[artwork]
-min_dimension = 1000   # minimum width and height in pixels
-max_bytes = 1_000_000  # 1 MB
-
-[library]
-# Available variables: {artist}, {album_artist}, {album}, {year}, {track}, {title}, {ext}
-path_template = "{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}"
-
-[ui]
-active_view = "library"  # "library" | "now-playing"
-"""
 
 
 @dataclass
@@ -59,8 +52,7 @@ class PathsConfig:
 
 @dataclass
 class MusicBrainzConfig:
-    # When False: if MB returns artist/album that differs from existing file tags,
-    # log a warning and skip writing ID3 tags (proceed to artwork only).
+    # When False: skip ID3 writes when MB artist/album differs from existing tags.
     trust_musicbrainz_when_tags_conflict: bool = True
 
 
@@ -77,11 +69,9 @@ class LibraryConfig:
 
 @dataclass
 class UiConfig:
-    active_view: str = "library"  # "library" | "now-playing"
-    sort_order: str = (
-        "album_artist"  # "album_artist" | "album" | "date_added" | "last_played"
-    )
-    queue_panel_open: int = 0  # 0 = closed, 1 = open
+    active_view: str = "library"
+    sort_order: str = "album_artist"
+    queue_panel_open: int = 0
 
 
 @dataclass
@@ -92,8 +82,6 @@ class LastfmConfig:
 
 @dataclass
 class BandcampConfig:
-    username: str | None  # extracted from session after login; optional in config
-    cookie_file: Path | None  # if set, bypasses interactive login
     format: str  # e.g. "mp3-v0", "mp3-320", "flac"
     poll_interval_minutes: int  # 0 = manual only
 
@@ -105,6 +93,56 @@ def _prompt(label: str, default: str) -> str:
     except EOFError:
         value = ""
     return value if value else default
+
+
+# Default values for all 13 active config keys (stored as text in the DB).
+_CONFIG_DEFAULTS: dict[str, str] = {
+    "paths.watch_folder": "~/Music/staging",
+    "paths.library": "~/Music",
+    "musicbrainz.trust-musicbrainz-when-tags-conflict": "true",
+    "artwork.min_dimension": "1000",
+    "artwork.max_bytes": "1000000",
+    "library.path_template": "{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}",
+    "bandcamp.format": "mp3-v0",
+    "bandcamp.poll_interval_minutes": "0",
+    "lastfm.username": "",
+    "lastfm.session_key": "",
+    "ui.active_view": "library",
+    "ui.sort_order": "album_artist",
+    "ui.queue_panel_open": "0",
+}
+
+# Explicit allowlist of every settable key with its expected Python type.
+# Drives validation and type coercion in config_set().
+_CONFIG_KEY_TYPES: dict[str, type] = {
+    "paths.watch_folder": str,
+    "paths.library": str,
+    "musicbrainz.trust-musicbrainz-when-tags-conflict": bool,
+    "artwork.min_dimension": int,
+    "artwork.max_bytes": int,
+    "library.path_template": str,
+    "bandcamp.format": str,
+    "bandcamp.poll_interval_minutes": int,
+    "lastfm.username": str,
+    "lastfm.session_key": str,
+    "ui.active_view": str,
+    "ui.sort_order": str,
+    "ui.queue_panel_open": int,
+}
+
+# Keys deprecated in TASK-132; providing them as an argument to config_set() is an error.
+_DEPRECATED_KEYS: frozenset[str] = frozenset(
+    {"bandcamp.username", "bandcamp.cookie_file"}
+)
+
+# Keys whose values must come from a fixed set of choices.
+_CONFIG_KEY_CHOICES: dict[str, frozenset[str]] = {
+    "bandcamp.format": frozenset(
+        {"mp3-v0", "mp3-320", "flac", "aac-hi", "vorbis", "alac", "wav"}
+    ),
+    "ui.active_view": frozenset({"library", "now-playing"}),
+    "ui.sort_order": frozenset({"album_artist", "album", "date_added", "last_played"}),
+}
 
 
 @dataclass
@@ -122,219 +160,251 @@ class Config:
             self.ui = UiConfig()
 
     @classmethod
-    def first_run_setup(cls, path: Path) -> "Config":
-        """Interactively collect key config values, write *path*, and return Config.
+    def first_run_setup(cls, db: "LibraryIndex") -> "Config":
+        """Interactively collect watch folder and library path, write to DB, return Config."""
+        print("\nWelcome to kamp! Let's set up your configuration.\n")
 
-        Prompts for the three fields with no sensible universal default —
-        watch folder, library dir, and MusicBrainz contact email — then writes
-        the TOML file (substituting into DEFAULT_CONFIG_CONTENT to preserve
-        comments and formatting) and returns the ready-to-use Config.
-        """
-        print("\nWelcome to kamp! Let's set up your configuration.")
-        print(f"(Config will be saved to {path})\n")
-
-        watch_folder = Path(
-            _prompt("Watch folder (drop ZIPs/folders here)", "~/Music/staging")
-        ).expanduser()
-        library = Path(
-            _prompt("Library directory (finished files land here)", "~/Music")
-        ).expanduser()
-
-        config = cls(
-            paths=PathsConfig(watch_folder=watch_folder, library=library),
-            musicbrainz=MusicBrainzConfig(),
-            artwork=ArtworkConfig(min_dimension=1000, max_bytes=1_000_000),
-            library=LibraryConfig(
-                path_template="{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}"
-            ),
+        watch_folder = _prompt(
+            "Watch folder (drop ZIPs/folders here)", "~/Music/staging"
         )
+        library = _prompt("Library directory (finished files land here)", "~/Music")
 
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Substitute user values into the canonical TOML template so the file
-        # retains its comments and familiar structure rather than being
-        # machine-generated.  Order matters: watch_folder default contains
-        # "staging" which is a substring of nothing else, but replace the longer
-        # path first to be safe.
-        toml_content = DEFAULT_CONFIG_CONTENT.replace(
-            '"~/Music/staging"', f'"{watch_folder}"'
-        ).replace('"~/Music"', f'"{library}"')
-        path.write_text(toml_content)
-        print(f"\nConfiguration saved to {path}\n")
-        return config
+        cls.write_defaults(db)
+        db.set_setting("paths.watch_folder", watch_folder)
+        db.set_setting("paths.library", library)
+
+        print("\nConfiguration saved.\n")
+        return cls.load(db)
 
     @classmethod
-    def bandcamp_setup(cls, path: Path) -> "Config":
-        """Interactively collect Bandcamp credentials, append to config, and return Config.
+    def bandcamp_setup(cls, db: "LibraryIndex") -> "Config":
+        """Interactively collect Bandcamp preferences, write to DB, return Config."""
+        print("\nLet's set up your Bandcamp preferences.\n")
 
-        Called when sync is run without a [bandcamp] section present.
-        Appends the new section to the existing file so comments and other
-        settings are preserved.
-        """
-        print("\nNo Bandcamp section found in config. Let's set it up.")
-        print(f"(Adding [bandcamp] to {path})\n")
-
-        cookie_file_str = _prompt(
-            "Cookie file path (leave blank to use interactive login)", ""
-        )
         fmt = _prompt("Download format (mp3-v0, mp3-320, flac, …)", "mp3-v0")
         poll_str = _prompt("Poll interval in minutes (0 = manual sync only)", "0")
         poll_interval = int(poll_str) if poll_str.isdigit() else 0
 
-        # Build the TOML snippet — omit cookie_file when not provided;
-        # username is omitted because it is extracted automatically after login.
-        lines = [
-            "\n[bandcamp]",
-        ]
-        if cookie_file_str:
-            lines.append(f'cookie_file = "{cookie_file_str}"')
-        lines += [
-            f'format = "{fmt}"',
-            f"poll_interval_minutes = {poll_interval}",
-            "",  # trailing newline
-        ]
-        with open(path, "a") as f:
-            f.write("\n".join(lines))
+        db.set_setting("bandcamp.format", fmt)
+        db.set_setting("bandcamp.poll_interval_minutes", str(poll_interval))
 
-        print(f"\nBandcamp config saved to {path}\n")
-        return cls.load(path)
+        print("\nBandcamp configuration saved.\n")
+        return cls.load(db)
 
     @classmethod
-    def load(cls, path: Path = DEFAULT_CONFIG_PATH) -> "Config":
-        """Load config from a TOML file, creating it with defaults if absent."""
-        if not path.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(DEFAULT_CONFIG_CONTENT)
-            raise FileNotFoundError(
-                f"Config file created at {path}. "
-                "Please edit it with your watch folder and library paths, "
-                "then re-run kamp."
+    def write_defaults(cls, db: "LibraryIndex") -> None:
+        """Write default values for any keys not yet present in the settings table."""
+        existing = db.get_all_settings()
+        for key, default in _CONFIG_DEFAULTS.items():
+            if key not in existing:
+                db.set_setting(key, default)
+
+    @classmethod
+    def load(
+        cls, db: "LibraryIndex", legacy_config_path: "Path | None" = None
+    ) -> "Config":
+        """Load config from the DB settings table.
+
+        On the first call after a TOML install, if the settings table is empty
+        and the legacy config.toml exists, the file is read once and its values
+        are written to the DB (deprecated keys silently dropped).
+
+        Raises FileNotFoundError when there are no settings and no TOML to migrate from.
+        """
+        existing = db.get_all_settings()
+
+        if not existing:
+            toml_path = (
+                legacy_config_path
+                if legacy_config_path is not None
+                else DEFAULT_CONFIG_PATH
             )
+            if toml_path.exists():
+                existing = _migrate_from_toml(db, toml_path)
 
-        with open(path, "rb") as f:
-            raw = tomllib.load(f)
+            if not existing:
+                raise FileNotFoundError("No configuration found.")
 
-        p = raw["paths"]
-        # paths.staging is the legacy key name; migrate it transparently so
-        # existing config.toml files continue to work without modification.
-        if "watch_folder" not in p and "staging" in p:
-            p = {**p, "watch_folder": p["staging"]}
-        mb = raw["musicbrainz"]
-        art = raw["artwork"]
-        lib = raw["library"]
+        # Back-fill defaults for any keys added after the initial setup
+        # (e.g. when a new config key is introduced in a later release).
+        for key, default in _CONFIG_DEFAULTS.items():
+            if key not in existing:
+                db.set_setting(key, default)
+                existing[key] = default
 
-        bc_raw = raw.get("bandcamp")
-        bandcamp: BandcampConfig | None = None
-        if bc_raw:
-            cf = bc_raw.get("cookie_file")
-            bandcamp = BandcampConfig(
-                username=bc_raw.get("username"),
-                cookie_file=Path(cf).expanduser() if cf else None,
-                format=bc_raw.get("format", "mp3-v0"),
-                poll_interval_minutes=int(bc_raw.get("poll_interval_minutes", 0)),
-            )
+        return cls._from_settings(existing)
 
-        lf_raw = raw.get("lastfm")
+    @classmethod
+    def _from_settings(cls, settings: dict[str, str]) -> "Config":
+        """Build a Config from a flat key→str settings dict."""
+
+        def _get(key: str) -> str:
+            return settings.get(key, _CONFIG_DEFAULTS.get(key, ""))
+
+        def _bool(key: str) -> bool:
+            return _get(key).lower() == "true"
+
+        def _int(key: str) -> int:
+            try:
+                return int(_get(key))
+            except (ValueError, TypeError):
+                return int(_CONFIG_DEFAULTS[key])
+
+        session_key = _get("lastfm.session_key")
         lastfm: LastfmConfig | None = None
-        if lf_raw and lf_raw.get("session_key"):
+        if session_key:
             lastfm = LastfmConfig(
-                username=lf_raw.get("username", ""),
-                session_key=lf_raw["session_key"],
+                username=_get("lastfm.username"),
+                session_key=session_key,
             )
-
-        ui_raw = raw.get("ui", {})
-        ui = UiConfig(
-            active_view=ui_raw.get("active_view", "library"),
-            sort_order=ui_raw.get("sort_order", "album_artist"),
-            queue_panel_open=int(ui_raw.get("queue_panel_open", 0)),
-        )
 
         return cls(
             paths=PathsConfig(
-                watch_folder=Path(p["watch_folder"]).expanduser(),
-                library=Path(p["library"]).expanduser(),
+                watch_folder=Path(_get("paths.watch_folder")).expanduser(),
+                library=Path(_get("paths.library")).expanduser(),
             ),
             musicbrainz=MusicBrainzConfig(
-                trust_musicbrainz_when_tags_conflict=bool(
-                    mb.get("trust-musicbrainz-when-tags-conflict", True)
+                trust_musicbrainz_when_tags_conflict=_bool(
+                    "musicbrainz.trust-musicbrainz-when-tags-conflict"
                 ),
             ),
             artwork=ArtworkConfig(
-                min_dimension=int(art["min_dimension"]),
-                max_bytes=int(art["max_bytes"]),
+                min_dimension=_int("artwork.min_dimension"),
+                max_bytes=_int("artwork.max_bytes"),
             ),
             library=LibraryConfig(
-                path_template=lib["path_template"],
+                path_template=_get("library.path_template"),
             ),
-            bandcamp=bandcamp,
+            bandcamp=BandcampConfig(
+                format=_get("bandcamp.format"),
+                poll_interval_minutes=_int("bandcamp.poll_interval_minutes"),
+            ),
             lastfm=lastfm,
-            ui=ui,
+            ui=UiConfig(
+                active_view=_get("ui.active_view"),
+                sort_order=_get("ui.sort_order"),
+                queue_panel_open=_int("ui.queue_panel_open"),
+            ),
         )
+
+
+def _migrate_from_toml(db: "LibraryIndex", toml_path: Path) -> dict[str, str]:
+    """Read legacy config.toml and populate the settings table.
+
+    Deprecated keys (bandcamp.username, bandcamp.cookie_file) are silently
+    dropped.  Returns the migrated settings dict so the caller can build a
+    Config without a second DB round-trip.
+    """
+    try:
+        with open(toml_path, "rb") as f:
+            raw = tomllib.load(f)
+    except Exception:
+        logger.warning(
+            "Could not read legacy config.toml at %s — skipping migration.", toml_path
+        )
+        return {}
+
+    settings: dict[str, str] = dict(_CONFIG_DEFAULTS)
+
+    p = raw.get("paths", {})
+    if "watch_folder" in p:
+        settings["paths.watch_folder"] = str(p["watch_folder"])
+    elif "staging" in p:  # legacy key name
+        settings["paths.watch_folder"] = str(p["staging"])
+    if "library" in p:
+        settings["paths.library"] = str(p["library"])
+
+    mb = raw.get("musicbrainz", {})
+    if "trust-musicbrainz-when-tags-conflict" in mb:
+        val = mb["trust-musicbrainz-when-tags-conflict"]
+        settings["musicbrainz.trust-musicbrainz-when-tags-conflict"] = (
+            "true" if val else "false"
+        )
+
+    art = raw.get("artwork", {})
+    if "min_dimension" in art:
+        settings["artwork.min_dimension"] = str(art["min_dimension"])
+    if "max_bytes" in art:
+        settings["artwork.max_bytes"] = str(art["max_bytes"])
+
+    lib = raw.get("library", {})
+    if "path_template" in lib:
+        settings["library.path_template"] = str(lib["path_template"])
+
+    bc = raw.get("bandcamp", {})
+    if "format" in bc:
+        settings["bandcamp.format"] = str(bc["format"])
+    if "poll_interval_minutes" in bc:
+        settings["bandcamp.poll_interval_minutes"] = str(
+            int(bc["poll_interval_minutes"])
+        )
+    # bandcamp.username and bandcamp.cookie_file are intentionally not migrated.
+
+    lf = raw.get("lastfm", {})
+    if "username" in lf:
+        settings["lastfm.username"] = str(lf["username"])
+    if "session_key" in lf:
+        settings["lastfm.session_key"] = str(lf["session_key"])
+
+    ui = raw.get("ui", {})
+    if "active_view" in ui:
+        settings["ui.active_view"] = str(ui["active_view"])
+    if "sort_order" in ui:
+        settings["ui.sort_order"] = str(ui["sort_order"])
+    if "queue_panel_open" in ui:
+        settings["ui.queue_panel_open"] = str(int(ui["queue_panel_open"]))
+
+    for key, value in settings.items():
+        db.set_setting(key, value)
+
+    logger.info(
+        "Migrated config.toml → database (deprecated keys dropped); "
+        "file left in place as backup."
+    )
+    return settings
 
 
 # ---------------------------------------------------------------------------
 # CLI config management helpers
 # ---------------------------------------------------------------------------
 
-# Explicit allowlist of every settable key with its expected Python/TOML type.
-# Drives validation and type coercion in config_set(), and ordering in config_show().
-_CONFIG_KEY_TYPES: dict[str, type] = {
-    "paths.watch_folder": str,
-    "paths.library": str,
-    "musicbrainz.trust-musicbrainz-when-tags-conflict": bool,
-    "artwork.min_dimension": int,
-    "artwork.max_bytes": int,
-    "library.path_template": str,
-    "bandcamp.username": str,
-    "bandcamp.cookie_file": str,
-    "bandcamp.format": str,
-    "bandcamp.poll_interval_minutes": int,
-    "lastfm.username": str,
-    "lastfm.session_key": str,
-    "ui.active_view": str,
-    "ui.sort_order": str,
-    "ui.queue_panel_open": int,
-}
 
-# Keys whose values must come from a fixed set of choices.
-_CONFIG_KEY_CHOICES: dict[str, frozenset[str]] = {
-    "bandcamp.format": frozenset(
-        {"mp3-v0", "mp3-320", "flac", "aac-hi", "vorbis", "alac", "wav"}
-    ),
-    "ui.active_view": frozenset({"library", "now-playing"}),
-    "ui.sort_order": frozenset({"album_artist", "album", "date_added", "last_played"}),
-}
+def config_show(db: "LibraryIndex") -> str:
+    """Return a formatted, human-readable representation of all config settings."""
+    settings = db.get_all_settings()
 
-# Sections that must be explicitly added by the user (e.g. via 'kamp sync').
-# Attempting to write a key into one of these when the section is absent raises.
-_OPTIONAL_SECTIONS: frozenset[str] = frozenset({"bandcamp", "lastfm"})
-
-
-def config_show(path: Path) -> str:
-    """Return a formatted, human-readable representation of the config file.
-
-    Reads the raw TOML so values reflect the file exactly (paths not expanded).
-    """
-    with open(path, "rb") as f:
-        raw = tomllib.load(f)
+    sections: dict[str, dict[str, str]] = {}
+    for key in _CONFIG_KEY_TYPES:
+        section, field = key.split(".", 1)
+        value = settings.get(key, _CONFIG_DEFAULTS.get(key, ""))
+        if section not in sections:
+            sections[section] = {}
+        sections[section][field] = value
 
     lines: list[str] = []
-    for section, values in raw.items():
+    for section, fields in sections.items():
         if lines:
             lines.append("")
         lines.append(f"[{section}]")
-        for key, value in values.items():
-            lines.append(f"  {key} = {value}")
+        for field, value in fields.items():
+            lines.append(f"  {field} = {value}")
     return "\n".join(lines)
 
 
-def config_set(path: Path, key: str, value: str) -> None:
-    """Update a single key in the TOML config file.
+def config_set(db: "LibraryIndex", key: str, value: str) -> None:
+    """Update a single config key in the database.
 
     *key* must be a dot-notation string like ``paths.watch_folder`` or
     ``artwork.min_dimension``.  *value* is always provided as a string and
-    coerced to the appropriate type.  Raises KeyError for unknown or missing
-    keys, ValueError for type mismatches.
+    coerced to the appropriate type.  Raises KeyError for unknown or deprecated
+    keys, ValueError for type mismatches or invalid choices.
     """
+    if key in _DEPRECATED_KEYS:
+        raise KeyError(
+            f"Key {key!r} has been deprecated and is no longer supported. "
+            "Bandcamp credentials are managed via 'kamp login'."
+        )
+
     if key not in _CONFIG_KEY_TYPES:
         valid = ", ".join(sorted(_CONFIG_KEY_TYPES))
         raise KeyError(f"Unknown config key {key!r}. Valid keys: {valid}")
@@ -343,13 +413,12 @@ def config_set(path: Path, key: str, value: str) -> None:
     if target_type == bool:
         if value.lower() not in ("true", "false"):
             raise ValueError(f"Key {key!r} requires true or false, got {value!r}")
-        toml_value = value.lower()  # unquoted TOML boolean
+        db_value = value.lower()
     elif target_type == int:
         try:
-            int_value = int(value)
+            db_value = str(int(value))
         except ValueError:
             raise ValueError(f"Key {key!r} requires an integer value, got {value!r}")
-        toml_value = str(int_value)
     else:
         if key in _CONFIG_KEY_CHOICES:
             valid_choices = sorted(_CONFIG_KEY_CHOICES[key])
@@ -358,87 +427,6 @@ def config_set(path: Path, key: str, value: str) -> None:
                     f"Invalid value {value!r} for {key!r}. "
                     f"Supported values: {', '.join(valid_choices)}"
                 )
-        toml_value = f'"{_toml_escape(value)}"'
+        db_value = value
 
-    section, field = key.split(".", 1)
-    text = path.read_text()
-    try:
-        new_text = _replace_in_section(text, section, field, toml_value)
-    except KeyError as exc:
-        msg = str(exc)
-        if "not found in config" in msg and section not in _OPTIONAL_SECTIONS:
-            # Section is standard but absent (e.g. existing config predates this
-            # section). Append it so the value is persisted now and replaced on
-            # future writes once the section exists.
-            path.write_text(text + f"\n[{section}]\n{field} = {toml_value}\n")
-            return
-        if "not found in" in msg and section not in _OPTIONAL_SECTIONS:
-            # Section exists but key is absent (e.g. config predates this field).
-            # Append the key inside the existing section.
-            new_text = _append_to_section(text, section, field, toml_value)
-            path.write_text(new_text)
-            return
-        raise
-    path.write_text(new_text)
-
-
-def _toml_escape(s: str) -> str:
-    """Escape a string for embedding in a TOML double-quoted string."""
-    return s.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def _append_to_section(text: str, section: str, field: str, toml_value: str) -> str:
-    """Append *field = toml_value* at the end of *section* in raw TOML text."""
-    section_re = re.compile(r"^\[" + re.escape(section) + r"\]", re.MULTILINE)
-    section_match = section_re.search(text)
-    assert section_match  # caller guarantees the section exists
-    next_section_re = re.compile(r"^\[[\w-]+\]", re.MULTILINE)
-    next_match = next_section_re.search(text, section_match.end())
-    insert_pos = next_match.start() if next_match else len(text)
-    # Ensure there's a trailing newline before the new key
-    prefix = text[:insert_pos].rstrip("\n") + "\n"
-    suffix = text[insert_pos:]
-    return prefix + f"{field} = {toml_value}\n" + suffix
-
-
-def _replace_in_section(text: str, section: str, field: str, toml_value: str) -> str:
-    """Replace *field*'s value inside *section* in raw TOML text.
-
-    Raises KeyError if the section or field is not found — callers can
-    surface a helpful message pointing users to the right setup command.
-    """
-    # Locate the target [section] header
-    section_re = re.compile(r"^\[" + re.escape(section) + r"\]", re.MULTILINE)
-    section_match = section_re.search(text)
-    if not section_match:
-        raise KeyError(
-            f"Section [{section}] not found in config. "
-            f"Check your config file, or run 'kamp sync' to add optional sections like [bandcamp]."
-        )
-
-    # Find where this section ends: the next [header] or EOF
-    next_section_re = re.compile(r"^\[[\w-]+\]", re.MULTILINE)
-    next_match = next_section_re.search(text, section_match.end())
-    section_end = next_match.start() if next_match else len(text)
-
-    section_slice = text[section_match.end() : section_end]
-
-    # Replace the field's value line within this section only.
-    # Use a lambda to avoid regex backreference interpretation of toml_value.
-    field_re = re.compile(r"^(" + re.escape(field) + r"\s*=\s*).*$", re.MULTILINE)
-    replacement_count = 0
-
-    def _replacer(m: re.Match[str]) -> str:
-        nonlocal replacement_count
-        replacement_count += 1
-        return m.group(1) + toml_value
-
-    new_slice = field_re.sub(_replacer, section_slice, count=1)
-
-    if replacement_count == 0:
-        raise KeyError(
-            f"Key {field!r} not found in [{section}] section. "
-            f"It may need to be added to the config file manually."
-        )
-
-    return text[: section_match.end()] + new_slice + text[section_end:]
+    db.set_setting(key, db_value)
