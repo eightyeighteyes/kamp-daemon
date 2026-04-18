@@ -1,9 +1,10 @@
 ---
 id: TASK-145
 title: checkpoint WAL after clear_session to promptly remove deleted credentials
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-18 18:02'
+updated_date: '2026-04-18 23:14'
 labels:
   - security
   - chore
