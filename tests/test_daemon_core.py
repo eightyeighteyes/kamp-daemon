@@ -20,11 +20,6 @@ def config(tmp_path: Path) -> Config:
 
 
 @pytest.fixture
-def config_path(tmp_path: Path) -> Path:
-    return tmp_path / "config.toml"
-
-
-@pytest.fixture
 def mock_watcher():
     with patch("kamp_daemon.daemon_core.Watcher") as cls:
         yield cls
@@ -33,12 +28,6 @@ def mock_watcher():
 @pytest.fixture
 def mock_syncer():
     with patch("kamp_daemon.daemon_core.KampBandcampSyncer") as cls:
-        yield cls
-
-
-@pytest.fixture
-def mock_monitor():
-    with patch("kamp_daemon.daemon_core.ConfigMonitor") as cls:
         yield cls
 
 
@@ -52,13 +41,11 @@ def mock_pid(tmp_path: Path):
 @pytest.fixture
 def core(
     config: Config,
-    config_path: Path,
     mock_watcher: MagicMock,
     mock_syncer: MagicMock,
-    mock_monitor: MagicMock,
     mock_pid: Path,
 ) -> DaemonCore:
-    return DaemonCore(config, config_path)
+    return DaemonCore(config)
 
 
 class TestInitialState:
@@ -81,12 +68,11 @@ class TestInitialState:
 
 
 class TestStart:
-    def test_starts_watcher_syncer_monitor(
+    def test_starts_watcher_and_syncer(
         self,
         core: DaemonCore,
         mock_watcher: MagicMock,
         mock_syncer: MagicMock,
-        mock_monitor: MagicMock,
         mock_pid: Path,
     ) -> None:
         with patch.object(core, "_install_signal_handlers"):
@@ -94,7 +80,6 @@ class TestStart:
 
         mock_watcher.return_value.start.assert_called_once()
         mock_syncer.return_value.start.assert_called_once()
-        mock_monitor.return_value.start.assert_called_once()
 
     def test_state_becomes_running(self, core: DaemonCore, mock_pid: Path) -> None:
         with patch.object(core, "_install_signal_handlers"):
@@ -120,46 +105,6 @@ class TestStart:
             core.start()
         assert mock_pid.exists()
         assert mock_pid.read_text().strip().isdigit()
-
-    def test_config_reload_propagates_to_watcher_and_syncer(
-        self,
-        config: Config,
-        config_path: Path,
-        mock_watcher: MagicMock,
-        mock_syncer: MagicMock,
-        mock_monitor: MagicMock,
-        mock_pid: Path,
-    ) -> None:
-        core = DaemonCore(config, config_path)
-        with patch.object(core, "_install_signal_handlers"):
-            core.start()
-
-        # Capture the reload callback passed to ConfigMonitor
-        _, reload_cb = mock_monitor.call_args.args
-        new_config = MagicMock(spec=Config)
-        reload_cb(new_config)
-
-        mock_watcher.return_value.reload.assert_called_once_with(new_config)
-        mock_syncer.return_value.reload.assert_called_once_with(new_config)
-
-    def test_config_reload_updates_core_config(
-        self,
-        config: Config,
-        config_path: Path,
-        mock_watcher: MagicMock,
-        mock_syncer: MagicMock,
-        mock_monitor: MagicMock,
-        mock_pid: Path,
-    ) -> None:
-        core = DaemonCore(config, config_path)
-        with patch.object(core, "_install_signal_handlers"):
-            core.start()
-
-        _, reload_cb = mock_monitor.call_args.args
-        new_config = MagicMock(spec=Config)
-        reload_cb(new_config)
-
-        assert core._config is new_config
 
 
 class TestStop:
@@ -209,18 +154,16 @@ class TestResume:
 
 
 class TestShutdown:
-    def test_stops_all_components(
+    def test_stops_watcher_and_syncer(
         self,
         core: DaemonCore,
         mock_watcher: MagicMock,
         mock_syncer: MagicMock,
-        mock_monitor: MagicMock,
         mock_pid: Path,
     ) -> None:
         with patch.object(core, "_install_signal_handlers"):
             core.start()
         core.shutdown()
-        mock_monitor.return_value.stop.assert_called_once()
         mock_syncer.return_value.stop.assert_called_once()
         mock_watcher.return_value.stop.assert_called_once()
 

@@ -52,9 +52,7 @@ def _make_config(tmp_path: Path) -> Config:
         library=LibraryConfig(
             path_template="{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}"
         ),
-        bandcamp=BandcampConfig(
-            username="u", cookie_file=None, format="flac", poll_interval_minutes=0
-        ),
+        bandcamp=BandcampConfig(format="flac", poll_interval_minutes=0),
     )
 
 

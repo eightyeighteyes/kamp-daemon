@@ -41,8 +41,6 @@ from kamp_daemon.config import BandcampConfig
 
 def _bc_config(tmp_path: Path) -> BandcampConfig:
     return BandcampConfig(
-        username="testuser",
-        cookie_file=None,
         format="mp3-v0",
         poll_interval_minutes=0,
     )
@@ -837,26 +835,6 @@ class TestEnsureSession:
         with pytest.raises(NeedsLoginError):
             _ensure_session(config, index)
         index.clear_session.assert_not_called()
-
-    def test_cookie_file_path_bypasses_db_check(self, tmp_path: Path) -> None:
-        """When cookie_file is set, _ensure_session skips the DB session check."""
-        cookie_file = tmp_path / "cookies.txt"
-        future = int(time.time()) + 86400
-        cookie_file.write_text(
-            f".bandcamp.com\tTRUE\t/\tTRUE\t{future}\tjs_logged_in\t1\n"
-        )
-        config = BandcampConfig(
-            username="testuser",
-            cookie_file=cookie_file,
-            format="mp3-v0",
-            poll_interval_minutes=0,
-        )
-        index = MagicMock()
-        result = _ensure_session(config, index)
-        # Should return session data dict without touching the index
-        assert isinstance(result, dict)
-        assert "cookies" in result
-        index.get_session.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

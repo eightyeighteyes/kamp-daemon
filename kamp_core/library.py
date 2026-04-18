@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 10
+_SCHEMA_VERSION = 11
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -94,6 +94,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     service      TEXT NOT NULL PRIMARY KEY,
     session_json TEXT NOT NULL,
     updated_at   REAL NOT NULL
+);
+
+-- Application settings (replaces config.toml; see TASK-132).
+-- All 13 active config keys are stored here as TEXT; type coercion happens in Python.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
 );
 
 -- Enforce append-only invariant at the DB level so no code path can silently
@@ -374,6 +381,12 @@ class LibraryIndex:
             self._conn.execute("UPDATE schema_version SET version = 10")
             self._conn.commit()
 
+        if version < 11:
+            # v10 → v11: settings table added for DB-backed config (replaces config.toml).
+            # The table is created by _DDL via executescript at the top of _migrate.
+            self._conn.execute("UPDATE schema_version SET version = 11")
+            self._conn.commit()
+
     def _rebuild_fts(self) -> None:
         """Rebuild the FTS index from the current contents of the tracks table."""
         self._conn.execute("DELETE FROM tracks_fts")
@@ -413,6 +426,33 @@ class LibraryIndex:
         """Remove the session row for *service* (no-op if absent)."""
         self._conn.execute("DELETE FROM sessions WHERE service = ?", (service,))
         self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Settings (application configuration)
+    # ------------------------------------------------------------------
+
+    def get_setting(self, key: str) -> str | None:
+        """Return the stored value for *key*, or None if absent."""
+        row = self._conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ).fetchone()
+        return row["value"] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Persist a config key/value, replacing any existing row."""
+        self._conn.execute(
+            """
+            INSERT INTO settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, value),
+        )
+        self._conn.commit()
+
+    def get_all_settings(self) -> dict[str, str]:
+        """Return all stored config key/value pairs."""
+        rows = self._conn.execute("SELECT key, value FROM settings").fetchall()
+        return {r["key"]: r["value"] for r in rows}
 
     def upsert_track(self, track: Track) -> None:
         """Insert or replace a single track record keyed on file_path."""

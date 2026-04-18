@@ -1,10 +1,10 @@
 ---
 id: TASK-132
 title: move application configuration inside the database
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-15 02:48'
-updated_date: '2026-04-18 17:23'
+updated_date: '2026-04-18 21:42'
 labels:
   - feature
   - backend
@@ -49,16 +49,16 @@ We have outgrown the TOML config file. All application configuration and prefere
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All 13 active config keys are read from and written to a new `settings` table in the SQLite database
-- [ ] #2 A one-time migration reads an existing `config.toml` on startup and populates the `settings` table; `bandcamp.username` and `bandcamp.cookie_file` are silently dropped during migration; after migration the TOML file is left in place but no longer read
-- [ ] #3 `Config.load()` reads from the database and returns the same `Config` object shape as before — callers are unchanged
-- [ ] #4 `config_set <key> <value>` CLI command writes to the database instead of the TOML file; attempting to set a deprecated key returns a clear error
-- [ ] #5 `first_run_setup` and `bandcamp_setup` write initial values to the database instead of creating a TOML file; they no longer prompt for or store `username` or `cookie_file`
-- [ ] #6 `ConfigMonitor` watchdog is removed; config changes take effect immediately on write (no file watching needed)
-- [ ] #7 Existing validation (allowed values for `bandcamp.format`, `ui.active_view`, `ui.sort_order`) is preserved
-- [ ] #8 Schema version is bumped and a `_migrate()` step creates the `settings` table
-- [ ] #9 All existing config tests pass; new tests cover the migration path (TOML present → DB populated, deprecated keys dropped) and the no-TOML path (fresh install → defaults written)
-- [ ] #10 README and any user-facing docs referring to `config.toml`, `bandcamp.username`, or `bandcamp.cookie_file` are updated
+- [x] #1 All 13 active config keys are read from and written to a new `settings` table in the SQLite database
+- [x] #2 A one-time migration reads an existing `config.toml` on startup and populates the `settings` table; `bandcamp.username` and `bandcamp.cookie_file` are silently dropped during migration; after migration the TOML file is left in place but no longer read
+- [x] #3 `Config.load()` reads from the database and returns the same `Config` object shape as before — callers are unchanged
+- [x] #4 `config_set <key> <value>` CLI command writes to the database instead of the TOML file; attempting to set a deprecated key returns a clear error
+- [x] #5 `first_run_setup` and `bandcamp_setup` write initial values to the database instead of creating a TOML file; they no longer prompt for or store `username` or `cookie_file`
+- [x] #6 `ConfigMonitor` watchdog is removed; config changes take effect immediately on write (no file watching needed)
+- [x] #7 Existing validation (allowed values for `bandcamp.format`, `ui.active_view`, `ui.sort_order`) is preserved
+- [x] #8 Schema version is bumped and a `_migrate()` step creates the `settings` table
+- [x] #9 All existing config tests pass; new tests cover the migration path (TOML present → DB populated, deprecated keys dropped) and the no-TOML path (fresh install → defaults written)
+- [x] #10 README and any user-facing docs referring to `config.toml`, `bandcamp.username`, or `bandcamp.cookie_file` are updated
 <!-- AC:END -->
 
 ## Implementation Plan

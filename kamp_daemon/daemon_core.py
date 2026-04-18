@@ -1,9 +1,9 @@
 """DaemonCore: lifecycle management for the kamp daemon.
 
-Encapsulates Watcher, Syncer, and ConfigMonitor start/stop/pause/resume,
-signal handler installation, and PID-file management so that __main__.py
-remains thin CLI glue and the menu bar path can hand the main thread to
-the rumps AppKit run loop instead of blocking here.
+Encapsulates Watcher, Syncer start/stop/pause/resume, signal handler
+installation, and PID-file management so that __main__.py remains thin CLI
+glue and the menu bar path can hand the main thread to the rumps AppKit run
+loop instead of blocking here.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Literal
 
 from .config import Config, _state_dir
-from .config_monitor import ConfigMonitor
 from .ext import ExtensionRegistry, discover_extensions
 from .ext.context import KampGround, PlaybackSnapshot
 from .watcher import Watcher
@@ -33,14 +32,13 @@ _logger = logging.getLogger(__name__)
 class DaemonCore:
     """Manage the daemon pipeline lifecycle.
 
-    Owns Watcher, Syncer, and ConfigMonitor instances and coordinates their
-    start/stop/pause/resume. Installs OS signal handlers so that SIGINT/SIGTERM
-    trigger a clean shutdown and SIGUSR1/SIGUSR2 pause and resume the pipeline.
+    Owns Watcher and Syncer instances and coordinates their start/stop/pause/resume.
+    Installs OS signal handlers so that SIGINT/SIGTERM trigger a clean shutdown
+    and SIGUSR1/SIGUSR2 pause and resume the pipeline.
     """
 
-    def __init__(self, config: Config, config_path: Path) -> None:
+    def __init__(self, config: Config) -> None:
         self._config = config
-        self._config_path = config_path
         self._state: DaemonState = "stopped"
         self._done = threading.Event()
         # Created here so callers can wire callbacks (e.g. status_callback on
@@ -50,7 +48,6 @@ class DaemonCore:
         ctx = KampGround(playback=PlaybackSnapshot(), library_tracks=[])
         self._syncer: KampBandcampSyncer = KampBandcampSyncer(ctx)
         self._syncer._configure(config)
-        self._monitor: ConfigMonitor | None = None
         self._extension_registry: ExtensionRegistry = ExtensionRegistry()
 
     # ------------------------------------------------------------------
@@ -82,18 +79,9 @@ class DaemonCore:
 
     def start(self) -> None:
         """Start all pipeline components, write pidfile, install signals."""
-
-        def _on_config_reload(new_config: Config) -> None:
-            self._config = new_config
-            self._watcher.reload(new_config)
-            self._syncer.reload(new_config)
-
-        self._monitor = ConfigMonitor(self._config_path, _on_config_reload)
-
         discover_extensions(self._extension_registry)
         self._watcher.start()
         self._syncer.start()
-        self._monitor.start()
 
         # Write pidfile so `daemon pause` / `daemon resume` can signal this process.
         _PID_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -119,8 +107,6 @@ class DaemonCore:
     def shutdown(self) -> None:
         """Stop all components and unblock wait()."""
         _logger.info("Shutting down…")
-        if self._monitor:
-            self._monitor.stop()
         self._syncer.stop()
         self._watcher.stop()
         self._state = "stopped"

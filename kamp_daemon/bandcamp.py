@@ -231,8 +231,6 @@ def sync_new_purchases(
     fan_id, username = _get_fan_info(session)
     _store_username_in_session(username, session_data, index)
     # Use config username as fallback if API didn't return one.
-    if not username:
-        username = bc_config.username or ""
     logger.info("Fetched fan_id=%s for user %r", fan_id, username)
 
     state = _load_state(state_file)
@@ -294,14 +292,10 @@ def sync_new_purchases(
 def _ensure_session(bc_config: BandcampConfig, index: "LibraryIndex") -> dict[str, Any]:
     """Return valid session data for the Bandcamp account.
 
-    If ``cookie_file`` is configured, synthesize session data from it (escape
-    hatch for users managing cookies manually).  Otherwise, read from the DB
-    and validate; if absent or expired, raise ``NeedsLoginError`` so the caller
-    can trigger the Electron BrowserWindow login flow.
+    Reads from the DB and validates; if absent or expired, raises
+    ``NeedsLoginError`` so the caller can trigger the Electron BrowserWindow
+    login flow.
     """
-    if bc_config.cookie_file:
-        return _session_from_cookie_file(bc_config.cookie_file)
-
     data = index.get_session("bandcamp")
     if data is not None and _validate_session(data):
         return data

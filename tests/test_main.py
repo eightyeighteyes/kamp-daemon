@@ -339,7 +339,7 @@ class TestResolveKampBinary:
 
 
 class TestCmdInstallService:
-    def test_runs_first_run_setup_when_no_config(
+    def test_runs_first_run_setup_when_no_settings(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
         config_path = tmp_path / "config.toml"
@@ -351,10 +351,13 @@ class TestCmdInstallService:
                 "kamp_daemon.__main__._resolve_kamp_binary",
                 return_value="/opt/homebrew/bin/kamp",
             ),
+            patch("kamp_daemon.__main__.sys.stdin") as mock_stdin,
             patch(
                 "kamp_daemon.__main__.Config.first_run_setup",
                 return_value=None,
             ) as mock_setup,
+            patch("kamp_daemon.__main__._state_dir", return_value=tmp_path),
         ):
+            mock_stdin.isatty.return_value = True
             _cmd_install_service(config_path)
-        mock_setup.assert_called_once_with(config_path)
+        assert mock_setup.called
