@@ -1,17 +1,18 @@
 ---
 id: TASK-95
 title: queue scrolls from the top every time it's opened
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-08 16:58'
-updated_date: '2026-04-10 14:16'
+updated_date: '2026-04-18 01:33'
 labels:
   - bug
   - ui
   - 'estimate: single'
-milestone: m-26
+milestone: m-27
 dependencies: []
 priority: medium
+ordinal: 6000
 ---
 
 ## Description

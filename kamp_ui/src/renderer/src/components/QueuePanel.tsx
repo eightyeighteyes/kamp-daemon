@@ -26,6 +26,7 @@ export function QueuePanel(): React.JSX.Element {
   const setActiveView = useStore((s) => s.setActiveView)
   const activeRef = useRef<HTMLLIElement>(null)
   const listRef = useRef<HTMLOListElement>(null)
+  const hasMounted = useRef(false)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -33,17 +34,20 @@ export function QueuePanel(): React.JSX.Element {
   const position = queue?.position ?? -1
 
   // Scroll so that up to 5 history rows are visible above the current track.
-  // When position < 5 there is no scrolling needed — the top of the list is fine.
+  // On initial mount use instant scroll to avoid a visible jump from the top;
+  // only animate when the position advances during an active session.
   useEffect(() => {
+    const behavior: ScrollBehavior = hasMounted.current ? 'smooth' : 'instant'
+    hasMounted.current = true
     const list = listRef.current
     const active = activeRef.current
     if (!list || !active || position < 5) {
       // For the first few tracks just ensure the active row is visible.
-      activeRef.current?.scrollIntoView({ block: 'nearest' })
+      activeRef.current?.scrollIntoView({ block: 'nearest', behavior })
       return
     }
     const rowHeight = active.offsetHeight
-    list.scrollTo({ top: (position - 5) * rowHeight, behavior: 'smooth' })
+    list.scrollTo({ top: (position - 5) * rowHeight, behavior })
   }, [position])
 
   // Dismiss context menu on click outside.
