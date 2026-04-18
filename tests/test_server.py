@@ -1901,12 +1901,13 @@ class TestCORSMiddleware:
         resp = self._preflight(client, "http://127.0.0.1")
         assert resp.headers.get("access-control-allow-origin") == "http://127.0.0.1"
 
-    def test_file_origin_allowed(
+    def test_electron_null_origin_allowed(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
     ) -> None:
+        # Electron's file:// renderer sends Origin: null (opaque origin serialization).
         client = self._make_client(mock_index, mock_engine, mock_queue)
-        resp = self._preflight(client, "file://")
-        assert resp.headers.get("access-control-allow-origin") == "file://"
+        resp = self._preflight(client, "null")
+        assert resp.headers.get("access-control-allow-origin") == "null"
 
     def test_arbitrary_origin_rejected(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock

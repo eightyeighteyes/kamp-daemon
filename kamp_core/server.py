@@ -298,7 +298,9 @@ def create_app(
     _allowed_origins = [
         "http://localhost",
         "http://127.0.0.1",
-        "file://",  # Electron renderer (production file:// pages)
+        # Electron renderer in production loads from file://; Chromium serializes
+        # that as the opaque origin "null" in the Origin request header.
+        "null",
     ]
     if dev_mode:
         _allowed_origins.append("http://localhost:5173")  # Vite dev server
