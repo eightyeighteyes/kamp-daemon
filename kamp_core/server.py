@@ -853,19 +853,12 @@ def create_app(
             "event": event,
             "result": None,
         }
-        # Include session cookies in the broadcast so the Electron main
-        # process can inject them into session.defaultSession before calling
-        # net.fetch — no extra HTTP round-trip required.
-        session_data = (
-            get_bandcamp_session() if get_bandcamp_session is not None else None
-        )
-        broadcast_cookies: list[Any] = (
-            session_data.get("cookies", []) if session_data else []
-        )
         # Build the push event.  Save it in _pending_proxy_fetches *before*
         # broadcasting so that a WS client connecting after _broadcast() (but
         # before the request is answered) still receives it on connect.  The
         # entry is removed when /fetch-result arrives.
+        # Cookies are omitted — Electron fetches /api/v1/bandcamp/session-cookies
+        # directly so they are never broadcast to all WS clients.
         proxy_event: dict[str, Any] = {
             "type": "bandcamp.proxy-fetch",
             "id": req_id,
@@ -873,7 +866,6 @@ def create_app(
             "method": req.method,
             "headers": req.headers,
             "body": req.body,
-            "cookies": broadcast_cookies,
         }
         _pending_proxy_fetches[req_id] = proxy_event
         # Notify the Electron preload via the existing WebSocket push channel.
