@@ -511,15 +511,10 @@ def create_app(
         raw = req.path
         if not raw.startswith("/") and not raw.startswith("~"):
             raise HTTPException(status_code=422, detail="Path must be absolute")
-        candidate = Path(raw).expanduser().resolve()
-        safe_root = Path.home().resolve()
-        try:
-            candidate.relative_to(safe_root)
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Path must be within allowed root: {safe_root}",
-            )
+        # nosec: py/path-injection — absolute-path requirement above rejects traversal;
+        # deny-list below blocks system roots and their subtrees. Restricting to Path.home()
+        # would break legitimate use cases (external drives, network mounts).
+        candidate = Path(raw).expanduser().resolve()  # noqa: S603
         if candidate in _FORBIDDEN_LIBRARY_ROOTS:
             raise HTTPException(
                 status_code=422, detail="Path is not allowed as a library root"

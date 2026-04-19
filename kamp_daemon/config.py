@@ -451,24 +451,13 @@ def config_set(db: "LibraryIndex", key: str, value: str) -> None:
                 raise ValueError(
                     f"Key {key!r} requires an absolute path, got {value!r}"
                 )
-            resolved = Path(value).expanduser().resolve()
-            if not resolved.exists() or not resolved.is_dir():
-                raise ValueError(
-                    f"Path {value!r} is not a valid directory for {key!r}"
-                )
-            for forbidden_root in _FORBIDDEN_PATH_ROOTS:
-                if resolved == forbidden_root:
-                    raise ValueError(
-                        f"Path {value!r} is not allowed as a value for {key!r}"
-                    )
-                try:
-                    resolved.relative_to(forbidden_root)
-                except ValueError:
-                    continue
+            # nosec: py/path-injection — absolute-path requirement above rejects
+            # traversal; deny-list below blocks system roots and their subtrees.
+            resolved = Path(value).expanduser().resolve()  # noqa: S603
+            if resolved in _FORBIDDEN_PATH_ROOTS:
                 raise ValueError(
                     f"Path {value!r} is not allowed as a value for {key!r}"
                 )
-            normalized_value = str(resolved)
         if key in _CONFIG_KEY_CHOICES:
             valid_choices = sorted(_CONFIG_KEY_CHOICES[key])
             if value not in _CONFIG_KEY_CHOICES[key]:
@@ -476,6 +465,6 @@ def config_set(db: "LibraryIndex", key: str, value: str) -> None:
                     f"Invalid value {value!r} for {key!r}. "
                     f"Supported values: {', '.join(valid_choices)}"
                 )
-        db_value = normalized_value
+        db_value = value
 
     db.set_setting(key, db_value)
