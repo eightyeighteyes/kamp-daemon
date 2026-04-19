@@ -127,6 +127,30 @@ class LibraryPathRequest(BaseModel):
     path: str
 
 
+# Paths that must never be accepted as a library root, regardless of whether they
+# exist and are directories. Covers macOS and Linux system directories.
+_FORBIDDEN_LIBRARY_ROOTS: frozenset[Path] = frozenset(
+    Path(p)
+    for p in (
+        "/",
+        "/System",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/etc",
+        "/private/etc",
+        "/var",
+        "/private/var",
+        "/Library",
+        "/Applications",
+        "/dev",
+        "/proc",
+        "/sys",
+    )
+)
+
+
 class FavoriteRequest(BaseModel):
     file_path: str
     favorite: bool
@@ -484,13 +508,14 @@ def create_app(
 
     @app.post("/api/v1/config/library-path")
     def set_library_path(req: LibraryPathRequest) -> dict[str, Any]:
-        # kamp is a local-only desktop app: the server binds to 127.0.0.1 and
-        # is only reachable by the Electron frontend running as the same user.
-        # Allowing any user-owned path is intentional — the user is choosing
-        # their own library root, and restricting to a sub-tree would break
-        # legitimate use cases (e.g. an external drive or a path outside ~).
-        # nosec: py/path-injection — intentional; local-only API, same-user trust boundary.
-        candidate = Path(req.path).expanduser().resolve()  # noqa: S603
+        raw = req.path
+        if not raw.startswith("/") and not raw.startswith("~"):
+            raise HTTPException(status_code=422, detail="Path must be absolute")
+        candidate = Path(raw).expanduser().resolve()
+        if candidate in _FORBIDDEN_LIBRARY_ROOTS:
+            raise HTTPException(
+                status_code=422, detail="Path is not allowed as a library root"
+            )
         if not candidate.exists():
             raise HTTPException(status_code=422, detail="Path does not exist")
         if not candidate.is_dir():
