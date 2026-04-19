@@ -1,9 +1,10 @@
 ---
 id: TASK-159
 title: 'security: review path injection in library-path API endpoint'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-19 13:48'
+updated_date: '2026-04-19 19:50'
 labels:
   - security
   - codeql
@@ -36,7 +37,13 @@ The endpoint validates that the path exists and is a directory, but a malicious 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A decision is made and documented (fix or intentional suppression)
-- [ ] #2 If suppressed, a comment explains why the risk is acceptable for a local-only API
-- [ ] #3 CodeQL alert #5 is resolved or marked as dismissed with a reason
+- [x] #1 A decision is made and documented (fix or intentional suppression)
+- [x] #2 If suppressed, a comment explains why the risk is acceptable for a local-only API
+- [x] #3 CodeQL alert #5 is resolved or marked as dismissed with a reason
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Chose Option 3 (intentional suppression). Added a four-line rationale comment at kamp_core/server.py:487 explaining that kamp binds only to 127.0.0.1, is reachable only by the same-user Electron frontend, and legitimately needs to accept any user-chosen path (including external drives). Added `# nosec: py/path-injection` and `# noqa: S603` inline annotations for CodeQL/bandit. All 135 server tests pass; mypy clean.
+<!-- SECTION:FINAL_SUMMARY:END -->
