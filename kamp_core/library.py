@@ -751,13 +751,19 @@ class LibraryIndex:
             ),
         )
 
-        # Apply only the safe, known-writable fields.
+        # Validate against the allowlist — load-bearing; do not remove.
+        # Column names are interpolated directly into SQL; any name outside
+        # this set must raise, not be silently skipped.
+        unknown = set(fields) - _WRITABLE_TRACK_FIELDS
+        if unknown:
+            raise ValueError(f"Unexpected column names in metadata update: {unknown}")
+
         safe = {k: v for k, v in fields.items() if k in _WRITABLE_TRACK_FIELDS}
         if row and safe:
             set_clause = ", ".join(f"{k} = ?" for k in safe)
             params: list[Any] = [*safe.values(), mbid]
             self._conn.execute(
-                f"UPDATE tracks SET {set_clause} WHERE mb_recording_id = ?",  # noqa: S608
+                f"UPDATE tracks SET {set_clause} WHERE mb_recording_id = ?",
                 params,
             )
         self._conn.commit()
@@ -829,12 +835,18 @@ class LibraryIndex:
             old: dict[str, Any] = json.loads(row["old_value"])
 
             if op == "update_metadata":
+                # Audit log entries are written by apply_metadata_update, which
+                # already validated keys against _WRITABLE_TRACK_FIELDS. Raise
+                # here too so a corrupt/tampered log entry cannot inject column names.
+                unknown = set(old) - _WRITABLE_TRACK_FIELDS
+                if unknown:
+                    raise ValueError(f"Unexpected column names in audit log: {unknown}")
                 safe = {k: v for k, v in old.items() if k in _WRITABLE_TRACK_FIELDS}
                 if safe:
                     set_clause = ", ".join(f"{k} = ?" for k in safe)
                     params = [*safe.values(), mbid]
                     self._conn.execute(
-                        f"UPDATE tracks SET {set_clause} WHERE mb_recording_id = ?",  # noqa: S608
+                        f"UPDATE tracks SET {set_clause} WHERE mb_recording_id = ?",
                         params,
                     )
             elif op == "set_artwork":

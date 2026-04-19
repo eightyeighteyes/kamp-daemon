@@ -216,6 +216,34 @@ class TestAuditLogAppendOnly:
 
 
 # ---------------------------------------------------------------------------
+# ValueError guard — unknown column names must raise, not be silently dropped
+# ---------------------------------------------------------------------------
+
+
+class TestUnknownColumnGuard:
+    def test_apply_metadata_update_raises_on_unknown_field(
+        self, tmp_path: Path
+    ) -> None:
+        lib = _make_library(tmp_path)
+        lib.upsert_track(_make_track(tmp_path / "a.mp3", mbid="rec-1"))
+
+        with pytest.raises(ValueError, match="Unexpected column names"):
+            lib.apply_metadata_update(
+                "ext-a", "rec-1", {"title": "OK", "internal_col": "bad"}
+            )
+        lib.close()
+
+    def test_apply_metadata_update_does_not_raise_for_known_fields(
+        self, tmp_path: Path
+    ) -> None:
+        lib = _make_library(tmp_path)
+        lib.upsert_track(_make_track(tmp_path / "a.mp3", mbid="rec-1"))
+        # Should not raise
+        lib.apply_metadata_update("ext-a", "rec-1", {"title": "New"})
+        lib.close()
+
+
+# ---------------------------------------------------------------------------
 # AC #4 — rollback_extension() reverts all writes by a given extension_id
 # ---------------------------------------------------------------------------
 
