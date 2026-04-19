@@ -484,7 +484,13 @@ def create_app(
 
     @app.post("/api/v1/config/library-path")
     def set_library_path(req: LibraryPathRequest) -> dict[str, Any]:
-        candidate = Path(req.path).expanduser().resolve()
+        # kamp is a local-only desktop app: the server binds to 127.0.0.1 and
+        # is only reachable by the Electron frontend running as the same user.
+        # Allowing any user-owned path is intentional — the user is choosing
+        # their own library root, and restricting to a sub-tree would break
+        # legitimate use cases (e.g. an external drive or a path outside ~).
+        # nosec: py/path-injection — intentional; local-only API, same-user trust boundary.
+        candidate = Path(req.path).expanduser().resolve()  # noqa: S603
         if not candidate.exists():
             raise HTTPException(status_code=422, detail="Path does not exist")
         if not candidate.is_dir():
