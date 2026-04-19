@@ -21,8 +21,8 @@ import requests
 # Both placeholders are replaced by CI (scripts/encode_acoustid_key.py)
 # before the sdist is built. In dev builds both remain b"", causing
 # _api_key() to return "" and lookup_recording_mbids() to return [].
-_KEY: bytes = b"\x11\x38\x3a\x16\x05\x31\x34\x19\x3b\x30"
-_SALT: bytes = b"\x73\x61\x6c\x74"
+_KEY: bytes = b""
+_SALT: bytes = b""
 
 
 def _api_key() -> str:
