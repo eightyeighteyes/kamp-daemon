@@ -1,9 +1,10 @@
 ---
 id: TASK-166
 title: bandcamp polling option updates don't apply immediately
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-20 16:15'
+updated_date: '2026-04-20 16:57'
 labels: []
 milestone: m-30
 dependencies: []
