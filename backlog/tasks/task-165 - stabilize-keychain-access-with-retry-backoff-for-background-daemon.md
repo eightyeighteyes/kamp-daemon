@@ -1,9 +1,10 @@
 ---
 id: TASK-165
 title: stabilize keychain access with retry/backoff for background daemon
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-20 02:02'
+updated_date: '2026-04-20 16:13'
 labels:
   - security
   - reliability
@@ -11,6 +12,7 @@ labels:
 milestone: m-30
 dependencies: []
 priority: high
+ordinal: 3000
 ---
 
 ## Description
