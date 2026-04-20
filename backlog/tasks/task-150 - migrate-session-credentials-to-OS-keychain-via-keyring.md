@@ -1,10 +1,10 @@
 ---
 id: TASK-150
 title: migrate session credentials to OS keychain via keyring
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-18 18:02'
-updated_date: '2026-04-20 00:20'
+updated_date: '2026-04-20 01:27'
 labels:
   - security
   - feature
@@ -14,6 +14,7 @@ dependencies: []
 references:
   - doc-1 - Database Security Audit — v1.11.0 (FINDING-03)
 priority: high
+ordinal: 1000
 ---
 
 ## Description
