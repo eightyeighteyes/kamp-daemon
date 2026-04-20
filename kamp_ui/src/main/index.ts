@@ -686,6 +686,20 @@ app.whenReady().then(async () => {
   // existing reconnect loop handles the brief gap while the server starts up.
   await startServer()
 
+  // Inject X-Kamp-Token on every outgoing request to the local API — including
+  // <img src> image loads, which cannot carry custom headers from JS.
+  // This keeps art URLs free of the token so the browser HTTP cache is stable
+  // across daemon restarts (the token changes each time, but the URL doesn't).
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['http://127.0.0.1:8000/*', 'ws://127.0.0.1:8000/*'] },
+    (details, callback) => {
+      const token = readKampToken()
+      const requestHeaders = { ...details.requestHeaders }
+      if (token) requestHeaders['X-Kamp-Token'] = token
+      callback({ requestHeaders })
+    }
+  )
+
   // Start the Now Playing helper after the server so it can accept key events
   // immediately. The preload primes it with current player state on WS connect.
   startNowPlayingHelper()

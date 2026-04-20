@@ -995,9 +995,10 @@ def create_app(
 
     @app.websocket("/api/v1/ws")
     async def websocket_endpoint(ws: WebSocket, token: str = "") -> None:
-        # Browser WebSocket API cannot set custom headers, so the token is
-        # passed as a query parameter (?token=...) for WS connections.
-        if auth_token is not None and token != auth_token:
+        # Accept token via query param (legacy / non-Electron clients) or the
+        # X-Kamp-Token header injected by Electron's webRequest interceptor.
+        received = token or ws.headers.get("x-kamp-token", "")
+        if auth_token is not None and received != auth_token:
             await ws.close(code=1008)  # Policy Violation
             return
         nonlocal _event_loop

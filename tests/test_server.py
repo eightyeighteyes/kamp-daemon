@@ -156,6 +156,21 @@ class TestAuthToken:
             msg = ws.receive_json()
         assert msg["type"] == "player.state"
 
+    def test_websocket_with_token_header_accepted(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """Electron's webRequest interceptor injects the token as a header."""
+        mock_engine.state = mock_engine.state.__class__()
+        app = create_app(
+            index=mock_index, engine=mock_engine, queue=mock_queue, auth_token="secret"
+        )
+        c = TestClient(app)
+        with c.websocket_connect(
+            "/api/v1/ws", headers={"X-Kamp-Token": "secret"}
+        ) as ws:
+            msg = ws.receive_json()
+        assert msg["type"] == "player.state"
+
     def test_websocket_without_token_rejected(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
     ) -> None:

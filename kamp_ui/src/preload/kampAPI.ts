@@ -13,7 +13,7 @@ import { join } from 'path'
 import type { KampAPI, PanelManifest, ExtensionInstallResult, PlayerState } from '../shared/kampAPI'
 
 const SERVER_URL = 'http://127.0.0.1:8000'
-const WS_BASE_URL = 'ws://127.0.0.1:8000/api/v1/ws'
+const WS_URL = 'ws://127.0.0.1:8000/api/v1/ws'
 
 function _readToken(): string | null {
   try {
@@ -25,11 +25,6 @@ function _readToken(): string | null {
   } catch {
     return null
   }
-}
-
-function _wsUrl(): string {
-  const token = _readToken()
-  return token ? `${WS_BASE_URL}?token=${encodeURIComponent(token)}` : WS_BASE_URL
 }
 
 function _authHeaders(extra?: Record<string, string>): Record<string, string> {
@@ -51,8 +46,7 @@ let _pushWs: WebSocket | null = null
 
 function ensurePushWs(): void {
   if (_pushWs && _pushWs.readyState < WebSocket.CLOSING) return
-  // Re-read token on each (re)connect so a daemon restart's fresh token is used.
-  const ws = new WebSocket(_wsUrl())
+  const ws = new WebSocket(WS_URL)
   ws.addEventListener('open', () => {
     // Prime the Now Playing helper with current player state on (re)connect so
     // media keys route correctly even before the first track.changed event.
@@ -154,12 +148,11 @@ export function buildKampAPI(): KampAPI {
 
     library: {
       getAlbumArtUrl(albumArtist: string, album: string): string {
-        const token = _readToken()
-        const base =
+        return (
           `${SERVER_URL}/api/v1/album-art` +
           `?album_artist=${encodeURIComponent(albumArtist)}` +
           `&album=${encodeURIComponent(album)}`
-        return token ? `${base}&token=${encodeURIComponent(token)}` : base
+        )
       }
     }
   }
