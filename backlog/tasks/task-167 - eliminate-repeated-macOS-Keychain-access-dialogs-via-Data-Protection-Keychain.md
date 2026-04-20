@@ -4,7 +4,9 @@ title: eliminate repeated macOS Keychain access dialogs via Data Protection Keyc
 status: In Progress
 assignee: []
 created_date: '2026-04-20 20:54'
+updated_date: '2026-04-20 21:02'
 labels: []
+milestone: m-30
 dependencies: []
 priority: high
 ---
