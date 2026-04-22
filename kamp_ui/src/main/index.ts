@@ -79,9 +79,9 @@ function sendToHelper(msg: object): void {
 }
 
 function postToPlayer(path: string): void {
-  net.fetch(`http://127.0.0.1:8000${path}`, { method: 'POST', headers: authHeaders() }).catch(
-    () => {}
-  )
+  net
+    .fetch(`http://127.0.0.1:8000${path}`, { method: 'POST', headers: authHeaders() })
+    .catch(() => {})
 }
 
 function startNowPlayingHelper(): void {
