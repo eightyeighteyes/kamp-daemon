@@ -1,4 +1,14 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, Menu, session, net, screen as electronScreen } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  Menu,
+  session,
+  net,
+  screen as electronScreen
+} from 'electron'
 import { join, resolve } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
@@ -324,7 +334,12 @@ function loadWindowBounds(): WindowBounds {
   const { width: sw, height: sh } = electronScreen.getPrimaryDisplay().workAreaSize
   const w = 900
   const h = 1000
-  const defaults: WindowBounds = { x: Math.round((sw - w) / 2), y: Math.round((sh - h) / 2), width: w, height: h }
+  const defaults: WindowBounds = {
+    x: Math.round((sw - w) / 2),
+    y: Math.round((sh - h) / 2),
+    width: w,
+    height: h
+  }
   try {
     const file = join(app.getPath('userData'), 'window-state.json')
     return JSON.parse(readFileSync(file, 'utf8')) as WindowBounds
