@@ -4,10 +4,12 @@ title: 'Onboarding exit polish: "All set!" string and delay until album art load
 status: To Do
 assignee: []
 created_date: '2026-04-22 13:12'
+updated_date: '2026-04-22 14:18'
 labels: []
-milestone: m-28
+milestone: m-30
 dependencies: []
 priority: medium
+ordinal: 1000
 ---
 
 ## Description

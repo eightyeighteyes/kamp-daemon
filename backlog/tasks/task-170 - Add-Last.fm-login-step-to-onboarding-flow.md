@@ -4,10 +4,12 @@ title: Add Last.fm login step to onboarding flow
 status: To Do
 assignee: []
 created_date: '2026-04-22 13:12'
+updated_date: '2026-04-22 14:18'
 labels: []
-milestone: m-28
+milestone: m-30
 dependencies: []
 priority: medium
+ordinal: 2000
 ---
 
 ## Description

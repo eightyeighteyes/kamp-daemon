@@ -3,18 +3,19 @@ id: TASK-139
 title: >-
   onboarding flow — welcome, library setup, watch folder, bandcamp, and
   almost-done screens
-status: In Progress
+status: Done
 assignee:
   - 88eyes
 created_date: '2026-04-17 22:28'
-updated_date: '2026-04-22 02:11'
+updated_date: '2026-04-22 14:18'
 labels:
   - feature
   - ui
   - 'estimate: lp'
-milestone: m-28
+milestone: m-30
 dependencies: []
 priority: high
+ordinal: 8000
 ---
 
 ## Description
