@@ -207,10 +207,10 @@ jobs:
           echo "→ Signing standalone kamp Python binary..."
           codesign --force --sign "$IDENTITY" --options runtime --timestamp \
             kamp_ui/resources/kamp/_internal/Python
-          echo "→ Signing kamp binary (with entitlements for PyObjC/libffi)..."
+          echo "→ Signing kamp binary (with entitlements for PyObjC/libffi + DPC keychain)..."
           codesign --force --sign "$IDENTITY" \
             --options runtime --timestamp \
-            --entitlements kamp_ui/build/entitlements.mac.plist \
+            --entitlements kamp_ui/build/entitlements.kamp.plist \
             kamp_ui/resources/kamp/kamp
           echo "→ Signing mpv and node (with entitlements)..."
           # mpv needs disable-library-validation (links against unsigned Homebrew dylibs).

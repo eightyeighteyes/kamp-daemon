@@ -8,7 +8,9 @@ from pytest_mock import MockerFixture
 
 # Skips the entire module on non-macOS before any ctypes calls are attempted.
 macos_keychain = pytest.importorskip(
-    "kamp_core.macos_keychain", reason="macos_keychain is macOS-only"
+    "kamp_core.macos_keychain",
+    reason="macos_keychain is macOS-only",
+    exc_type=ImportError,
 )
 
 _ERR_SEC_AUTH_FAILED = macos_keychain._ERR_SEC_AUTH_FAILED
