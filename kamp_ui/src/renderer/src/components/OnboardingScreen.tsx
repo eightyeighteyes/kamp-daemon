@@ -17,7 +17,7 @@ const ALMOST_DONE_STRINGS = [
   "In the Library, press 'A' to show or hide the Artist panel",
   "The 'Now Playing' tab shows off your album art",
   "Press 'Q' at any time to show or hide the Queue panel",
-  "Good things are worth waiting for…",
+  'Good things are worth waiting for…',
   'What are you gonna listen to first?'
 ]
 
