@@ -954,6 +954,13 @@ export function PreferencesDialog({
         throw new Error('Enter a whole number (0 or greater).')
     }
 
+    if (key === 'paths.watch_folder' && value === str('paths.library')) {
+      throw new Error("Your watch folder can't be the same as your library folder.")
+    }
+    if (key === 'paths.library' && value === str('paths.watch_folder')) {
+      throw new Error("Your library folder can't be the same as your watch folder.")
+    }
+
     await setConfigValue(key, value)
   }
 

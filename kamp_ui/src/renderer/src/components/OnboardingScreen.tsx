@@ -49,6 +49,7 @@ export function OnboardingScreen({ onComplete, onTitleChange }: Props): React.JS
   const setLibraryPath = useStore((s) => s.setLibraryPath)
   const scanLibrary = useStore((s) => s.scanLibrary)
   const setWatchFolderPath = useStore((s) => s.setWatchFolderPath)
+  const configuredLibraryPath = useStore((s) => s.configuredLibraryPath)
 
   const [step, setStep] = useState<OnboardingStep>('welcome')
   const [vinylPhase, setVinylPhase] = useState<VinylPhase>('rising')
@@ -154,6 +155,10 @@ export function OnboardingScreen({ onComplete, onTitleChange }: Props): React.JS
     setCardError(null)
     const dir = await window.api.openDirectory()
     if (dir === null) return
+    if (dir === configuredLibraryPath) {
+      setCardError("Your watch folder can't be the same as your library folder.")
+      return
+    }
     try {
       await setWatchFolderPath(dir)
     } catch {
