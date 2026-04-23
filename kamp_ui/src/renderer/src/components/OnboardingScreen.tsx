@@ -14,11 +14,11 @@ const STEP_TITLES: Record<OnboardingStep, string> = {
 
 const ALMOST_DONE_STRINGS = [
   'Almost done…',
-  "You're gonna love this…",
-  'What are you gonna listen to first?',
-  "Press 'A' to show or hide the Artist panel",
-  "Press 'Q' to show or hide the Queue panel",
-  "The 'Now Playing' tab shows off your album art"
+  "In the Library, press 'A' to show or hide the Artist panel",
+  "The 'Now Playing' tab shows off your album art",
+  "Press 'Q' at any time to show or hide the Queue panel",
+  "Good things are worth waiting for…",
+  'What are you gonna listen to first?'
 ]
 
 // Vinyl proportions derived from the splash screen record (r=86 baseline).
@@ -79,10 +79,10 @@ export function OnboardingScreen({ onComplete, onTitleChange }: Props): React.JS
     onTitleChange(STEP_TITLES[step])
   }, [step, onTitleChange])
 
-  // Welcome: auto-advance after 5s with a fade transition.
+  // Welcome: auto-advance after 3s with a fade transition.
   useEffect(() => {
     if (step !== 'welcome') return
-    const t = setTimeout(() => changeStep('library'), 5000)
+    const t = setTimeout(() => changeStep('library'), 3000)
     return () => clearTimeout(t)
   }, [step])
 
@@ -212,7 +212,7 @@ export function OnboardingScreen({ onComplete, onTitleChange }: Props): React.JS
                   <strong>kamp</strong> will keep an eye on your watch folder to auto-tag and add
                   files to your library.
                   <br />
-                  This is also where Kamp will download new files, if you let it
+                  This is also where Kamp will download new files, if you sign into Bandcamp.
                 </p>
                 {cardError && <div className="onboarding-error">{cardError}</div>}
               </>
