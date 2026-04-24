@@ -238,6 +238,69 @@ body,
   color: var(--text);
 }
 
+/* Bandcamp sync button ----------------------------------------------------- */
+
+.bandcamp-btn-anchor {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.bandcamp-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #4da9d2;
+  display: flex;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 4px;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+
+.bandcamp-btn:hover {
+  opacity: 1;
+}
+
+@keyframes bandcamp-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.bandcamp-btn--syncing {
+  animation: bandcamp-pulse 1.4s ease-in-out infinite;
+}
+
+.bandcamp-context-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 100;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.bandcamp-context-menu button {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  width: 100%;
+  text-align: left;
+}
+
+.bandcamp-context-menu button:hover {
+  background: var(--surface-hover);
+}
+
 /* Search bar --------------------------------------------------------------- */
 
 .search-bar {
@@ -992,6 +1055,13 @@ body,
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.album-grid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px 4px;
 }
 
 .sort-control {

@@ -3,7 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { buildKampAPI } from './kampAPI'
+import { buildKampAPI, onBandcampSyncStatus } from './kampAPI'
 
 function _kampTokenFilePath(): string {
   if (process.platform === 'win32') {
@@ -32,7 +32,17 @@ const api = {
   bandcamp: {
     /** Open the Bandcamp login BrowserWindow. Resolves when login succeeds or the window is closed. */
     beginLogin: (): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('bandcamp:begin-login')
+      ipcRenderer.invoke('bandcamp:begin-login'),
+    /** Subscribe to sync status changes pushed via WebSocket. Returns an unsubscribe function. */
+    onSyncStatus: onBandcampSyncStatus,
+    /** Trigger a manual Bandcamp sync. Returns immediately; progress arrives via onSyncStatus. */
+    triggerSync: (): Promise<{ ok: boolean }> => {
+      const token = _readKampToken()
+      return fetch('http://127.0.0.1:8000/api/v1/bandcamp/sync', {
+        method: 'POST',
+        headers: token ? { 'X-Kamp-Token': token } : {}
+      }).then((r) => r.json())
+    }
   },
   // Re-reads from disk so Electron picks up a fresh token after daemon restart.
   getApiToken: (): string | null => _readKampToken()

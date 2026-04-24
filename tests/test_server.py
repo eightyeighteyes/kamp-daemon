@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -1858,6 +1859,56 @@ class TestBandcampStatus:
         data = c.get("/api/v1/config").json()
         assert data["bandcamp.connected"] is True
         assert data["bandcamp.username"] == "johndoe"
+
+
+# ---------------------------------------------------------------------------
+# Bandcamp manual sync endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestBandcampSync:
+    """Tests for POST /api/v1/bandcamp/sync."""
+
+    def test_sync_returns_503_when_no_trigger_configured(
+        self, client: TestClient
+    ) -> None:
+        resp = client.post("/api/v1/bandcamp/sync")
+        assert resp.status_code == 503
+
+    def test_sync_fires_trigger_and_returns_ok(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        called: list[bool] = []
+        trigger_done = threading.Event()
+
+        def _trigger() -> None:
+            called.append(True)
+            trigger_done.set()
+
+        app = create_app(
+            index=mock_index,
+            engine=mock_engine,
+            queue=mock_queue,
+            on_bandcamp_sync_trigger=_trigger,
+        )
+        with TestClient(app) as c:
+            resp = c.post("/api/v1/bandcamp/sync")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        trigger_done.wait(timeout=2)
+        assert called == [True]
+
+    def test_notify_bandcamp_sync_status_exposed_on_app_state(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        assert callable(getattr(app.state, "notify_bandcamp_sync_status", None))
 
 
 # ---------------------------------------------------------------------------

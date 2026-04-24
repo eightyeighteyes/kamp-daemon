@@ -304,7 +304,7 @@ def get_password(service: str, username: str) -> str | None:
         if status == _ERR_SEC_MISSING_ENTITLEMENT:
             _dpc_unavailable = True
         elif status == _ERR_SEC_ITEM_NOT_FOUND:
-            return None
+            pass  # not in DPC; fall through to Login Keychain check below
         elif status == _OS_STATUS_SUCCESS:
             return ctypes.string_at(
                 _CFDataGetBytePtr(data), _CFDataGetLength(data)

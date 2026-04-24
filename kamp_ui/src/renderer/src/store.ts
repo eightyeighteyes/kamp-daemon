@@ -105,9 +105,10 @@ type PlayerStore = {
   // Preferences
   configValues: ConfigValues | null
   prefsOpen: boolean
+  prefsInitialTab: 'general' | 'services' | 'extensions'
   loadConfig: () => Promise<void>
   setConfigValue: (key: string, value: string) => Promise<void>
-  openPrefs: () => void
+  openPrefs: (tab?: 'general' | 'services' | 'extensions') => void
   closePrefs: () => void
 }
 
@@ -146,6 +147,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
   queue: null,
   configValues: null,
   prefsOpen: false,
+  prefsInitialTab: 'general',
 
   setServerStatus: (status) => set({ serverStatus: status }),
 
@@ -454,7 +456,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
     }))
   },
 
-  openPrefs: () => set({ prefsOpen: true }),
+  openPrefs: (tab) => set({ prefsOpen: true, prefsInitialTab: tab ?? 'general' }),
   closePrefs: () => set({ prefsOpen: false }),
 
   scanLibrary: async () => {

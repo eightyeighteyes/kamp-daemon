@@ -1,8 +1,9 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { artUrl } from '../api/client'
 import type { Album, Track } from '../api/client'
 import { SortControl } from './SortControl'
+import { useMenuBounds } from '../hooks/useMenuBounds'
 
 type AlbumMenu = { x: number; y: number; album: Album }
 type TrackMenu = { x: number; y: number; filePath: string; favorite: boolean }
@@ -131,22 +132,8 @@ export function SearchView(): React.JSX.Element {
     return () => document.removeEventListener('mousedown', handler)
   }, [trackMenu])
 
-  // Flip menus toward the cursor if they would overflow the window edge.
-  useLayoutEffect(() => {
-    if (!albumMenu || !albumMenuRef.current) return
-    const el = albumMenuRef.current
-    const rect = el.getBoundingClientRect()
-    if (rect.right > window.innerWidth) el.style.left = `${albumMenu.x - rect.width}px`
-    if (rect.bottom > window.innerHeight) el.style.top = `${albumMenu.y - rect.height}px`
-  }, [albumMenu])
-
-  useLayoutEffect(() => {
-    if (!trackMenu || !trackMenuRef.current) return
-    const el = trackMenuRef.current
-    const rect = el.getBoundingClientRect()
-    if (rect.right > window.innerWidth) el.style.left = `${trackMenu.x - rect.width}px`
-    if (rect.bottom > window.innerHeight) el.style.top = `${trackMenu.y - rect.height}px`
-  }, [trackMenu])
+  useMenuBounds(albumMenuRef, albumMenu)
+  useMenuBounds(trackMenuRef, trackMenu)
 
   if (!results) {
     return <div className="search-empty">Searching…</div>

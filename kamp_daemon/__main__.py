@@ -786,6 +786,21 @@ def _cmd_daemon(
     def _on_bandcamp_disconnect() -> None:
         index.clear_session("bandcamp")
 
+    def _on_bandcamp_sync_trigger() -> None:
+        from .syncer import NeedsLoginError
+
+        fn = _sync_trigger_ref[0]
+        if fn is None:
+            return
+        try:
+            fn()
+        except NeedsLoginError:
+            _logger.warning("Manual Bandcamp sync: no valid session — login required.")
+            app.state.notify_bandcamp_sync_status("")  # back to idle
+        except Exception:
+            _logger.exception("Unhandled error during manual Bandcamp sync")
+            app.state.notify_bandcamp_sync_status("")  # back to idle
+
     # Bandcamp username comes only from the session (set after Electron login flow).
     _bc_session = index.get_session("bandcamp")
     _bc_username: str | None = _bc_session.get("username") if _bc_session else None
@@ -813,6 +828,10 @@ def _cmd_daemon(
     _tp.write_text(_auth_token)
     os.chmod(_tp, 0o600)
 
+    # Filled after DaemonCore is constructed; the lambda above captures this list
+    # so the endpoint can call sync_once() without a forward-reference problem.
+    _sync_trigger_ref: list[Any] = [None]
+
     app = create_app(
         index=index,
         engine=engine,
@@ -830,6 +849,7 @@ def _cmd_daemon(
         on_bandcamp_login_complete=_on_bandcamp_login_complete,
         get_bandcamp_session=lambda: index.get_session("bandcamp"),
         on_bandcamp_disconnect=_on_bandcamp_disconnect,
+        on_bandcamp_sync_trigger=_on_bandcamp_sync_trigger,
         dev_mode=bool(os.environ.get("KAMP_DEV")),
         auth_token=_auth_token,
     )
@@ -907,16 +927,30 @@ def _cmd_daemon(
 
     # --- Start daemon pipeline and block until shutdown ---
     core = DaemonCore(config)
+
+    # Wire sync trigger and status broadcasts BEFORE core.start() so that the
+    # first automatic sync (which may fire immediately on thread start) already
+    # has the callback set.
+    _sync_trigger_ref[0] = core.syncer.sync_once
+
     if menu_bar and platform.system() == "Darwin":
         from .menu_bar import MenuBarApp
 
-        # Wire callbacks BEFORE core.start() launches threads so that the
-        # first automatic Bandcamp sync (which fires immediately on thread
-        # start) already has status_callback set.
+        # MenuBarApp also wires status_callback; chain it so both the menu bar
+        # and the WebSocket push channel receive status updates.
         menu_bar_app = MenuBarApp(core)
+        _menu_bar_status_cb = core.syncer.status_callback
+
+        def _chained_status_cb(msg: str) -> None:
+            app.state.notify_bandcamp_sync_status(msg)
+            if _menu_bar_status_cb is not None:
+                _menu_bar_status_cb(msg)
+
+        core.syncer.status_callback = _chained_status_cb
         core.start()
         menu_bar_app.run()
     else:
+        core.syncer.status_callback = app.state.notify_bandcamp_sync_status
         core.start()
         core.wait()
 

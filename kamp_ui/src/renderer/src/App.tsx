@@ -75,6 +75,7 @@ export default function App(): React.JSX.Element {
   const loadLibrary = useStore((s) => s.loadLibrary)
   const refreshOpenAlbum = useStore((s) => s.refreshOpenAlbum)
   const loadUiState = useStore((s) => s.loadUiState)
+  const loadConfig = useStore((s) => s.loadConfig)
   const applyServerState = useStore((s) => s.applyServerState)
   const setServerStatus = useStore((s) => s.setServerStatus)
   const serverStatus = useStore((s) => s.serverStatus)
@@ -153,6 +154,7 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     loadUiState().then(() => loadLibrary())
+    void loadConfig()
 
     let attempts = 0
     const MAX_ATTEMPTS = 8
@@ -175,6 +177,7 @@ export default function App(): React.JSX.Element {
           setServerStatus('connected')
           void loadUiState().then(() => loadLibrary())
           void loadQueue()
+          void loadConfig()
         },
         () => {
           void loadLibrary().then(() => refreshOpenAlbum())
