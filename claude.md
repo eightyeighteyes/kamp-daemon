@@ -54,9 +54,10 @@ Budget at least a Side for any feature touching osacompile, Spotlight registrati
 ## Sandboxed iframes (community extensions)
 
 - **srcdoc iframes inherit the parent document's CSP** — even if the srcdoc has its own `<meta http-equiv=Content-Security-Policy>`, the parent's CSP overrides script-src. To allow an inline script, hash-whitelist it in the parent CSP (`'sha256-...'` in `src/renderer/index.html`). Recompute the hash every time the shim changes: `node -e "const s='...';console.log('sha256-'+require('crypto').createHash('sha256').update(s,'utf8').digest('base64'))"`.
+- **Any change to `SANDBOX_SHIM` in `SandboxedExtensionLoader.tsx` requires updating the sha256 hash in `src/renderer/index.html`** — including seemingly unrelated changes like port numbers embedded in the shim string. A stale hash causes the shim to be silently blocked: extensions install but panels never appear.
 - **Sandboxed iframes without allow-same-origin reload on DOM move** — Chromium treats them as cross-origin and navigates on reparent. The holding-area/move strategy doesn't work. Create a fresh iframe on each panel mount instead.
 - **Race condition: send init and mount in the same onLoad callback** — `kamp:init` triggers an async `import()`; `kamp:panel-mount` arrives before the import resolves, so `r[panelId]` is empty and mount silently no-ops. Fix: buffer the pending mount id and fire it inside `panels.register()` if it arrived early.
-- **iframe CSP needs explicit img-src** — `default-src 'none'` blocks image loads from the kamp server. Add `img-src http://127.0.0.1:8000` to the srcdoc CSP.
+- **iframe CSP needs explicit img-src** — `default-src 'none'` blocks image loads from the kamp server. Add `img-src http://127.0.0.1:47483` to the srcdoc CSP.
 
 ## macOS notifications
 `NSUserNotificationCenter` (used by `rumps.notification()`) is a no-op on macOS 14+. Use `UNUserNotificationCenter` instead. It requires `CFBundleIdentifier` — embed it in `launcher/main.c` via `__TEXT,__info_plist`. Without the compiled launcher (e.g. dev venv), `UNUserNotificationCenter.currentNotificationCenter()` crashes; wrap it in `try/except` and fall back to `rumps.notification()`.
