@@ -9,6 +9,8 @@ declare global {
       onOpenPreferences: (callback: () => void) => () => void
       bandcamp: {
         beginLogin: () => Promise<{ ok: boolean; error?: string }>
+        onSyncStatus: (callback: (state: 'idle' | 'syncing') => void) => () => void
+        triggerSync: () => Promise<{ ok: boolean }>
       }
       getApiToken: () => string | null
     }

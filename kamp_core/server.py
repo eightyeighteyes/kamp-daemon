@@ -285,6 +285,7 @@ def create_app(
     on_bandcamp_login_complete: Callable[[dict[str, Any]], None] | None = None,
     get_bandcamp_session: Callable[[], dict[str, Any] | None] | None = None,
     on_bandcamp_disconnect: Callable[[], None] | None = None,
+    on_bandcamp_sync_trigger: Callable[[], None] | None = None,
     dev_mode: bool = False,
     auth_token: str | None = None,
 ) -> FastAPI:
@@ -352,11 +353,21 @@ def create_app(
         """Broadcast a play_state.changed push event to all connected WebSocket clients."""
         _broadcast({"type": "play_state.changed", **_state_snapshot().model_dump()})
 
+    def _notify_bandcamp_sync_status(status_msg: str) -> None:
+        """Broadcast sync state derived from the syncer's status_callback string.
+
+        The syncer passes "" on idle and a non-empty string while syncing.
+        Called from the syncer's background thread — _broadcast is thread-safe.
+        """
+        state = "idle" if not status_msg else "syncing"
+        _broadcast({"type": "bandcamp.sync-status", "state": state})
+
     # Expose notifiers on app.state so the daemon can wire them into engine
     # callbacks (e.g. on_track_end, on_play_state_changed).
     app.state.notify_library_changed = _notify_library_changed
     app.state.notify_track_changed = _notify_track_changed
     app.state.notify_play_state_changed = _notify_play_state_changed
+    app.state.notify_bandcamp_sync_status = _notify_bandcamp_sync_status
 
     # Wire play-state change callback directly — the engine fires it from its
     # background reader thread whenever mpv's pause property flips.
@@ -783,6 +794,22 @@ def create_app(
         _state["config"]["bandcamp.connected"] = False
         _state["config"]["bandcamp.username"] = None
         _broadcast({"type": "bandcamp.disconnected"})
+        return {"ok": True}
+
+    @app.post("/api/v1/bandcamp/sync")
+    def trigger_bandcamp_sync() -> dict[str, Any]:
+        """Trigger a manual Bandcamp sync in the background.
+
+        Returns immediately; the sync runs in a daemon thread.  Sync progress
+        is pushed to clients via ``bandcamp.sync-status`` WebSocket events.
+        """
+        import threading
+
+        if on_bandcamp_sync_trigger is None:
+            raise HTTPException(status_code=503, detail="Bandcamp sync not configured")
+        threading.Thread(
+            target=on_bandcamp_sync_trigger, daemon=True, name="manual-sync"
+        ).start()
         return {"ok": True}
 
     # -----------------------------------------------------------------------

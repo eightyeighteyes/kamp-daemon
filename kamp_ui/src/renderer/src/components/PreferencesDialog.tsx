@@ -886,8 +886,19 @@ export function PreferencesDialog({
   const scanLibrary = useStore((s) => s.scanLibrary)
   const scanStatus = useStore((s) => s.scanStatus)
   const scanProgress = useStore((s) => s.scanProgress)
+  const prefsInitialTab = useStore((s) => s.prefsInitialTab)
 
-  const [activeTab, setActiveTab] = useState<'general' | 'services' | 'extensions'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'services' | 'extensions'>(
+    () => prefsInitialTab
+  )
+
+  // Sync the active tab whenever the dialog opens, so callers can direct to a
+  // specific tab (e.g. "Bandcamp options…" → services) on each open.
+  useEffect(() => {
+    if (!prefsOpen) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveTab(prefsInitialTab)
+  }, [prefsOpen, prefsInitialTab])
   const [highlightExtId, setHighlightExtId] = useState<string | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 

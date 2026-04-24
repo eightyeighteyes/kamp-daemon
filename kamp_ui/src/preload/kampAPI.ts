@@ -42,6 +42,7 @@ const registerCallbacks = new Set<(manifest: PanelManifest) => void>()
 // bandcamp.needs-login are received even before renderer components subscribe.
 const trackChangeCallbacks = new Set<(state: PlayerState) => void>()
 const playStateChangeCallbacks = new Set<(state: PlayerState) => void>()
+const syncStatusCallbacks = new Set<(state: 'idle' | 'syncing') => void>()
 let _pushWs: WebSocket | null = null
 
 function ensurePushWs(): void {
@@ -71,6 +72,9 @@ function ensurePushWs(): void {
         ipcRenderer.invoke('bandcamp:begin-login').catch((err: unknown) => {
           console.error('[kamp] bandcamp:begin-login failed:', err)
         })
+      } else if (msg.type === 'bandcamp.sync-status') {
+        const state = (msg as unknown as { state: 'idle' | 'syncing' }).state
+        syncStatusCallbacks.forEach((cb) => cb(state))
       } else if (msg.type === 'bandcamp.proxy-fetch') {
         // Relay a bandcamp.com HTTP request through Electron's net module so
         // Chromium's TLS stack (real browser fingerprint) is used instead of
@@ -96,6 +100,11 @@ function ensurePushWs(): void {
 // Establish the connection eagerly so bandcamp.needs-login (and future
 // system-level push events) are received as soon as the preload runs.
 ensurePushWs()
+
+export function onBandcampSyncStatus(callback: (state: 'idle' | 'syncing') => void): () => void {
+  syncStatusCallbacks.add(callback)
+  return () => syncStatusCallbacks.delete(callback)
+}
 
 export function buildKampAPI(): KampAPI {
   return {

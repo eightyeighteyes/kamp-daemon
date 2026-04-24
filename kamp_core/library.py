@@ -498,31 +498,6 @@ class LibraryIndex:
                     service,
                 )
 
-            # One-time migration: if DPC is available but item not found there,
-            # check the Login Keychain. Move it to DPC so future launches are silent.
-            if _dpc_responded and not _mac_kc._dpc_unavailable:
-                try:
-                    raw_login = _mac_kc._get_login_keychain_password("kamp", service)
-                    if raw_login is not None:
-                        logger.info(
-                            "get_session: migrating %s credentials from Login to"
-                            " Data Protection Keychain",
-                            service,
-                        )
-                        _mac_kc.set_password("kamp", service, raw_login)
-                        try:
-                            _mac_kc._delete_login_keychain_password("kamp", service)
-                        except Exception:
-                            pass  # migration cleanup is best-effort
-                        return json.loads(raw_login)  # type: ignore[no-any-return]
-                except Exception as exc:
-                    logger.debug(
-                        "get_session: Login Keychain migration probe failed"
-                        " for service=%s: %s",
-                        service,
-                        exc,
-                    )
-
             row = self._conn.execute(
                 "SELECT session_json FROM sessions WHERE service = ?", (service,)
             ).fetchone()
