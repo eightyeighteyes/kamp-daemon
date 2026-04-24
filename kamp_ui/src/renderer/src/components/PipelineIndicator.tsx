@@ -18,9 +18,33 @@ export function PipelineIndicator(): React.JSX.Element | null {
         <rect x="7.5" y="5" width="1.5" height="9" />
         <rect x="7.5" y="5" width="5" height="1.5" />
         {/* <rect x="11" y="5" width="1.5" height="5" /> */}
-        <line x1="13" y1="5" x2="18" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <line x1="13" y1="9" x2="18" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <line x1="13" y1="13" x2="18" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <line
+          x1="13"
+          y1="5"
+          x2="18"
+          y2="5"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <line
+          x1="13"
+          y1="9"
+          x2="18"
+          y2="9"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <line
+          x1="13"
+          y1="13"
+          x2="18"
+          y2="13"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
       </svg>
     </div>
   )
