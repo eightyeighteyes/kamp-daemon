@@ -1,11 +1,11 @@
 ---
 id: TASK-177
 title: 'add pipeline status indicator, deprecate menu bar'
-status: In Progress
+status: Done
 assignee:
   - Tedd Terry
 created_date: '2026-04-24 16:04'
-updated_date: '2026-04-24 17:34'
+updated_date: '2026-04-24 18:36'
 labels:
   - feature
   - ui
@@ -13,6 +13,7 @@ labels:
 milestone: m-31
 dependencies: []
 priority: medium
+ordinal: 3000
 ---
 
 ## Description
