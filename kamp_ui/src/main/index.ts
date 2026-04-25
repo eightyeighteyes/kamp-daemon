@@ -729,6 +729,32 @@ app.whenReady().then(async () => {
     }
   )
 
+  // Bandcamp CDN responses include non-Latin-1 characters in Content-Disposition
+  // filenames (e.g. a Chinese album name starting at index 22 of the value:
+  // `attachment; filename="<non-ASCII>..."`). Electron's net.fetch wraps response
+  // headers using undici's Headers.set, which throws an uncaught TypeError on
+  // code points > 0xFF — crashing the main process. Sanitize before values
+  // reach the JS layer. onHeadersReceived fires before ClientRequest processes
+  // the response, so this intercepts it in time.
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['https://bandcamp.com/*', 'https://*.bandcamp.com/*'] },
+    (details, callback) => {
+      if (!details.responseHeaders) {
+        callback({})
+        return
+      }
+      const responseHeaders: Record<string, string[]> = {}
+      for (const [key, values] of Object.entries(details.responseHeaders)) {
+        responseHeaders[key] = values.map((v) =>
+          [...v].every((c) => c.charCodeAt(0) <= 0xff)
+            ? v
+            : [...v].map((c) => (c.charCodeAt(0) <= 0xff ? c : '?')).join('')
+        )
+      }
+      callback({ responseHeaders })
+    }
+  )
+
   // Start the Now Playing helper after the server so it can accept key events
   // immediately. The preload primes it with current player state on WS connect.
   startNowPlayingHelper()
