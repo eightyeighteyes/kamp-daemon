@@ -639,9 +639,16 @@ app.whenReady().then(async () => {
       let url = req.url
 
       try {
+        // net.fetch validates header values as Latin-1 (ByteString); non-ASCII
+        // characters throw an uncaught TypeError that crashes the main process.
+        const safeHeaders = Object.fromEntries(
+          Object.entries(req.headers).filter(([, v]) =>
+            [...v].every((c) => c.charCodeAt(0) <= 0xff)
+          )
+        )
         const opts: NetFetchOptions = {
           method: req.method,
-          headers: req.headers as HeadersInit,
+          headers: safeHeaders as HeadersInit,
           body: req.body ?? undefined,
           session: session.defaultSession
         }
