@@ -65,6 +65,9 @@ class _WatchHandler(FileSystemEventHandler):
         self.stage_callback: Callable[[str], None] | None = None
         # Set by Watcher to deliver error notifications to the menu bar.
         self.notification_callback: Callable[[str, str, str], None] | None = None
+        # Called after each successful pipeline run so the library watcher can
+        # schedule a rescan immediately rather than waiting for FSEvents delivery.
+        self.on_pipeline_complete: Callable[[], None] | None = None
 
     def on_created(self, event: FileSystemEvent) -> None:
         if event.is_directory:
@@ -186,6 +189,11 @@ class _WatchHandler(FileSystemEventHandler):
                     stage_callback=self.stage_callback,
                     notification_callback=self.notification_callback,
                 )
+                if self.on_pipeline_complete is not None:
+                    try:
+                        self.on_pipeline_complete()
+                    except Exception:
+                        logger.exception("Error in on_pipeline_complete for %s", path)
             except Exception:
                 logger.exception("Unhandled error in pipeline for %s", path)
         finally:
@@ -220,6 +228,7 @@ class Watcher:
         self._paused = False
         self._stage_callback: Callable[[str], None] | None = None
         self._notification_callback: Callable[[str, str, str], None] | None = None
+        self._on_pipeline_complete: Callable[[], None] | None = None
 
     @property
     def stage_callback(self) -> Callable[[str], None] | None:
@@ -238,6 +247,15 @@ class Watcher:
     def notification_callback(self, cb: Callable[[str, str, str], None] | None) -> None:
         self._notification_callback = cb
         self._handler.notification_callback = cb
+
+    @property
+    def on_pipeline_complete(self) -> Callable[[], None] | None:
+        return self._on_pipeline_complete
+
+    @on_pipeline_complete.setter
+    def on_pipeline_complete(self, cb: Callable[[], None] | None) -> None:
+        self._on_pipeline_complete = cb
+        self._handler.on_pipeline_complete = cb
 
     def start(self) -> None:
         watch_folder = self._config.paths.watch_folder
@@ -277,6 +295,7 @@ class Watcher:
         self._handler = _WatchHandler(self._config)
         self._handler.stage_callback = self._stage_callback
         self._handler.notification_callback = self._notification_callback
+        self._handler.on_pipeline_complete = self._on_pipeline_complete
         self._observer.schedule(self._handler, str(watch_folder), recursive=False)
         self._observer.start()
         self._handler._scan_watch_root()
@@ -314,6 +333,7 @@ class Watcher:
             self._handler = _WatchHandler(config)
             self._handler.stage_callback = self._stage_callback
             self._handler.notification_callback = self._notification_callback
+            self._handler.on_pipeline_complete = self._on_pipeline_complete
             self._observer.schedule(
                 self._handler, str(new_watch_folder), recursive=False
             )
@@ -392,7 +412,7 @@ class _LibraryHandler(FileSystemEventHandler):
             delay = 0.0 if elapsed >= _MAX_SETTLE_SECONDS else _SETTLE_SECONDS
             self._pending = threading.Timer(delay, self._fire)
             self._pending.start()
-        logger.info("Library change event received — rescan in %.1fs", delay)
+        logger.debug("Library change event received — rescan in %.1fs", delay)
 
     def _fire(self) -> None:
         with self._lock:
@@ -431,6 +451,14 @@ class LibraryWatcher:
         threading.Thread(
             target=self._handler._fire, daemon=True, name="library-startup-scan"
         ).start()
+
+    def trigger_scan(self) -> None:
+        """Schedule a debounced library rescan (safe to call from any thread).
+
+        Called after each pipeline completion so albums appear in the UI as
+        they finish processing, without waiting for FSEvents delivery.
+        """
+        self._handler._schedule()
 
     def stop(self) -> None:
         self._handler.cancel_pending()

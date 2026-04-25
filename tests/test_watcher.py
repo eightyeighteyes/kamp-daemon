@@ -848,6 +848,62 @@ class TestStageCallback:
         assert watcher._handler.stage_callback is cb
 
 
+class TestPipelineCompleteCallback:
+    def test_callback_called_after_successful_pipeline(
+        self, config: Config, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """on_pipeline_complete fires after run_in_subprocess succeeds."""
+        handler = _make_handler(config)
+        album = config.paths.watch_folder / "my-album"
+        album.mkdir()
+
+        calls: list[int] = []
+        monkeypatch.setattr(
+            "kamp_daemon.watcher.run_in_subprocess", lambda *a, **kw: None
+        )
+        handler.on_pipeline_complete = lambda: calls.append(1)
+        handler._process(album)
+
+        assert calls == [1]
+
+    def test_callback_not_called_after_failed_pipeline(
+        self, config: Config, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """on_pipeline_complete does NOT fire when run_in_subprocess raises."""
+        handler = _make_handler(config)
+        album = config.paths.watch_folder / "my-album"
+        album.mkdir()
+
+        calls: list[int] = []
+        monkeypatch.setattr(
+            "kamp_daemon.watcher.run_in_subprocess",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        handler.on_pipeline_complete = lambda: calls.append(1)
+        handler._process(album)
+
+        assert calls == []
+
+    def test_watcher_setter_propagates_to_handler(self, config: Config) -> None:
+        """Setting Watcher.on_pipeline_complete updates the live handler."""
+        watcher = Watcher(config)
+        cb = lambda: None  # noqa: E731
+        watcher.on_pipeline_complete = cb
+        assert watcher._handler.on_pipeline_complete is cb
+
+    def test_trigger_scan_calls_schedule(self, tmp_path: Path) -> None:
+        """LibraryWatcher.trigger_scan() schedules a debounced rescan."""
+        on_change = MagicMock()
+        lib = tmp_path / "library"
+        lib.mkdir()
+        watcher = LibraryWatcher(lib, on_change)
+
+        with patch.object(watcher._handler, "_schedule") as mock_schedule:
+            watcher.trigger_scan()
+
+        mock_schedule.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # _LibraryHandler / LibraryWatcher
 # ---------------------------------------------------------------------------

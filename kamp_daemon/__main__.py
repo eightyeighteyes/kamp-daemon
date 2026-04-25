@@ -880,14 +880,7 @@ def _cmd_daemon(
     def _on_library_change() -> None:
         from kamp_core.library import LibraryScanner
 
-        _logger.info("Library scan starting (path=%s)", lib_path)
         result = LibraryScanner(index).scan(lib_path)
-        _logger.info(
-            "Library scan complete: added=%d updated=%d unchanged=%d",
-            result.added,
-            result.updated,
-            result.unchanged,
-        )
         # Offer newly ingested tracks to registered extensions.  Re-scan tracks
         # (to_update) are excluded — only ScanResult.new_tracks (to_add) are
         # passed.  The invoker enforces the single-invocation guarantee via the
@@ -946,6 +939,10 @@ def _cmd_daemon(
 
     core.syncer.status_callback = app.state.notify_bandcamp_sync_status
     core.watcher.stage_callback = app.state.notify_pipeline_stage
+    # After each album finishes processing, schedule a debounced library rescan
+    # so newly ingested tracks appear in the UI immediately rather than waiting
+    # for FSEvents delivery (which is unreliable during high-volume batch syncs).
+    core.watcher.on_pipeline_complete = lib_watcher.trigger_scan
     core.start()
     core.wait()
 
