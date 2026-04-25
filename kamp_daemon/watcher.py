@@ -392,7 +392,7 @@ class _LibraryHandler(FileSystemEventHandler):
             delay = 0.0 if elapsed >= _MAX_SETTLE_SECONDS else _SETTLE_SECONDS
             self._pending = threading.Timer(delay, self._fire)
             self._pending.start()
-        logger.debug("Library re-scan scheduled in %.1fs", delay)
+        logger.info("Library change event received — rescan in %.1fs", delay)
 
     def _fire(self) -> None:
         with self._lock:
