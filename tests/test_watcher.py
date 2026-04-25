@@ -1021,18 +1021,20 @@ class TestLibraryWatcher:
     def test_stop_before_timer_fires_does_not_call_callback(
         self, tmp_path: Path
     ) -> None:
-        """Stopping the watcher before the debounce timer fires prevents the callback."""
+        """Startup scan fires once on start; stopping before the debounce timer
+        fires must not produce a second call."""
+        import time
+
         on_change = MagicMock()
         lib = tmp_path / "library"
         lib.mkdir()
         watcher = LibraryWatcher(lib, on_change)
         watcher.start()
+        time.sleep(0.05)  # let startup-scan thread complete
 
         with patch("kamp_daemon.watcher._SETTLE_SECONDS", 0.2):
             watcher._handler.on_created(FileCreatedEvent(str(lib / "track.mp3")))
             watcher.stop()
-            import time
-
             time.sleep(0.4)
 
-        on_change.assert_not_called()
+        on_change.assert_called_once()  # startup scan only; event timer cancelled

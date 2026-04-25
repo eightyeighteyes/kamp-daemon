@@ -426,6 +426,11 @@ class LibraryWatcher:
         self._observer.schedule(self._handler, str(self._library_path), recursive=True)
         self._observer.start()
         logger.info("Watching library directory: %s", self._library_path)
+        # Scan immediately so files already present when the daemon starts
+        # (or moved in before the watcher was ready) are indexed right away.
+        threading.Thread(
+            target=self._handler._fire, daemon=True, name="library-startup-scan"
+        ).start()
 
     def stop(self) -> None:
         self._handler.cancel_pending()
