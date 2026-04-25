@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 _SETTLE_SECONDS = 2.0  # wait for file to stop growing before processing
 _POLL_INTERVAL = 0.5  # how often to check file size during settle
+# During batch ingests (e.g. sync-all of 500 albums), filesystem events arrive
+# continuously and the debounce timer never gets a 2 s quiet window.  Cap the
+# window so a rescan fires at least every _MAX_SETTLE_SECONDS, keeping the UI
+# refreshed progressively rather than only after the entire batch completes.
+_MAX_SETTLE_SECONDS = 10.0
 # Maximum number of pipeline subprocesses that may run concurrently.
 # A ThreadPoolExecutor with this many workers bounds both the number of OS
 # threads AND the number of concurrent POSIX semaphore allocations.  Without
@@ -328,9 +333,11 @@ class _LibraryHandler(FileSystemEventHandler):
     here because LibraryScanner.scan() always does a full recursive walk; there
     is no benefit to tracking individual paths.
 
-    Events caused by an active ingest pipeline (files being moved into the
-    library) continuously reset the timer, so the scan cannot fire until 2 s
-    after the last change — satisfying AC#3 without cross-process coordination.
+    The debounce has two modes:
+    - Quiet window: fire _SETTLE_SECONDS after the last event (normal use).
+    - Batch cap: if events have been arriving for longer than _MAX_SETTLE_SECONDS
+      without a quiet window, fire immediately so batch ingests (e.g. sync-all of
+      hundreds of albums) surface tracks progressively rather than all at once.
     """
 
     def __init__(self, library_root: Path, on_scan: Callable[[], None]) -> None:
@@ -339,6 +346,9 @@ class _LibraryHandler(FileSystemEventHandler):
         self._on_scan = on_scan
         self._pending: threading.Timer | None = None
         self._lock = threading.Lock()
+        # Monotonic time of the first event in the current debounce window.
+        # Reset to None when the timer fires or is cancelled.
+        self._batch_start: float | None = None
 
     def on_created(self, event: FileSystemEvent) -> None:
         if isinstance(event, FileCreatedEvent) and self._is_audio(event.src_path):
@@ -373,15 +383,21 @@ class _LibraryHandler(FileSystemEventHandler):
 
     def _schedule(self) -> None:
         with self._lock:
+            now = time.monotonic()
+            if self._batch_start is None:
+                self._batch_start = now
             if self._pending is not None:
                 self._pending.cancel()
-            self._pending = threading.Timer(_SETTLE_SECONDS, self._fire)
+            elapsed = now - self._batch_start
+            delay = 0.0 if elapsed >= _MAX_SETTLE_SECONDS else _SETTLE_SECONDS
+            self._pending = threading.Timer(delay, self._fire)
             self._pending.start()
-        logger.debug("Library re-scan scheduled in %.1fs", _SETTLE_SECONDS)
+        logger.debug("Library re-scan scheduled in %.1fs", delay)
 
     def _fire(self) -> None:
         with self._lock:
             self._pending = None
+            self._batch_start = None
         logger.info("Library change detected — triggering re-scan")
         try:
             self._on_scan()
@@ -394,6 +410,7 @@ class _LibraryHandler(FileSystemEventHandler):
             if self._pending is not None:
                 self._pending.cancel()
                 self._pending = None
+            self._batch_start = None
 
 
 class LibraryWatcher:

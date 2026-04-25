@@ -979,6 +979,28 @@ class TestLibraryHandler:
 
         on_scan.assert_called_once()
 
+    def test_batch_cap_fires_immediately_after_max_settle(self, tmp_path: Path) -> None:
+        """Scan fires immediately once _MAX_SETTLE_SECONDS have elapsed, even if
+        events keep arriving, so batch ingests surface tracks progressively."""
+        import time
+
+        on_scan = MagicMock()
+        handler = _make_library_handler(tmp_path, on_scan)
+        lib = tmp_path / "library"
+
+        with (
+            patch("kamp_daemon.watcher._SETTLE_SECONDS", 0.5),
+            patch("kamp_daemon.watcher._MAX_SETTLE_SECONDS", 0.05),
+        ):
+            handler.on_created(FileCreatedEvent(str(lib / "track1.mp3")))
+            time.sleep(0.08)  # exceed _MAX_SETTLE_SECONDS
+            # This event would normally reset the 0.5 s settle timer; instead,
+            # the cap means the timer fires almost immediately.
+            handler.on_created(FileCreatedEvent(str(lib / "track2.mp3")))
+            time.sleep(0.1)
+
+        on_scan.assert_called()
+
     def test_cancel_pending_prevents_scan(self, tmp_path: Path) -> None:
         """cancel_pending() stops the timer before it fires."""
         on_scan = MagicMock()
