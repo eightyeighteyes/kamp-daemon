@@ -83,6 +83,12 @@ jobs:
             --dest-dir kamp_ui/resources/mpv-libs \
             --install-path @executable_path/mpv-libs/ \
             --overwrite-dir
+          # dylibbundler adds LC_RPATH once per rewritten dep — strip all copies.
+          # The load commands already use direct @executable_path/mpv-libs/<lib>
+          # references so the RPATH entries are redundant and dyld rejects dupes
+          # when hardened runtime is active.
+          while install_name_tool -delete_rpath "@executable_path/mpv-libs/" \
+              kamp_ui/resources/mpv 2>/dev/null; do :; done
           echo "→ $(file kamp_ui/resources/mpv)"
           echo "→ dylibs bundled: $(ls kamp_ui/resources/mpv-libs/ | wc -l)"
           echo "→ Verifying no Homebrew paths remain in mpv:"
