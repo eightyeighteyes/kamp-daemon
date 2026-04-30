@@ -77,16 +77,31 @@ jobs:
           # Uses @executable_path (not @loader_path) so that bundled dylibs
           # resolving their own inter-dylib deps always look relative to the
           # mpv executable's directory, not relative to the dylib's own dir.
-          # Exclude VapourSynth: it links against Homebrew Python.framework
-          # (a full framework that can't be bundled), and kamp passes --no-video
-          # so VapourSynth is never exercised.
           dylibbundler \
             --bundle-deps \
             --fix-file kamp_ui/resources/mpv \
             --dest-dir kamp_ui/resources/mpv-libs \
             --install-path @executable_path/mpv-libs/ \
             --overwrite-dir \
-            --exclude libvapoursynth-script
+            --ignore libvapoursynth-script
+          # VapourSynth needs Homebrew Python.framework which can't be bundled.
+          # kamp passes --no-video so VapourSynth is never exercised.
+          # If dylibbundler still bundled it (hard link in mpv's load commands),
+          # rewrite the reference back to the Homebrew path and delete the dylib —
+          # if mpv weakly links it, dyld skips the missing lib silently.
+          # If mpv hard-links it and this still crashes, TASK-185 (build mpv from
+          # source without VapourSynth) is the definitive fix.
+          VS_DYLIB=$(find kamp_ui/resources/mpv-libs -name "libvapoursynth-script*.dylib" 2>/dev/null | head -1)
+          if [ -n "$VS_DYLIB" ]; then
+            VS_NAME=$(basename "$VS_DYLIB")
+            HOMEBREW_PATH="/opt/homebrew/lib/$VS_NAME"
+            echo "→ VapourSynth was bundled; reverting reference and removing from mpv-libs"
+            install_name_tool -change \
+              "@executable_path/mpv-libs/$VS_NAME" \
+              "$HOMEBREW_PATH" \
+              kamp_ui/resources/mpv
+            rm "$VS_DYLIB"
+          fi
           # dylibbundler adds LC_RPATH once per rewritten dep — strip all copies.
           # The load commands already use direct @executable_path/mpv-libs/<lib>
           # references so the RPATH entries are redundant and dyld rejects dupes
