@@ -77,12 +77,16 @@ jobs:
           # Uses @executable_path (not @loader_path) so that bundled dylibs
           # resolving their own inter-dylib deps always look relative to the
           # mpv executable's directory, not relative to the dylib's own dir.
+          # Exclude VapourSynth: it links against Homebrew Python.framework
+          # (a full framework that can't be bundled), and kamp passes --no-video
+          # so VapourSynth is never exercised.
           dylibbundler \
             --bundle-deps \
             --fix-file kamp_ui/resources/mpv \
             --dest-dir kamp_ui/resources/mpv-libs \
             --install-path @executable_path/mpv-libs/ \
-            --overwrite-dir
+            --overwrite-dir \
+            --exclude libvapoursynth-script
           # dylibbundler adds LC_RPATH once per rewritten dep — strip all copies.
           # The load commands already use direct @executable_path/mpv-libs/<lib>
           # references so the RPATH entries are redundant and dyld rejects dupes
@@ -91,13 +95,18 @@ jobs:
               kamp_ui/resources/mpv 2>/dev/null; do :; done
           echo "→ $(file kamp_ui/resources/mpv)"
           echo "→ dylibs bundled: $(ls kamp_ui/resources/mpv-libs/ | wc -l)"
-          echo "→ Verifying no Homebrew paths remain in mpv:"
-          if otool -L kamp_ui/resources/mpv | grep -qE '/opt/homebrew|/usr/local/Cellar'; then
-            otool -L kamp_ui/resources/mpv
-            echo "ERROR: Homebrew paths remain in mpv after dylibbundler" >&2
+          echo "→ Verifying no Homebrew paths remain in mpv or bundled dylibs:"
+          LEAKS=$(
+            { otool -L kamp_ui/resources/mpv;
+              find kamp_ui/resources/mpv-libs -name "*.dylib" -exec otool -L {} \;
+            } | grep -E '/opt/homebrew|/usr/local/Cellar' || true
+          )
+          if [ -n "$LEAKS" ]; then
+            echo "$LEAKS"
+            echo "ERROR: Homebrew paths remain after dylibbundler" >&2
             exit 1
           fi
-          echo "OK: mpv links are clean"
+          echo "OK: mpv and bundled dylibs are clean"
 
       - name: Build Now Playing helper
         # Compile the Swift helper that owns the macOS Now Playing session and
