@@ -67,12 +67,61 @@ jobs:
           fi
           echo "OK: Playwright not bundled"
 
-      - name: Fetch mpv binary
+      - name: Fetch mpv binary (with bundled dylibs)
         run: |
-          brew install mpv
+          brew install dylibbundler mpv
           cp "$(brew --prefix)/bin/mpv" kamp_ui/resources/mpv
           chmod +x kamp_ui/resources/mpv
+          # Walk mpv's full dependency tree, copy every non-system dylib into
+          # mpv-libs/, and rewrite install names so mpv is fully self-contained.
+          # Uses @executable_path (not @loader_path) so that bundled dylibs
+          # resolving their own inter-dylib deps always look relative to the
+          # mpv executable's directory, not relative to the dylib's own dir.
+          dylibbundler \
+            --bundle-deps \
+            --fix-file kamp_ui/resources/mpv \
+            --dest-dir kamp_ui/resources/mpv-libs \
+            --install-path @executable_path/mpv-libs/ \
+            --overwrite-dir \
+            --ignore libvapoursynth-script
+          # VapourSynth needs Homebrew Python.framework which can't be bundled.
+          # kamp passes --no-video so VapourSynth is never exercised.
+          # If dylibbundler still bundled it (hard link in mpv's load commands),
+          # rewrite the reference back to the Homebrew path and delete the dylib —
+          # if mpv weakly links it, dyld skips the missing lib silently.
+          # If mpv hard-links it and this still crashes, TASK-185 (build mpv from
+          # source without VapourSynth) is the definitive fix.
+          VS_DYLIB=$(find kamp_ui/resources/mpv-libs -name "libvapoursynth-script*.dylib" 2>/dev/null | head -1)
+          if [ -n "$VS_DYLIB" ]; then
+            VS_NAME=$(basename "$VS_DYLIB")
+            HOMEBREW_PATH="/opt/homebrew/lib/$VS_NAME"
+            echo "→ VapourSynth was bundled; reverting reference and removing from mpv-libs"
+            install_name_tool -change \
+              "@executable_path/mpv-libs/$VS_NAME" \
+              "$HOMEBREW_PATH" \
+              kamp_ui/resources/mpv
+            rm "$VS_DYLIB"
+          fi
+          # dylibbundler adds LC_RPATH once per rewritten dep — strip all copies.
+          # The load commands already use direct @executable_path/mpv-libs/<lib>
+          # references so the RPATH entries are redundant and dyld rejects dupes
+          # when hardened runtime is active.
+          while install_name_tool -delete_rpath "@executable_path/mpv-libs/" \
+              kamp_ui/resources/mpv 2>/dev/null; do :; done
           echo "→ $(file kamp_ui/resources/mpv)"
+          echo "→ dylibs bundled: $(ls kamp_ui/resources/mpv-libs/ | wc -l)"
+          echo "→ Verifying no Homebrew paths remain in mpv or bundled dylibs:"
+          LEAKS=$(
+            { otool -L kamp_ui/resources/mpv;
+              find kamp_ui/resources/mpv-libs -name "*.dylib" -exec otool -L {} \;
+            } | grep -E '/opt/homebrew|/usr/local/Cellar' || true
+          )
+          if [ -n "$LEAKS" ]; then
+            echo "$LEAKS"
+            echo "ERROR: Homebrew paths remain after dylibbundler" >&2
+            exit 1
+          fi
+          echo "OK: mpv and bundled dylibs are clean"
 
       - name: Build Now Playing helper
         # Compile the Swift helper that owns the macOS Now Playing session and
@@ -164,6 +213,7 @@ jobs:
                    kamp_ui/resources/node \
                    kamp_ui/resources/now-playing-helper \
                    kamp_ui/resources/kamp-keychain-helper
+          find kamp_ui/resources/mpv-libs -name "*.dylib" -exec chmod +x {} \;
 
       - name: Import signing certificate
         env:
@@ -234,9 +284,16 @@ jobs:
             --options runtime --timestamp \
             --entitlements kamp_ui/build/entitlements.kamp.plist \
             kamp_ui/resources/kamp/kamp
+          echo "→ Signing mpv-libs dylibs (parallel)..."
+          find kamp_ui/resources/mpv-libs -type f -name "*.dylib" \
+            | xargs -P8 -I{} codesign \
+                --force --sign "$IDENTITY" \
+                --options runtime --timestamp \
+                {}
           echo "→ Signing mpv and node (with entitlements)..."
-          # mpv needs disable-library-validation (links against unsigned Homebrew dylibs).
           # node needs allow-jit (V8 allocates executable pages via mprotect).
+          # mpv retains disable-library-validation until a clean build confirms
+          # the bundled dylibs are sufficient on a Homebrew-free machine.
           codesign --force --sign "$IDENTITY" \
             --options runtime --timestamp \
             --entitlements kamp_ui/build/entitlements.mac.plist \
