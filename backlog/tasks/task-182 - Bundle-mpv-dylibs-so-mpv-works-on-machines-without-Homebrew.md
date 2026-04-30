@@ -1,16 +1,17 @@
 ---
 id: TASK-182
 title: Bundle mpv dylibs so mpv works on machines without Homebrew
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-26'
-updated_date: '2026-04-29 23:36'
+updated_date: '2026-04-30 21:06'
 labels:
   - build
   - packaging
 milestone: m-32
 dependencies: []
 priority: medium
+ordinal: 1000
 ---
 
 ## Description
