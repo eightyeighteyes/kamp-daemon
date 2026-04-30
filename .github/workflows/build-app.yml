@@ -93,7 +93,8 @@ jobs:
             -Dopenal=disabled \
             -Djack=disabled \
             -Dpulse=disabled \
-            -Dalsa=disabled
+            -Dalsa=disabled \
+            -Dlibplacebo=disabled
           ninja -C build
           cp build/mpv "$GITHUB_WORKSPACE/kamp_ui/resources/mpv"
           chmod +x "$GITHUB_WORKSPACE/kamp_ui/resources/mpv"
