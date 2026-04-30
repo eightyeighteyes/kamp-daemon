@@ -82,23 +82,20 @@ jobs:
             --fix-file kamp_ui/resources/mpv \
             --dest-dir kamp_ui/resources/mpv-libs \
             --install-path @executable_path/mpv-libs/ \
-            --overwrite-dir \
-            --ignore libvapoursynth-script
-          # VapourSynth needs Homebrew Python.framework which can't be bundled.
-          # kamp passes --no-video so VapourSynth is never exercised.
-          # If dylibbundler still bundled it (hard link in mpv's load commands),
-          # rewrite the reference back to the Homebrew path and delete the dylib —
-          # if mpv weakly links it, dyld skips the missing lib silently.
-          # If mpv hard-links it and this still crashes, TASK-185 (build mpv from
-          # source without VapourSynth) is the definitive fix.
+            --overwrite-dir
+          # VapourSynth needs Homebrew Python.framework (unbundleable) and kamp
+          # passes --no-video so it is never exercised. Remove it from mpv-libs and
+          # repoint mpv's load command to a path that will never exist — if mpv
+          # weakly links VapourSynth (expected for an optional feature), dyld skips
+          # the absent lib gracefully. If this still crashes, TASK-185 (build mpv
+          # from source without VapourSynth) is the definitive fix.
           VS_DYLIB=$(find kamp_ui/resources/mpv-libs -name "libvapoursynth-script*.dylib" 2>/dev/null | head -1)
           if [ -n "$VS_DYLIB" ]; then
             VS_NAME=$(basename "$VS_DYLIB")
-            HOMEBREW_PATH="/opt/homebrew/lib/$VS_NAME"
-            echo "→ VapourSynth was bundled; reverting reference and removing from mpv-libs"
+            echo "→ Removing VapourSynth from bundle (unbundleable Python dep, --no-video unused)"
             install_name_tool -change \
               "@executable_path/mpv-libs/$VS_NAME" \
-              "$HOMEBREW_PATH" \
+              "@executable_path/mpv-optional/$VS_NAME" \
               kamp_ui/resources/mpv
             rm "$VS_DYLIB"
           fi
