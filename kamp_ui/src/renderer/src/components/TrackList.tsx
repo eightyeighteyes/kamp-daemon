@@ -109,7 +109,7 @@ export function TrackList(): React.JSX.Element | null {
                 key={`${track.disc_number}-${track.track_number}`}
                 className={`track-row${isCurrent ? ' current' : ''}`}
                 tabIndex={0}
-                onClick={() => {
+                onDoubleClick={() => {
                   if (isCurrent) {
                     togglePlayPause()
                   } else {
