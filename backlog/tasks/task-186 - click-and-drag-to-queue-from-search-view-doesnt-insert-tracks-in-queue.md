@@ -1,16 +1,17 @@
 ---
 id: TASK-186
 title: click and drag to queue from search view doesn't insert tracks in queue
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-30 21:30'
-updated_date: '2026-05-01 11:12'
+updated_date: '2026-05-01 12:34'
 labels:
   - bug
   - ui
   - 'estimate: side'
 milestone: m-32
 dependencies: []
+ordinal: 3000
 ---
 
 ## Description
