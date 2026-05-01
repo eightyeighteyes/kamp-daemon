@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.14.0](https://github.com/eightyeighteyes/kamp/compare/v1.13.1...v1.14.0) (2026-05-01)
+
+
+### Features
+
+* **ui:** Reveal in Finder / Show in Explorer / Show in Files (KAMP-222) ([#311](https://github.com/eightyeighteyes/kamp/issues/311)) ([c049e99](https://github.com/eightyeighteyes/kamp/commit/c049e99dcfca8ae6527142f4607477d3c2473475))
+
+
+### Bug Fixes
+
+* **onboarding:** remove default library path so onboarding always shows on fresh install (KAMP-221) ([#308](https://github.com/eightyeighteyes/kamp/issues/308)) ([c78397d](https://github.com/eightyeighteyes/kamp/commit/c78397df62f9849be4d34f5ea658a55ea6ac39f4))
+* **ui:** add createDirectory property to library folder picker (KAMP-223) ([#310](https://github.com/eightyeighteyes/kamp/issues/310)) ([5301325](https://github.com/eightyeighteyes/kamp/commit/5301325454f28b0afe7b7e4e6ca3970b35a28324))
+
 ## [1.13.1](https://github.com/eightyeighteyes/kamp/compare/v1.13.0...v1.13.1) (2026-05-01)
 
 
