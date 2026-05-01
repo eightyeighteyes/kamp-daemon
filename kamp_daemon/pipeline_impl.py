@@ -83,6 +83,12 @@ def run(
     the parent process routes to rumps.notification().
     """
     logger.info("Pipeline started for %s", path)
+    # Both paths must be set before any pipeline run — the caller (Watcher) is
+    # only started after the user completes onboarding.
+    assert config.paths.watch_folder is not None
+    assert config.paths.library is not None
+    watch_folder: Path = config.paths.watch_folder
+    library: Path = config.paths.library
 
     try:
         # --- 1. Extract -------------------------------------------------------
@@ -95,7 +101,7 @@ def run(
         except ExtractionError as exc:
             logger.error("Extraction failed: %s", exc)
             _notify(notify_callback, "Extraction failed", path.name)
-            _quarantine(path, config.paths.watch_folder)
+            _quarantine(path, watch_folder)
             return
 
         # Notify the watcher of the watch folder directory as early as possible so it
@@ -111,7 +117,7 @@ def run(
             _notify(
                 notify_callback, "Extraction failed", f"No audio files in {path.name}"
             )
-            _quarantine(directory, config.paths.watch_folder)
+            _quarantine(directory, watch_folder)
             return
 
         # Build a shared KampGround context for this pipeline invocation.
@@ -171,7 +177,7 @@ def run(
             except TaggingError as exc:
                 logger.error("Tagging failed: %s", exc)
                 _notify(notify_callback, "Tagging failed", path.name)
-                _quarantine(directory, config.paths.watch_folder)
+                _quarantine(directory, watch_folder)
                 return
 
         # --- 3. Artwork -------------------------------------------------------
@@ -210,13 +216,13 @@ def run(
             destinations = move_to_library(
                 audio_files=audio_files,
                 watch_dir=directory,
-                library_root=config.paths.library,
+                library_root=library,
                 path_template=config.library.path_template,
             )
         except MoveError as exc:
             logger.error("Move failed: %s", exc)
             _notify(notify_callback, "Move failed", path.name)
-            _quarantine(directory, config.paths.watch_folder)
+            _quarantine(directory, watch_folder)
             return
 
         logger.info(

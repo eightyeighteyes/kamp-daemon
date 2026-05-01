@@ -80,6 +80,7 @@ export default function App(): React.JSX.Element {
   const setServerStatus = useStore((s) => s.setServerStatus)
   const serverStatus = useStore((s) => s.serverStatus)
   const hasAlbums = useStore((s) => s.library.albums.length > 0)
+  const configuredLibraryPath = useStore((s) => s.configuredLibraryPath)
   const activeView = useStore((s) => s.activeView)
   const setActiveView = useStore((s) => s.setActiveView)
   const togglePlayPause = useStore((s) => s.togglePlayPause)
@@ -144,13 +145,15 @@ export default function App(): React.JSX.Element {
   }, [serverStatus])
 
   // Determine onboarding requirement once the splash clears (by which time
-  // loadLibrary has had ~1.5s to complete and hasAlbums is stable).
+  // loadConfig has had ~1.5s to complete and configuredLibraryPath is stable).
+  // Keyed off library path rather than album count: a returning user with an
+  // empty library should not see onboarding again.
   useEffect(() => {
     if (splashGone && onboardingRequired === null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOnboardingRequired(!hasAlbums)
+      setOnboardingRequired(configuredLibraryPath === null)
     }
-  }, [splashGone, hasAlbums, onboardingRequired])
+  }, [splashGone, configuredLibraryPath, onboardingRequired])
 
   // Auto-exit the onboarding once albums arrive — e.g. from a Bandcamp sync
   // triggered before the user finished the setup steps. New users don't hit

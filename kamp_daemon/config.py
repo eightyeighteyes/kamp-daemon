@@ -51,8 +51,8 @@ DEFAULT_CONFIG_PATH = _default_config_path()
 
 @dataclass
 class PathsConfig:
-    watch_folder: Path
-    library: Path
+    watch_folder: Path | None
+    library: Path | None
 
 
 @dataclass
@@ -100,11 +100,9 @@ def _prompt(label: str, default: str) -> str:
     return value if value else default
 
 
-# Default values for all 11 active config keys (stored as text in the DB).
+# Default values for all non-path config keys (stored as text in the DB).
 # Last.fm credentials are stored in the OS keychain via the sessions table, not here.
 _CONFIG_DEFAULTS: dict[str, str] = {
-    "paths.watch_folder": "~/Music/staging",
-    "paths.library": "~/Music",
     "musicbrainz.trust-musicbrainz-when-tags-conflict": "false",
     "artwork.min_dimension": "1000",
     "artwork.max_bytes": "1000000",
@@ -313,10 +311,14 @@ class Config:
                 session_key=_lastfm_session["session_key"],
             )
 
+        def _get_path(key: str) -> Path | None:
+            raw = settings.get(key)
+            return Path(raw).expanduser() if raw else None
+
         return cls(
             paths=PathsConfig(
-                watch_folder=Path(_get("paths.watch_folder")).expanduser(),
-                library=Path(_get("paths.library")).expanduser(),
+                watch_folder=_get_path("paths.watch_folder"),
+                library=_get_path("paths.library"),
             ),
             musicbrainz=MusicBrainzConfig(
                 trust_musicbrainz_when_tags_conflict=_bool(

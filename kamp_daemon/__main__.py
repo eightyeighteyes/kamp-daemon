@@ -577,7 +577,9 @@ def _cmd_daemon(
 
     # --- HTTP server component initialisation (formerly _cmd_server) ---
 
-    lib_path = (library_path or config.paths.library).expanduser().resolve()
+    _raw_lib = library_path or config.paths.library
+    lib_path = _raw_lib.expanduser().resolve() if _raw_lib else None
+    lib_watcher: "LibraryWatcher | None" = None
     db_path = _state_dir() / "library.db"
 
     index = LibraryIndex(db_path)
@@ -723,7 +725,8 @@ def _cmd_daemon(
         # Library path changed at runtime (e.g. during onboarding).  Restart the
         # file-system watcher on the new path so FSEvents and pipeline-complete
         # scans use the correct directory going forward.
-        lib_watcher.stop()
+        if lib_watcher is not None:
+            lib_watcher.stop()
         lib_path = new_path
         lib_watcher = LibraryWatcher(lib_path, _on_library_change)
         lib_watcher.start()
@@ -814,8 +817,10 @@ def _cmd_daemon(
     _bc_session = index.get_session("bandcamp")
     _bc_username: str | None = _bc_session.get("username") if _bc_session else None
     _config_values: dict[str, object] = {
-        "paths.watch_folder": str(config.paths.watch_folder),
-        "paths.library": str(config.paths.library),
+        "paths.watch_folder": (
+            str(config.paths.watch_folder) if config.paths.watch_folder else None
+        ),
+        "paths.library": str(config.paths.library) if config.paths.library else None,
         "musicbrainz.trust-musicbrainz-when-tags-conflict": config.musicbrainz.trust_musicbrainz_when_tags_conflict,
         "artwork.min_dimension": config.artwork.min_dimension,
         "artwork.max_bytes": config.artwork.max_bytes,
@@ -891,6 +896,8 @@ def _cmd_daemon(
     def _on_library_change() -> None:
         from kamp_core.library import LibraryScanner
 
+        if lib_path is None:
+            return
         try:
             result = LibraryScanner(index).scan(lib_path)
             # Offer newly ingested tracks to registered extensions.  Re-scan tracks
@@ -927,8 +934,9 @@ def _cmd_daemon(
             # left stale due to a transient scan error.
             app.state.notify_library_changed()
 
-    lib_watcher = LibraryWatcher(lib_path, _on_library_change)
-    lib_watcher.start()
+    if lib_path is not None:
+        lib_watcher = LibraryWatcher(lib_path, _on_library_change)
+        lib_watcher.start()
 
     # --- Start uvicorn in a background thread ---
     # uvicorn.Server.serve() detects it is not on the main thread and skips
@@ -936,7 +944,8 @@ def _cmd_daemon(
     # DaemonCore's SIGTERM/SIGINT handlers below.
     print(f"Kamp API server starting on http://{host}:{port}")
     print(f"  Docs  → http://{host}:{port}/docs")
-    print(f"  Library → {lib_path}")
+    if lib_path is not None:
+        print(f"  Library → {lib_path}")
     uv_server = uvicorn.Server(uvicorn.Config(app, host=host, port=port))
 
     def _run_uvicorn() -> None:
@@ -977,7 +986,8 @@ def _cmd_daemon(
     uv_server.should_exit = True
     uv_thread.join(timeout=10)
 
-    lib_watcher.stop()
+    if lib_watcher is not None:
+        lib_watcher.stop()
     engine.shutdown()
     index.close()
 

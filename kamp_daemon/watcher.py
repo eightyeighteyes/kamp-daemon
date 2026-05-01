@@ -94,6 +94,8 @@ class _WatchHandler(FileSystemEventHandler):
 
     def _scan_watch_root(self) -> None:
         """Schedule any directories or ZIPs in the watch folder that are not already pending."""
+        if self._watch_root is None:
+            return
         try:
             children = list(self._watch_root.iterdir())
         except OSError:
@@ -259,6 +261,9 @@ class Watcher:
 
     def start(self) -> None:
         watch_folder = self._config.paths.watch_folder
+        assert (
+            watch_folder is not None
+        ), "Watcher.start() called before watch_folder is configured"
         watch_folder.mkdir(parents=True, exist_ok=True)
         self._observer.schedule(self._handler, str(watch_folder), recursive=False)
         self._observer.start()
@@ -329,6 +334,9 @@ class Watcher:
             self._observer.unschedule_all()
             self._handler._pipeline_pool.shutdown(wait=False)
             new_watch_folder = config.paths.watch_folder
+            assert (
+                new_watch_folder is not None
+            ), "reload_config() called with no watch_folder configured"
             new_watch_folder.mkdir(parents=True, exist_ok=True)
             self._handler = _WatchHandler(config)
             self._handler.stage_callback = self._stage_callback

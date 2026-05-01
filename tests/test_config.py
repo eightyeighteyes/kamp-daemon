@@ -53,8 +53,9 @@ class TestLoad:
     def test_load_with_defaults(self, db: LibraryIndex) -> None:
         Config.write_defaults(db)
         config = Config.load(db)
-        assert config.paths.watch_folder == Path("~/Music/staging").expanduser()
-        assert config.paths.library == Path("~/Music").expanduser()
+        # Paths have no default — they are None until the user sets them via onboarding.
+        assert config.paths.watch_folder is None
+        assert config.paths.library is None
         assert config.musicbrainz.trust_musicbrainz_when_tags_conflict is False
         assert config.artwork.min_dimension == 1000
         assert config.artwork.max_bytes == 1_000_000
@@ -150,7 +151,8 @@ class TestFirstRunSetup:
         monkeypatch.setattr("builtins.input", lambda _: "")
         Config.first_run_setup(db)
         settings = db.get_all_settings()
-        assert len(settings) == len(_CONFIG_DEFAULTS)
+        # first_run_setup writes 2 path keys explicitly + all non-path defaults.
+        assert len(settings) == len(_CONFIG_DEFAULTS) + 2
 
     def test_setup_then_load_round_trips(
         self, db: LibraryIndex, monkeypatch: pytest.MonkeyPatch
