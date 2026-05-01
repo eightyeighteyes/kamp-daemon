@@ -443,7 +443,10 @@ export const useStore = create<PlayerStore>((set, get) => ({
   loadConfig: async () => {
     try {
       const configValues = await api.getConfig()
-      set({ configValues })
+      set({
+        configValues,
+        configuredLibraryPath: (configValues['paths.library'] as string | null) ?? null
+      })
     } catch {
       // Best-effort — preferences dialog will show empty fields.
     }

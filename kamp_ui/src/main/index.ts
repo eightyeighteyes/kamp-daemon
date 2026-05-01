@@ -729,7 +729,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('open-directory', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
-      title: 'Choose Music Library Folder'
+      title: 'Choose Music Library Folder',
+      defaultPath: join(homedir(), 'Music')
     })
     return result.canceled ? null : result.filePaths[0]
   })
