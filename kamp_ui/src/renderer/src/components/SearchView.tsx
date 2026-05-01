@@ -92,7 +92,7 @@ function SearchTrackRow({
       className="search-track-row"
       tabIndex={0}
       draggable
-      onClick={handleClick}
+      onDoubleClick={handleClick}
       onKeyDown={(e) => e.key === 'Enter' && handleClick()}
       onContextMenu={(e) => onContextMenu(e, track)}
       onDragStart={(e) => {
