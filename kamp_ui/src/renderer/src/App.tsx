@@ -79,7 +79,6 @@ export default function App(): React.JSX.Element {
   const applyServerState = useStore((s) => s.applyServerState)
   const setServerStatus = useStore((s) => s.setServerStatus)
   const serverStatus = useStore((s) => s.serverStatus)
-  const hasAlbums = useStore((s) => s.library.albums.length > 0)
   const configuredLibraryPath = useStore((s) => s.configuredLibraryPath)
   const activeView = useStore((s) => s.activeView)
   const setActiveView = useStore((s) => s.setActiveView)
@@ -117,9 +116,8 @@ export default function App(): React.JSX.Element {
   // Key: active main panel id (built-in view name or extension panel id).
   const viewScrollRef = useRef<Partial<Record<string, number>>>({})
 
-  // Onboarding: required when the library is empty on first connect.
-  // Determined once (after the splash clears) so the flow doesn't exit prematurely
-  // when hasAlbums becomes true mid-scan while a card step is still on screen.
+  // Onboarding: required when no library path is configured.
+  // Determined once (after the splash clears) so the check is stable.
   const [onboardingRequired, setOnboardingRequired] = useState<boolean | null>(null)
   const [onboardingComplete, setOnboardingComplete] = useState(false)
   const [onboardingTitle, setOnboardingTitle] = useState('Welcome to Kamp')
@@ -154,17 +152,6 @@ export default function App(): React.JSX.Element {
       setOnboardingRequired(configuredLibraryPath === null)
     }
   }, [splashGone, configuredLibraryPath, onboardingRequired])
-
-  // Auto-exit the onboarding once albums arrive — e.g. from a Bandcamp sync
-  // triggered before the user finished the setup steps. New users don't hit
-  // this because their library stays empty until the 'almost-done' scan
-  // completes, at which point the onboarding finishes through its normal path.
-  useEffect(() => {
-    if (onboardingRequired === true && !onboardingComplete && hasAlbums) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      handleOnboardingComplete()
-    }
-  }, [hasAlbums, onboardingRequired, onboardingComplete, handleOnboardingComplete])
 
   useEffect(() => {
     loadUiState().then(() => loadLibrary())
