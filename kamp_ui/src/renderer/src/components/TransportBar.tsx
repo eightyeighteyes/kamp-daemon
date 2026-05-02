@@ -99,7 +99,9 @@ export function TransportBar(): React.JSX.Element {
           }}
           onPointerUp={() => setScrubPos(null)}
           style={
-            { '--range-progress': `${(displayPosition / (duration || 1)) * 100}%` } as React.CSSProperties
+            {
+              '--range-progress': `${(displayPosition / (duration || 1)) * 100}%`
+            } as React.CSSProperties
           }
         />
         <span className="time">{formatTime(duration)}</span>
