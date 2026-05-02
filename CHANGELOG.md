@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 * **ui:** eliminate seek-bar double-seek stutter (KAMP-226) ([#314](https://github.com/eightyeighteyes/kamp/issues/314)) ([b25eac6](https://github.com/eightyeighteyes/kamp/commit/b25eac6fb8363c619601071f79d8f16649cdfdfa))
+* **ui:** fixed transport position and add marquee on hover (KAMP-227) ([#316](https://github.com/eightyeighteyes/kamp/issues/316)) ([d0e45b1](https://github.com/eightyeighteyes/kamp/commit/d0e45b1311fa1f75a8fa24b057799394128d9850))
 
 ## [1.14.0](https://github.com/eightyeighteyes/kamp/compare/v1.13.1...v1.14.0) (2026-05-01)
 
