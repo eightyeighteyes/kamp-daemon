@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.15.0](https://github.com/eightyeighteyes/kamp/compare/v1.14.0...v1.15.0) (2026-05-02)
+
+
+### Features
+
+* **playback:** gapless track transitions via mpv playlist lookahead (KAMP-30) ([#312](https://github.com/eightyeighteyes/kamp/issues/312)) ([996b72c](https://github.com/eightyeighteyes/kamp/commit/996b72c2e05f6fafc68452c1eaf274d6bebf25ac))
+
+
+### Bug Fixes
+
+* **ui:** eliminate seek-bar double-seek stutter (KAMP-226) ([#314](https://github.com/eightyeighteyes/kamp/issues/314)) ([b25eac6](https://github.com/eightyeighteyes/kamp/commit/b25eac6fb8363c619601071f79d8f16649cdfdfa))
+
 ## [1.14.0](https://github.com/eightyeighteyes/kamp/compare/v1.13.1...v1.14.0) (2026-05-01)
 
 
