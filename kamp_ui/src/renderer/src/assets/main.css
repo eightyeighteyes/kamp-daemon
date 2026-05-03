@@ -2863,6 +2863,16 @@ body,
   gap: 4px;
 }
 
+.prefs-module-style-select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
 .prefs-module-btn {
   background: none;
   border: 1px solid var(--border);

@@ -2,6 +2,8 @@ import type React from 'react'
 import { NewArrivalsModule } from './NewArrivalsModule'
 import { LastPlayedModule } from './LastPlayedModule'
 
+export type DisplayStyle = 'shelf'
+
 export interface ModuleProps {}
 
 export interface ModuleRegistration {
