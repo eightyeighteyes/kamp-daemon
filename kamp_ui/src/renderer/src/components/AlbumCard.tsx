@@ -96,42 +96,42 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
             style={{ top: menu.y, left: menu.x }}
             onClick={(e) => e.stopPropagation()}
           >
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void playAlbumNext(album.album_artist, album.album, album.file_path)
-              setMenu(null)
-            }}
-          >
-            ▶ Play Next
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void addAlbumToQueue(album.album_artist, album.album, album.file_path)
-              setMenu(null)
-            }}
-          >
-            + Add to Queue
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={async () => {
-              let filePath = album.file_path
-              if (!filePath) {
-                const tracks = await getTracksForAlbum(album.album_artist, album.album)
-                filePath = tracks[0]?.file_path ?? ''
-              }
-              if (filePath) window.api.showItemInFolder(filePath)
-              setMenu(null)
-            }}
-          >
-            {window.electron.process.platform === 'darwin'
-              ? '↗ Reveal in Finder'
-              : window.electron.process.platform === 'win32'
-                ? '↗ Show in Explorer'
-                : '↗ Show in Files'}
-          </button>
+            <button
+              className="track-context-menu-item"
+              onClick={() => {
+                void playAlbumNext(album.album_artist, album.album, album.file_path)
+                setMenu(null)
+              }}
+            >
+              ▶ Play Next
+            </button>
+            <button
+              className="track-context-menu-item"
+              onClick={() => {
+                void addAlbumToQueue(album.album_artist, album.album, album.file_path)
+                setMenu(null)
+              }}
+            >
+              + Add to Queue
+            </button>
+            <button
+              className="track-context-menu-item"
+              onClick={async () => {
+                let filePath = album.file_path
+                if (!filePath) {
+                  const tracks = await getTracksForAlbum(album.album_artist, album.album)
+                  filePath = tracks[0]?.file_path ?? ''
+                }
+                if (filePath) window.api.showItemInFolder(filePath)
+                setMenu(null)
+              }}
+            >
+              {window.electron.process.platform === 'darwin'
+                ? '↗ Reveal in Finder'
+                : window.electron.process.platform === 'win32'
+                  ? '↗ Show in Explorer'
+                  : '↗ Show in Files'}
+            </button>
           </div>,
           document.body
         )}
