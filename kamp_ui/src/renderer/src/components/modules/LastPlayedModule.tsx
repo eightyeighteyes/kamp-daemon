@@ -26,7 +26,9 @@ export function LastPlayedModule({ displayStyle }: ModuleProps): React.JSX.Eleme
       .then((all) => {
         const cutoff = days > 0 ? Date.now() / 1000 - days * 86400 : null
         const played = all
-          .filter((a) => a.last_played_at !== null && (cutoff === null || a.last_played_at >= cutoff))
+          .filter(
+            (a) => a.last_played_at !== null && (cutoff === null || a.last_played_at >= cutoff)
+          )
           .slice(0, count)
         setAlbums(played)
       })
