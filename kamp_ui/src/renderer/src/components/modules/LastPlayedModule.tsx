@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { getAlbums } from '../../api/client'
 import type { Album } from '../../api/client'
-import { AlbumCard } from '../AlbumCard'
 import { useStore } from '../../store'
+import { ShelfView } from './ShelfView'
 
 export function LastPlayedModule(): React.JSX.Element {
   const count = useStore((s) => s.lastPlayedCount)
@@ -37,14 +37,5 @@ export function LastPlayedModule(): React.JSX.Element {
     return <div className="module-empty">No albums played yet.</div>
   }
 
-  return (
-    <div className="module-last-played">
-      {albums.map((album) => (
-        <AlbumCard
-          key={album.missing_album ? album.file_path : `${album.album_artist}\0${album.album}`}
-          album={album}
-        />
-      ))}
-    </div>
-  )
+  return <ShelfView albums={albums} />
 }
