@@ -29,7 +29,7 @@ export function LastPlayedModule({ displayStyle }: ModuleProps): React.JSX.Eleme
           .filter(
             (a) => a.last_played_at !== null && (cutoff === null || a.last_played_at >= cutoff)
           )
-          .slice(0, count)
+          .slice(0, count > 0 ? count : undefined)
         setAlbums(played)
       })
       .catch(() => {})
