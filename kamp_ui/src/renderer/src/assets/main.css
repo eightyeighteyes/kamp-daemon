@@ -2713,7 +2713,7 @@ body,
 .base-kamp {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 23px;
   padding: 8px;
 }
 
@@ -2724,17 +2724,17 @@ body,
 }
 
 .base-kamp-module-label {
-  background: var(--surface-hover);
-  border-radius: 5px 5px 0 0;
-  padding: 5px 10px;
-  font-size: 11px;
-  font-weight: 500;
+  background: var(--surface);
+  border-radius: 6px 6px 0 0;
+  padding: 6px 10px;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--text);
 }
 
 .base-kamp-module-body {
   width: 100%;
-  background: var(--surface-hover);
+  background: var(--surface);
   border-radius: 0 5px 5px 5px;
   min-height: 285px;
   overflow: hidden;
