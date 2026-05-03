@@ -2772,6 +2772,25 @@ body,
   }
 }
 
+/* New Arrivals module carousel */
+.module-new-arrivals {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.module-new-arrivals .album-card {
+  flex: 0 0 150px;
+}
+
+.module-empty {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
 /* Preferences — Home tab module order editor */
 .prefs-module-row {
   display: flex;
