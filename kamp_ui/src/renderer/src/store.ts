@@ -18,6 +18,7 @@ import type {
   SearchResult,
   Track
 } from './api/client'
+import type { DisplayStyle } from './components/modules/registry'
 
 type LibraryState = {
   albums: Album[]
@@ -40,6 +41,7 @@ type PlayerStore = {
   configuredLibraryPath: string | null
   activeView: 'library' | 'now-playing' | 'home'
   moduleOrder: string[]
+  moduleDisplayStyles: Record<string, DisplayStyle>
   lastPlayedCount: number
   sortOrder: 'album_artist' | 'album' | 'date_added' | 'last_played'
   searchQuery: string
@@ -58,6 +60,7 @@ type PlayerStore = {
   setSortOrder: (sort: 'album_artist' | 'album' | 'date_added' | 'last_played') => Promise<void>
   setActiveView: (view: 'library' | 'now-playing' | 'home') => Promise<void>
   setModuleOrder: (ids: string[]) => void
+  setModuleDisplayStyle: (id: string, style: DisplayStyle) => void
   setLastPlayedCount: (n: number) => void
   loadLibrary: () => Promise<void>
   loadUiState: () => Promise<void>
@@ -144,6 +147,10 @@ export const useStore = create<PlayerStore>((set, get) => ({
   moduleOrder: (() => {
     const saved = localStorage.getItem('kamp:module-order')
     return saved ? (JSON.parse(saved) as string[]) : ['kamp.new-arrivals', 'kamp.last-played']
+  })(),
+  moduleDisplayStyles: (() => {
+    const saved = localStorage.getItem('kamp:module-display-styles')
+    return saved ? (JSON.parse(saved) as Record<string, DisplayStyle>) : {}
   })(),
   lastPlayedCount: (() => {
     const saved = localStorage.getItem('kamp:last-played-count')
@@ -236,6 +243,12 @@ export const useStore = create<PlayerStore>((set, get) => ({
   setModuleOrder: (ids) => {
     localStorage.setItem('kamp:module-order', JSON.stringify(ids))
     set({ moduleOrder: ids })
+  },
+
+  setModuleDisplayStyle: (id, style) => {
+    const next = { ...get().moduleDisplayStyles, [id]: style }
+    localStorage.setItem('kamp:module-display-styles', JSON.stringify(next))
+    set({ moduleDisplayStyles: next })
   },
 
   setLastPlayedCount: (n) => {

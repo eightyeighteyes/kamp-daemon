@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { getAlbums } from '../../api/client'
 import type { Album } from '../../api/client'
-import { AlbumCard } from '../AlbumCard'
+import { ShelfView } from './ShelfView'
 
 const DAYS = 30
 const CUTOFF_SECONDS = DAYS * 86400
@@ -35,14 +35,5 @@ export function NewArrivalsModule(): React.JSX.Element {
     return <div className="module-empty">No albums added in the last {DAYS} days.</div>
   }
 
-  return (
-    <div className="module-new-arrivals">
-      {albums.map((album) => (
-        <AlbumCard
-          key={album.missing_album ? album.file_path : `${album.album_artist}\0${album.album}`}
-          album={album}
-        />
-      ))}
-    </div>
-  )
+  return <ShelfView albums={albums} />
 }

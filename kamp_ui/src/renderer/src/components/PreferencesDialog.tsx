@@ -5,6 +5,7 @@ import type { ExtensionStateHook } from '../hooks/useExtensionState'
 import { useExtensionInstall } from '../hooks/useExtensionInstall'
 import { connectLastfm, disconnectLastfm, disconnectBandcamp } from '../api/client'
 import { MODULE_REGISTRY } from './modules/registry'
+import type { DisplayStyle } from './modules/registry'
 
 // Keys whose values must be integers — sent as strings over the wire but
 // stored as numbers in the config.
@@ -927,6 +928,8 @@ export function PreferencesDialog({
 
   const moduleOrder = useStore((s) => s.moduleOrder)
   const setModuleOrder = useStore((s) => s.setModuleOrder)
+  const moduleDisplayStyles = useStore((s) => s.moduleDisplayStyles)
+  const setModuleDisplayStyle = useStore((s) => s.setModuleDisplayStyle)
   const lastPlayedCount = useStore((s) => s.lastPlayedCount)
   const setLastPlayedCount = useStore((s) => s.setLastPlayedCount)
 
@@ -1225,6 +1228,13 @@ export function PreferencesDialog({
                   return (
                     <div key={id} className="prefs-row prefs-module-row">
                       <span className="prefs-label">{mod.title}</span>
+                      <select
+                        className="prefs-module-style-select"
+                        value={moduleDisplayStyles[id] ?? 'shelf'}
+                        onChange={(e) => setModuleDisplayStyle(id, e.target.value as DisplayStyle)}
+                      >
+                        <option value="shelf">Shelf</option>
+                      </select>
                       <div className="prefs-module-actions">
                         <button
                           className="prefs-module-btn"
