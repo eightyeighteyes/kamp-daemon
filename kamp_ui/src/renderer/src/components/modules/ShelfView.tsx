@@ -7,15 +7,35 @@ interface ShelfViewProps {
 }
 
 const SCROLL_PX = 500
+const EASE = 0.15
 
 export function ShelfView({ albums }: ShelfViewProps): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const targetRef = useRef(0)
+  const animatingRef = useRef(false)
+
+  const animate = (el: HTMLDivElement): void => {
+    const maxScroll = el.scrollWidth - el.clientWidth
+    const target = Math.max(0, Math.min(targetRef.current, maxScroll))
+    const diff = target - el.scrollLeft
+    if (Math.abs(diff) < 0.5) {
+      el.scrollLeft = target
+      animatingRef.current = false
+      return
+    }
+    el.scrollLeft += diff * EASE
+    requestAnimationFrame(() => animate(el))
+  }
 
   const scroll = (dir: 'left' | 'right'): void => {
-    scrollRef.current?.scrollBy({
-      left: dir === 'right' ? SCROLL_PX : -SCROLL_PX,
-      behavior: 'smooth'
-    })
+    const el = scrollRef.current
+    if (!el) return
+    if (!animatingRef.current) targetRef.current = el.scrollLeft
+    targetRef.current += dir === 'right' ? SCROLL_PX : -SCROLL_PX
+    if (!animatingRef.current) {
+      animatingRef.current = true
+      requestAnimationFrame(() => animate(el))
+    }
   }
 
   return (
