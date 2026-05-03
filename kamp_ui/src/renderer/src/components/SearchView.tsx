@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useState } from 'react'
 import { useStore } from '../store'
-import { artUrl, getTracksForAlbum } from '../api/client'
+import { artUrl } from '../api/client'
 import type { Album, Track } from '../api/client'
 import { SortControl } from './SortControl'
-import { useMenuBounds } from '../hooks/useMenuBounds'
+import { AlbumContextMenu } from './AlbumContextMenu'
+import { TrackContextMenu } from './TrackContextMenu'
 
 type AlbumMenu = { x: number; y: number; album: Album }
 type TrackMenu = { x: number; y: number; filePath: string; favorite: boolean }
@@ -114,43 +115,9 @@ function SearchTrackRow({
 export function SearchView(): React.JSX.Element {
   const results = useStore((s) => s.searchResults)
   const query = useStore((s) => s.searchQuery)
-  const playAlbumNext = useStore((s) => s.playAlbumNext)
-  const addAlbumToQueue = useStore((s) => s.addAlbumToQueue)
-  const playNext = useStore((s) => s.playNext)
-  const addToQueue = useStore((s) => s.addToQueue)
-  const setFavorite = useStore((s) => s.setFavorite)
 
   const [albumMenu, setAlbumMenu] = useState<AlbumMenu | null>(null)
   const [trackMenu, setTrackMenu] = useState<TrackMenu | null>(null)
-  const albumMenuRef = useRef<HTMLDivElement>(null)
-  const trackMenuRef = useRef<HTMLDivElement>(null)
-
-  // Dismiss album menu on click outside.
-  useEffect(() => {
-    if (!albumMenu) return
-    const handler = (e: MouseEvent): void => {
-      if (albumMenuRef.current && !albumMenuRef.current.contains(e.target as Node)) {
-        setAlbumMenu(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [albumMenu])
-
-  // Dismiss track menu on click outside.
-  useEffect(() => {
-    if (!trackMenu) return
-    const handler = (e: MouseEvent): void => {
-      if (trackMenuRef.current && !trackMenuRef.current.contains(e.target as Node)) {
-        setTrackMenu(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [trackMenu])
-
-  useMenuBounds(albumMenuRef, albumMenu)
-  useMenuBounds(trackMenuRef, trackMenu)
 
   if (!results) {
     return <div className="search-empty">Searching…</div>
@@ -209,121 +176,22 @@ export function SearchView(): React.JSX.Element {
       )}
 
       {albumMenu && (
-        <div
-          ref={albumMenuRef}
-          className="track-context-menu"
-          style={{ top: albumMenu.y, left: albumMenu.x }}
-        >
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void playAlbumNext(
-                albumMenu.album.album_artist,
-                albumMenu.album.album,
-                albumMenu.album.file_path
-              )
-              setAlbumMenu(null)
-            }}
-          >
-            ▶ Play Next
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void addAlbumToQueue(
-                albumMenu.album.album_artist,
-                albumMenu.album.album,
-                albumMenu.album.file_path
-              )
-              setAlbumMenu(null)
-            }}
-          >
-            + Add to Queue
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={async () => {
-              let filePath = albumMenu.album.file_path
-              if (!filePath) {
-                const tracks = await getTracksForAlbum(
-                  albumMenu.album.album_artist,
-                  albumMenu.album.album
-                )
-                filePath = tracks[0]?.file_path ?? ''
-              }
-              if (filePath) window.api.showItemInFolder(filePath)
-              setAlbumMenu(null)
-            }}
-          >
-            {window.electron.process.platform === 'darwin'
-              ? '↗ Reveal in Finder'
-              : window.electron.process.platform === 'win32'
-                ? '↗ Show in Explorer'
-                : '↗ Show in Files'}
-          </button>
-        </div>
+        <AlbumContextMenu
+          x={albumMenu.x}
+          y={albumMenu.y}
+          album={albumMenu.album}
+          onClose={() => setAlbumMenu(null)}
+        />
       )}
 
       {trackMenu && (
-        <div
-          ref={trackMenuRef}
-          className="track-context-menu"
-          style={{ top: trackMenu.y, left: trackMenu.x }}
-        >
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void playNext(trackMenu.filePath)
-              setTrackMenu(null)
-            }}
-          >
-            ▶ Play Next
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void addToQueue(trackMenu.filePath)
-              setTrackMenu(null)
-            }}
-          >
-            + Add to Queue
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void setFavorite(trackMenu.filePath, !trackMenu.favorite)
-              setTrackMenu(null)
-            }}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill={trackMenu.favorite ? 'currentColor' : 'none'}
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ marginRight: 6, verticalAlign: 'middle', flexShrink: 0 }}
-            >
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-            {trackMenu.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              window.api.showItemInFolder(trackMenu.filePath)
-              setTrackMenu(null)
-            }}
-          >
-            {window.electron.process.platform === 'darwin'
-              ? '↗ Reveal in Finder'
-              : window.electron.process.platform === 'win32'
-                ? '↗ Show in Explorer'
-                : '↗ Show in Files'}
-          </button>
-        </div>
+        <TrackContextMenu
+          x={trackMenu.x}
+          y={trackMenu.y}
+          filePath={trackMenu.filePath}
+          favorite={trackMenu.favorite}
+          onClose={() => setTrackMenu(null)}
+        />
       )}
     </div>
   )

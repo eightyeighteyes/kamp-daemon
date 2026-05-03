@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { useMenuBounds } from '../hooks/useMenuBounds'
+import { QueueContextMenu } from './QueueContextMenu'
 
 type ContextMenu = {
   x: number
@@ -15,21 +15,14 @@ export function QueuePanel(): React.JSX.Element {
   const toggleQueuePanel = useStore((s) => s.toggleQueuePanel)
   const moveQueueTrack = useStore((s) => s.moveQueueTrack)
   const skipToQueueTrack = useStore((s) => s.skipToQueueTrack)
-  const clearQueue = useStore((s) => s.clearQueue)
-  const clearRemainingQueue = useStore((s) => s.clearRemainingQueue)
   const addToQueue = useStore((s) => s.addToQueue)
   const insertIntoQueue = useStore((s) => s.insertIntoQueue)
   const insertAlbumAt = useStore((s) => s.insertAlbumAt)
   const addAlbumToQueue = useStore((s) => s.addAlbumToQueue)
-  const albums = useStore((s) => s.library.albums)
-  const selectAlbum = useStore((s) => s.selectAlbum)
-  const selectArtist = useStore((s) => s.selectArtist)
-  const setActiveView = useStore((s) => s.setActiveView)
   const activeRef = useRef<HTMLLIElement>(null)
   const listRef = useRef<HTMLOListElement>(null)
   const hasMounted = useRef(false)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
 
   const tracks = queue?.tracks ?? []
   const position = queue?.position ?? -1
@@ -50,20 +43,6 @@ export function QueuePanel(): React.JSX.Element {
     const rowHeight = active.offsetHeight
     list.scrollTo({ top: (position - 5) * rowHeight, behavior })
   }, [position])
-
-  // Dismiss context menu on click outside.
-  useEffect(() => {
-    if (!menu) return
-    const handler = (e: MouseEvent): void => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenu(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [menu])
-
-  useMenuBounds(menuRef, menu)
 
   function handleDrop(e: React.DragEvent, dropIdx: number): void {
     e.stopPropagation()
@@ -236,67 +215,14 @@ export function QueuePanel(): React.JSX.Element {
         </ol>
       )}
       {menu && (
-        <div ref={menuRef} className="track-context-menu" style={{ top: menu.y, left: menu.x }}>
-          {menu.albumArtist && menu.album && (
-            <>
-              <button
-                className="track-context-menu-item"
-                onClick={() => {
-                  const found = albums.find(
-                    (a) => a.album_artist === menu.albumArtist && a.album === menu.album
-                  ) ?? {
-                    album_artist: menu.albumArtist!,
-                    album: menu.album!,
-                    year: '',
-                    track_count: 0,
-                    has_art: false,
-                    missing_album: false,
-                    file_path: '',
-                    art_version: null,
-                    added_at: null,
-                    last_played_at: null
-                  }
-                  void setActiveView('library')
-                  void selectAlbum(found)
-                  setMenu(null)
-                }}
-              >
-                ⌾ Go to Album
-              </button>
-              <button
-                className="track-context-menu-item"
-                onClick={() => {
-                  void setActiveView('library')
-                  selectArtist(menu.albumArtist!)
-                  setMenu(null)
-                }}
-              >
-                ♫ Go to Artist
-              </button>
-              <div className="track-context-menu-divider" />
-            </>
-          )}
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void clearQueue()
-              setMenu(null)
-            }}
-          >
-            Clear Queue
-          </button>
-          {menu.trackIdx !== null && (
-            <button
-              className="track-context-menu-item"
-              onClick={() => {
-                void clearRemainingQueue(menu.trackIdx as number)
-                setMenu(null)
-              }}
-            >
-              Clear Remaining
-            </button>
-          )}
-        </div>
+        <QueueContextMenu
+          x={menu.x}
+          y={menu.y}
+          albumArtist={menu.albumArtist}
+          album={menu.album}
+          trackIdx={menu.trackIdx}
+          onClose={() => setMenu(null)}
+        />
       )}
     </aside>
   )

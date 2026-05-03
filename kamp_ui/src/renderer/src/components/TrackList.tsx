@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useState } from 'react'
 import { useStore } from '../store'
 import { artUrl } from '../api/client'
-import { useMenuBounds } from '../hooks/useMenuBounds'
+import { TrackContextMenu } from './TrackContextMenu'
 
 type ContextMenu = { x: number; y: number; filePath: string; favorite: boolean }
 
@@ -27,26 +27,8 @@ export function TrackList(): React.JSX.Element | null {
   const selectArtist = useStore((s) => s.selectArtist)
   const playTrack = useStore((s) => s.playTrack)
   const togglePlayPause = useStore((s) => s.togglePlayPause)
-  const addToQueue = useStore((s) => s.addToQueue)
-  const playNext = useStore((s) => s.playNext)
-  const setFavorite = useStore((s) => s.setFavorite)
 
   const [menu, setMenu] = useState<ContextMenu | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  // Dismiss the context menu on any click outside it.
-  useEffect(() => {
-    if (!menu) return
-    const handler = (e: MouseEvent): void => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenu(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [menu])
-
-  useMenuBounds(menuRef, menu)
 
   if (!album) return null
 
@@ -151,61 +133,13 @@ export function TrackList(): React.JSX.Element | null {
       </div>
 
       {menu && (
-        <div ref={menuRef} className="track-context-menu" style={{ top: menu.y, left: menu.x }}>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void playNext(menu.filePath)
-              setMenu(null)
-            }}
-          >
-            ▶ Play Next
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void addToQueue(menu.filePath)
-              setMenu(null)
-            }}
-          >
-            + Add to Queue
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              void setFavorite(menu.filePath, !menu.favorite)
-              setMenu(null)
-            }}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill={menu.favorite ? 'currentColor' : 'none'}
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ marginRight: 6, verticalAlign: 'middle', flexShrink: 0 }}
-            >
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-            {menu.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
-          </button>
-          <button
-            className="track-context-menu-item"
-            onClick={() => {
-              window.api.showItemInFolder(menu.filePath)
-              setMenu(null)
-            }}
-          >
-            {window.electron.process.platform === 'darwin'
-              ? '↗ Reveal in Finder'
-              : window.electron.process.platform === 'win32'
-                ? '↗ Show in Explorer'
-                : '↗ Show in Files'}
-          </button>
-        </div>
+        <TrackContextMenu
+          x={menu.x}
+          y={menu.y}
+          filePath={menu.filePath}
+          favorite={menu.favorite}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   )
