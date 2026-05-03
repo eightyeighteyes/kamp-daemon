@@ -73,6 +73,7 @@ def _run_helper(
     op: str, service: str, username: str, password: str | None = None
 ) -> tuple[int, str]:
     """Invoke the helper binary and return (exit_code, stdout)."""
+    assert _helper_path is not None
     result = subprocess.run(
         [_helper_path, op, service, username],
         input=(password + "\n").encode("utf-8") if password is not None else None,
@@ -191,7 +192,7 @@ def _cf_data(s: str) -> c_void_p:
     return c_void_p(_CFDataCreate(None, encoded, len(encoded)))
 
 
-def _make_dict(**kwargs: object) -> c_void_p:
+def _make_dict(**kwargs: str | bool | c_void_p) -> c_void_p:
     """Build a CFDictionary from keyword args.
 
     Keys whose names start with ``kSec`` are resolved as Security.framework
@@ -213,7 +214,7 @@ def _make_dict(**kwargs: object) -> c_void_p:
             else:
                 cf_vals.append(_cf_str(v))
         else:
-            cf_vals.append(v)  # type: ignore[arg-type]
+            cf_vals.append(v)
 
     key_arr = (c_void_p * len(keys))(*cf_keys)
     val_arr = (c_void_p * len(vals))(*cf_vals)
@@ -238,7 +239,7 @@ def _raise_for_status(status: int) -> None:
 
 
 def _read_raw(service: str, username: str, use_dpc: bool) -> str | None:
-    q_kwargs: dict[str, object] = dict(
+    q_kwargs: dict[str, str | bool | c_void_p] = dict(
         kSecClass="kSecClassGenericPassword",
         kSecMatchLimit="kSecMatchLimitOne",
         kSecAttrService=service,
@@ -259,7 +260,7 @@ def _read_raw(service: str, username: str, use_dpc: bool) -> str | None:
 
 
 def _delete_raw(service: str, username: str, use_dpc: bool) -> None:
-    q_kwargs: dict[str, object] = dict(
+    q_kwargs: dict[str, str | bool | c_void_p] = dict(
         kSecClass="kSecClassGenericPassword",
         kSecAttrService=service,
         kSecAttrAccount=username,
