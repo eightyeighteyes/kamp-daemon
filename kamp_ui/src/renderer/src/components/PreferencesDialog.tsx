@@ -934,6 +934,10 @@ export function PreferencesDialog({
   const setLastPlayedCount = useStore((s) => s.setLastPlayedCount)
   const lastPlayedDays = useStore((s) => s.lastPlayedDays)
   const setLastPlayedDays = useStore((s) => s.setLastPlayedDays)
+  const recentlyAddedCount = useStore((s) => s.recentlyAddedCount)
+  const setRecentlyAddedCount = useStore((s) => s.setRecentlyAddedCount)
+  const recentlyAddedDays = useStore((s) => s.recentlyAddedDays)
+  const setRecentlyAddedDays = useStore((s) => s.setRecentlyAddedDays)
 
   const [activeTab, setActiveTab] = useState<'general' | 'services' | 'extensions' | 'home'>(
     () => prefsInitialTab
@@ -1301,16 +1305,17 @@ export function PreferencesDialog({
                 <div className="prefs-row">
                   <div className="prefs-row-header">
                     <span className="prefs-label">Last Played — albums to show</span>
+                    <span className="prefs-hint">0 = no limit</span>
                   </div>
                   <div className="prefs-number-row">
                     <input
                       type="number"
-                      min={1}
+                      min={0}
                       max={50}
                       className="prefs-input prefs-input--number"
                       value={lastPlayedCount}
                       onChange={(e) =>
-                        setLastPlayedCount(Math.max(1, parseInt(e.target.value) || 1))
+                        setLastPlayedCount(Math.max(0, parseInt(e.target.value) || 0))
                       }
                     />
                     <span className="prefs-unit">albums</span>
@@ -1330,6 +1335,44 @@ export function PreferencesDialog({
                       value={lastPlayedDays}
                       onChange={(e) =>
                         setLastPlayedDays(Math.max(0, parseInt(e.target.value) || 0))
+                      }
+                    />
+                    <span className="prefs-unit">days</span>
+                  </div>
+                </div>
+                <div className="prefs-row">
+                  <div className="prefs-row-header">
+                    <span className="prefs-label">Recently Added — albums to show</span>
+                    <span className="prefs-hint">0 = no limit</span>
+                  </div>
+                  <div className="prefs-number-row">
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      className="prefs-input prefs-input--number"
+                      value={recentlyAddedCount}
+                      onChange={(e) =>
+                        setRecentlyAddedCount(Math.max(0, parseInt(e.target.value) || 0))
+                      }
+                    />
+                    <span className="prefs-unit">albums</span>
+                  </div>
+                </div>
+                <div className="prefs-row">
+                  <div className="prefs-row-header">
+                    <span className="prefs-label">Recently Added — history window</span>
+                    <span className="prefs-hint">0 = no limit</span>
+                  </div>
+                  <div className="prefs-number-row">
+                    <input
+                      type="number"
+                      min={0}
+                      max={3650}
+                      className="prefs-input prefs-input--number"
+                      value={recentlyAddedDays}
+                      onChange={(e) =>
+                        setRecentlyAddedDays(Math.max(0, parseInt(e.target.value) || 0))
                       }
                     />
                     <span className="prefs-unit">days</span>

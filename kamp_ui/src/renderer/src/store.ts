@@ -44,6 +44,8 @@ type PlayerStore = {
   moduleDisplayStyles: Record<string, DisplayStyle>
   lastPlayedCount: number
   lastPlayedDays: number
+  recentlyAddedCount: number
+  recentlyAddedDays: number
   sortOrder: 'album_artist' | 'album' | 'date_added' | 'last_played'
   searchQuery: string
   searchResults: SearchResult | null
@@ -64,6 +66,8 @@ type PlayerStore = {
   setModuleDisplayStyle: (id: string, style: DisplayStyle) => void
   setLastPlayedCount: (n: number) => void
   setLastPlayedDays: (n: number) => void
+  setRecentlyAddedCount: (n: number) => void
+  setRecentlyAddedDays: (n: number) => void
   loadLibrary: () => Promise<void>
   loadUiState: () => Promise<void>
   selectArtist: (artist: string | null) => void
@@ -160,6 +164,14 @@ export const useStore = create<PlayerStore>((set, get) => ({
   })(),
   lastPlayedDays: (() => {
     const saved = localStorage.getItem('kamp:last-played-days')
+    return saved ? parseInt(saved) : 30
+  })(),
+  recentlyAddedCount: (() => {
+    const saved = localStorage.getItem('kamp:recently-added-count')
+    return saved ? parseInt(saved) : 10
+  })(),
+  recentlyAddedDays: (() => {
+    const saved = localStorage.getItem('kamp:recently-added-days')
     return saved ? parseInt(saved) : 30
   })(),
   sortOrder: 'album_artist',
@@ -265,6 +277,16 @@ export const useStore = create<PlayerStore>((set, get) => ({
   setLastPlayedDays: (n) => {
     localStorage.setItem('kamp:last-played-days', String(n))
     set({ lastPlayedDays: n })
+  },
+
+  setRecentlyAddedCount: (n) => {
+    localStorage.setItem('kamp:recently-added-count', String(n))
+    set({ recentlyAddedCount: n })
+  },
+
+  setRecentlyAddedDays: (n) => {
+    localStorage.setItem('kamp:recently-added-days', String(n))
+    set({ recentlyAddedDays: n })
   },
 
   loadUiState: async () => {
