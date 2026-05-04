@@ -115,7 +115,6 @@ export function BaseKampView(): React.JSX.Element {
                 </button>
                 <button
                   className="base-kamp-remove-btn"
-                  title="Remove Module"
                   onClick={() => hideModule(mod.id)}
                 >
                   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
