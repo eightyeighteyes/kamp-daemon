@@ -84,5 +84,5 @@ export function TopAlbumsModule({ displayStyle }: ModuleProps): React.JSX.Elemen
   }
 
   if (displayStyle === 'list') return <ListView albums={albums} />
-  return displayStyle === 'grid' ? <GridView albums={albums} /> : <ShelfView albums={albums} />
+  return displayStyle === 'grid' ? <GridView albums={albums} /> : <ShelfView albums={albums} scrollToPlaying />
 }

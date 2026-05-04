@@ -5,11 +5,12 @@ import { useStore } from '../../store'
 
 interface ShelfViewProps {
   albums: Album[]
+  scrollToPlaying?: boolean
 }
 
 const SCROLL_PX = 500
 
-export function ShelfView({ albums }: ShelfViewProps): React.JSX.Element {
+export function ShelfView({ albums, scrollToPlaying = false }: ShelfViewProps): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const hasMounted = useRef(false)
   const currentTrack = useStore((s) => s.player.current_track)
@@ -23,7 +24,7 @@ export function ShelfView({ albums }: ShelfViewProps): React.JSX.Element {
 
   useEffect(() => {
     const shelf = scrollRef.current
-    if (!shelf) return
+    if (!shelf || !scrollToPlaying) return
     const behavior: ScrollBehavior = hasMounted.current ? 'smooth' : 'instant'
     hasMounted.current = true
 
@@ -46,7 +47,7 @@ export function ShelfView({ albums }: ShelfViewProps): React.JSX.Element {
     // Matches the CSS layout: padding-left(12) + first-child margin(5) + idx*(card(180)+gap(15)) - scroll-padding(5)
     shelf.scrollTo({ left: 12 + idx * 195, behavior })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrack?.album_artist, currentTrack?.album, currentTrack?.file_path, albums])
+  }, [currentTrack?.album_artist, currentTrack?.album, currentTrack?.file_path, albums, scrollToPlaying])
 
   return (
     <div className="module-shelf-wrapper">
