@@ -47,7 +47,13 @@ export function ShelfView({ albums, scrollToPlaying = false }: ShelfViewProps): 
     // Matches the CSS layout: padding-left(12) + first-child margin(5) + idx*(card(180)+gap(15)) - scroll-padding(5)
     shelf.scrollTo({ left: 12 + idx * 195, behavior })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrack?.album_artist, currentTrack?.album, currentTrack?.file_path, albums, scrollToPlaying])
+  }, [
+    currentTrack?.album_artist,
+    currentTrack?.album,
+    currentTrack?.file_path,
+    albums,
+    scrollToPlaying
+  ])
 
   return (
     <div className="module-shelf-wrapper">
