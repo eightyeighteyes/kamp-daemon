@@ -2769,6 +2769,24 @@ body,
   background: var(--hover);
 }
 
+.base-kamp-remove-btn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.base-kamp-remove-btn:hover {
+  opacity: 1;
+  background: var(--hover);
+}
+
 .base-kamp-module-body {
   width: 100%;
   background: var(--surface);
