@@ -5,7 +5,6 @@ import type { ExtensionStateHook } from '../hooks/useExtensionState'
 import { useExtensionInstall } from '../hooks/useExtensionInstall'
 import { connectLastfm, disconnectLastfm, disconnectBandcamp } from '../api/client'
 import { MODULE_REGISTRY } from './modules/registry'
-import type { DisplayStyle } from './modules/registry'
 
 // Keys whose values must be integers — sent as strings over the wire but
 // stored as numbers in the config.
@@ -928,16 +927,6 @@ export function PreferencesDialog({
 
   const moduleOrder = useStore((s) => s.moduleOrder)
   const setModuleOrder = useStore((s) => s.setModuleOrder)
-  const moduleDisplayStyles = useStore((s) => s.moduleDisplayStyles)
-  const setModuleDisplayStyle = useStore((s) => s.setModuleDisplayStyle)
-  const lastPlayedCount = useStore((s) => s.lastPlayedCount)
-  const setLastPlayedCount = useStore((s) => s.setLastPlayedCount)
-  const lastPlayedDays = useStore((s) => s.lastPlayedDays)
-  const setLastPlayedDays = useStore((s) => s.setLastPlayedDays)
-  const recentlyAddedCount = useStore((s) => s.recentlyAddedCount)
-  const setRecentlyAddedCount = useStore((s) => s.setRecentlyAddedCount)
-  const recentlyAddedDays = useStore((s) => s.recentlyAddedDays)
-  const setRecentlyAddedDays = useStore((s) => s.setRecentlyAddedDays)
 
   const [activeTab, setActiveTab] = useState<'general' | 'services' | 'extensions' | 'home'>(
     () => prefsInitialTab
@@ -1234,15 +1223,6 @@ export function PreferencesDialog({
                   return (
                     <div key={id} className="prefs-row prefs-module-row">
                       <span className="prefs-label">{mod.title}</span>
-                      <select
-                        className="prefs-module-style-select"
-                        value={moduleDisplayStyles[id] ?? 'shelf'}
-                        onChange={(e) => setModuleDisplayStyle(id, e.target.value as DisplayStyle)}
-                      >
-                        <option value="shelf">Shelf</option>
-                        <option value="grid">Grid</option>
-                        <option value="list">List</option>
-                      </select>
                       <div className="prefs-module-actions">
                         <button
                           className="prefs-module-btn"
@@ -1300,85 +1280,6 @@ export function PreferencesDialog({
                 ))}
               </div>
 
-              <div className="prefs-section">
-                <div className="prefs-section-label">Module Settings</div>
-                <div className="prefs-row">
-                  <div className="prefs-row-header">
-                    <span className="prefs-label">Last Played — albums to show</span>
-                    <span className="prefs-hint">0 = no limit</span>
-                  </div>
-                  <div className="prefs-number-row">
-                    <input
-                      type="number"
-                      min={0}
-                      max={50}
-                      className="prefs-input prefs-input--number"
-                      value={lastPlayedCount}
-                      onChange={(e) =>
-                        setLastPlayedCount(Math.max(0, parseInt(e.target.value) || 0))
-                      }
-                    />
-                    <span className="prefs-unit">albums</span>
-                  </div>
-                </div>
-                <div className="prefs-row">
-                  <div className="prefs-row-header">
-                    <span className="prefs-label">Last Played — history window</span>
-                    <span className="prefs-hint">0 = no limit</span>
-                  </div>
-                  <div className="prefs-number-row">
-                    <input
-                      type="number"
-                      min={0}
-                      max={3650}
-                      className="prefs-input prefs-input--number"
-                      value={lastPlayedDays}
-                      onChange={(e) =>
-                        setLastPlayedDays(Math.max(0, parseInt(e.target.value) || 0))
-                      }
-                    />
-                    <span className="prefs-unit">days</span>
-                  </div>
-                </div>
-                <div className="prefs-row">
-                  <div className="prefs-row-header">
-                    <span className="prefs-label">Recently Added — albums to show</span>
-                    <span className="prefs-hint">0 = no limit</span>
-                  </div>
-                  <div className="prefs-number-row">
-                    <input
-                      type="number"
-                      min={0}
-                      max={50}
-                      className="prefs-input prefs-input--number"
-                      value={recentlyAddedCount}
-                      onChange={(e) =>
-                        setRecentlyAddedCount(Math.max(0, parseInt(e.target.value) || 0))
-                      }
-                    />
-                    <span className="prefs-unit">albums</span>
-                  </div>
-                </div>
-                <div className="prefs-row">
-                  <div className="prefs-row-header">
-                    <span className="prefs-label">Recently Added — history window</span>
-                    <span className="prefs-hint">0 = no limit</span>
-                  </div>
-                  <div className="prefs-number-row">
-                    <input
-                      type="number"
-                      min={0}
-                      max={3650}
-                      className="prefs-input prefs-input--number"
-                      value={recentlyAddedDays}
-                      onChange={(e) =>
-                        setRecentlyAddedDays(Math.max(0, parseInt(e.target.value) || 0))
-                      }
-                    />
-                    <span className="prefs-unit">days</span>
-                  </div>
-                </div>
-              </div>
             </>
           )}
 
