@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react'
-import { getAlbums } from '../../api/client'
 import type { Album } from '../../api/client'
 import { useStore } from '../../store'
 import { ShelfView } from './ShelfView'
@@ -69,27 +68,23 @@ export function NewArrivalsConfig(): React.JSX.Element {
 export function NewArrivalsModule({ displayStyle }: ModuleProps): React.JSX.Element {
   const count = useStore((s) => s.recentlyAddedCount)
   const days = useStore((s) => s.recentlyAddedDays)
+  const allAlbums = useStore((s) => s.library.albums)
   const serverStatus = useStore((s) => s.serverStatus)
   const [albums, setAlbums] = useState<Album[]>([])
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Skip until the server is reachable; this effect re-fires when serverStatus
-    // transitions to 'connected', so modules populate without a manual reload.
-    if (serverStatus !== 'connected') return
-    getAlbums('date_added')
-      .then((all) => {
-        const cutoff = days > 0 ? Date.now() / 1000 - days * 86400 : null
-        const recent = all
+    void Promise.resolve(allAlbums).then((all) => {
+      const cutoff = days > 0 ? Date.now() / 1000 - days * 86400 : null
+      setAlbums(
+        [...all]
           .filter((a) => a.added_at !== null && (cutoff === null || a.added_at >= cutoff))
+          .sort((a, b) => (b.added_at ?? 0) - (a.added_at ?? 0))
           .slice(0, count > 0 ? count : undefined)
-        setAlbums(recent)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [count, days, serverStatus])
+      )
+    })
+  }, [allAlbums, count, days])
 
-  if (loading) {
+  if (serverStatus !== 'connected') {
     return (
       <div className="module-skeleton-row">
         {Array.from({ length: 4 }).map((_, i) => (
