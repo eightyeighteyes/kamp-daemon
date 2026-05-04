@@ -1166,13 +1166,14 @@ body,
 }
 
 .album-card.playing {
-  box-shadow: 0 0 0 3px rgba(124, 134, 225, 0.35);
+  outline: 3px solid rgba(124, 134, 225, 0.55);
+  outline-offset: 0;
 }
 
 .album-card.playing:hover {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.4),
-    0 0 0 3px rgba(124, 134, 225, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  outline: 3px solid rgba(124, 134, 225, 0.55);
+  outline-offset: 0;
 }
 
 .album-art {
@@ -2792,7 +2793,7 @@ body,
   background: var(--surface);
   border-radius: 0 5px 5px 5px;
   min-height: 285px;
-  overflow: hidden;
+  overflow: clip;
   padding: 2%;
 }
 
@@ -2940,6 +2941,7 @@ body,
   padding: 12px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
+  scroll-padding-left: 5px;
   scrollbar-width: none;
   outline: none;
   flex: 1;
@@ -2953,6 +2955,11 @@ body,
   flex: 0 0 180px;
   scroll-snap-align: start;
 }
+
+.module-shelf .album-card:first-child {
+  margin-left: 5px;
+}
+
 
 .module-shelf-arrow {
   position: absolute;
