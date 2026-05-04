@@ -2780,34 +2780,11 @@ body,
   flex-shrink: 0;
   opacity: 0.7;
   transition: opacity 0.15s;
-  position: relative;
-}
-
-.base-kamp-remove-btn::after {
-  content: 'Remove Module';
-  position: absolute;
-  bottom: calc(100% + 5px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--surface-raised, #333);
-  color: var(--text);
-  padding: 3px 7px;
-  border-radius: 3px;
-  font-size: 11px;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 100;
 }
 
 .base-kamp-remove-btn:hover {
   opacity: 1;
   background: var(--hover);
-}
-
-.base-kamp-remove-btn:hover::after {
-  opacity: 1;
 }
 
 .base-kamp-module-body {
