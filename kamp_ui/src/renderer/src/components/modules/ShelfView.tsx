@@ -14,6 +14,19 @@ export function ShelfView({ albums, scrollToPlaying = false }: ShelfViewProps): 
   const scrollRef = useRef<HTMLDivElement>(null)
   const hasMounted = useRef(false)
   const currentTrack = useStore((s) => s.player.current_track)
+  // undefined = not yet initialized (skip scroll on first load)
+  const prevFirstAddedAt = useRef<number | null | undefined>(undefined)
+
+  useEffect(() => {
+    const firstAddedAt = albums[0]?.added_at ?? null
+    if (prevFirstAddedAt.current !== undefined) {
+      const prev = prevFirstAddedAt.current
+      if (firstAddedAt !== null && (prev === null || firstAddedAt > prev)) {
+        scrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' })
+      }
+    }
+    prevFirstAddedAt.current = firstAddedAt
+  }, [albums])
 
   const scroll = (dir: 'left' | 'right'): void => {
     scrollRef.current?.scrollBy({
