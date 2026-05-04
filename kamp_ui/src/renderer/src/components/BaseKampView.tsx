@@ -9,6 +9,8 @@ type Menu = { x: number; y: number; id: string }
 export function BaseKampView(): React.JSX.Element {
   const moduleOrder = useStore((s) => s.moduleOrder)
   const setModuleOrder = useStore((s) => s.setModuleOrder)
+  const hiddenModules = useStore((s) => s.hiddenModules)
+  const hideModule = useStore((s) => s.hideModule)
   const moduleDisplayStyles = useStore((s) => s.moduleDisplayStyles)
   const editMode = useStore((s) => s.baseKampEditMode)
   const toggleEditMode = useStore((s) => s.toggleBaseKampEditMode)
@@ -17,6 +19,7 @@ export function BaseKampView(): React.JSX.Element {
   const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   const modules = moduleOrder
+    .filter((id) => !hiddenModules.includes(id))
     .map((id) => MODULE_REGISTRY.find((m) => m.id === id))
     .filter((m): m is ModuleRegistration => m !== undefined)
 
@@ -82,33 +85,45 @@ export function BaseKampView(): React.JSX.Element {
         >
           <div className="base-kamp-module-label">
             {editMode && (
-              <button
-                className="base-kamp-drag-handle"
-                title="Drag to reorder, right-click for options"
-                draggable
-                onDragStart={(e) => {
-                  setDragId(mod.id)
-                  e.dataTransfer.setData('text/kamp-module-id', mod.id)
-                  e.dataTransfer.effectAllowed = 'move'
-                }}
-                onDragEnd={() => {
-                  setDragId(null)
-                  setDragOverId(null)
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  setMenu({ x: e.clientX, y: e.clientY, id: mod.id })
-                }}
-              >
-                <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
-                  <circle cx="3" cy="3" r="1.5" fill="currentColor" />
-                  <circle cx="7" cy="3" r="1.5" fill="currentColor" />
-                  <circle cx="3" cy="7" r="1.5" fill="currentColor" />
-                  <circle cx="7" cy="7" r="1.5" fill="currentColor" />
-                  <circle cx="3" cy="11" r="1.5" fill="currentColor" />
-                  <circle cx="7" cy="11" r="1.5" fill="currentColor" />
-                </svg>
-              </button>
+              <>
+                <button
+                  className="base-kamp-drag-handle"
+                  title="Drag to reorder, right-click for options"
+                  draggable
+                  onDragStart={(e) => {
+                    setDragId(mod.id)
+                    e.dataTransfer.setData('text/kamp-module-id', mod.id)
+                    e.dataTransfer.effectAllowed = 'move'
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null)
+                    setDragOverId(null)
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setMenu({ x: e.clientX, y: e.clientY, id: mod.id })
+                  }}
+                >
+                  <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
+                    <circle cx="3" cy="3" r="1.5" fill="currentColor" />
+                    <circle cx="7" cy="3" r="1.5" fill="currentColor" />
+                    <circle cx="3" cy="7" r="1.5" fill="currentColor" />
+                    <circle cx="7" cy="7" r="1.5" fill="currentColor" />
+                    <circle cx="3" cy="11" r="1.5" fill="currentColor" />
+                    <circle cx="7" cy="11" r="1.5" fill="currentColor" />
+                  </svg>
+                </button>
+                <button
+                  className="base-kamp-remove-btn"
+                  title="Remove Module"
+                  onClick={() => hideModule(mod.id)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                    <circle cx="7" cy="7" r="7" fill="#aa1111" />
+                    <rect x="2.5" y="5.5" width="9" height="3" rx="1" fill="white" />
+                  </svg>
+                </button>
+              </>
             )}
             {mod.title}
           </div>

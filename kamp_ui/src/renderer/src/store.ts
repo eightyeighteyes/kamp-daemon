@@ -41,6 +41,7 @@ type PlayerStore = {
   configuredLibraryPath: string | null
   activeView: 'library' | 'now-playing' | 'home'
   moduleOrder: string[]
+  hiddenModules: string[]
   moduleDisplayStyles: Record<string, DisplayStyle>
   lastPlayedCount: number
   lastPlayedDays: number
@@ -64,6 +65,7 @@ type PlayerStore = {
   setSortOrder: (sort: 'album_artist' | 'album' | 'date_added' | 'last_played') => Promise<void>
   setActiveView: (view: 'library' | 'now-playing' | 'home') => Promise<void>
   setModuleOrder: (ids: string[]) => void
+  hideModule: (id: string) => void
   setModuleDisplayStyle: (id: string, style: DisplayStyle) => void
   setLastPlayedCount: (n: number) => void
   setLastPlayedDays: (n: number) => void
@@ -155,6 +157,10 @@ export const useStore = create<PlayerStore>((set, get) => ({
   moduleOrder: (() => {
     const saved = localStorage.getItem('kamp:module-order')
     return saved ? (JSON.parse(saved) as string[]) : ['kamp.new-arrivals', 'kamp.last-played']
+  })(),
+  hiddenModules: (() => {
+    const saved = localStorage.getItem('kamp:hidden-modules')
+    return saved ? (JSON.parse(saved) as string[]) : []
   })(),
   moduleDisplayStyles: (() => {
     const saved = localStorage.getItem('kamp:module-display-styles')
@@ -264,6 +270,12 @@ export const useStore = create<PlayerStore>((set, get) => ({
   setModuleOrder: (ids) => {
     localStorage.setItem('kamp:module-order', JSON.stringify(ids))
     set({ moduleOrder: ids })
+  },
+
+  hideModule: (id) => {
+    const next = [...get().hiddenModules, id]
+    localStorage.setItem('kamp:hidden-modules', JSON.stringify(next))
+    set({ hiddenModules: next })
   },
 
   setModuleDisplayStyle: (id, style) => {
