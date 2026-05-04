@@ -321,6 +321,10 @@ class PlaybackQueue:
 # MpvPlaybackEngine
 # ---------------------------------------------------------------------------
 
+# Seconds from the end of a track within which appending a new lookahead to
+# mpv's playlist triggers an immediate gapless EOF, stopping time-pos events.
+_GAPLESS_GUARD_SECS: float = 10.0
+
 # Properties to observe from mpv for state tracking
 _OBSERVED: list[tuple[int, str]] = [
     (1, "time-pos"),
@@ -464,6 +468,16 @@ class MpvPlaybackEngine:
             self._lookahead_path = None  # clear before sending remove (see docstring)
             self._send_command("playlist-remove", 1)
         if path is not None:
+            # Skip the append when we're within the gapless danger window.
+            # mpv would trigger an immediate EOF transition the moment the
+            # file lands in slot 1, stopping time-pos events and leaving the
+            # queue in a half-transitioned state.  on_track_end will start
+            # the next track via engine.play() when the current track ends.
+            if (
+                self.state.duration > 0
+                and self.state.position > self.state.duration - _GAPLESS_GUARD_SECS
+            ):
+                return
             self._send_command("loadfile", str(path), "append")
             self._lookahead_path = path
 

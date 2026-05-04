@@ -992,6 +992,54 @@ class TestMpvPlaybackEngine:
         assert engine._lookahead_path is None
 
     # ------------------------------------------------------------------
+    # preload_next near-end guard
+    # ------------------------------------------------------------------
+
+    def test_preload_next_skips_append_within_guard_window(self) -> None:
+        """Appending a new lookahead within the last 10 s triggers an immediate
+        gapless EOF in mpv, freezing time-pos updates.  The append must be
+        skipped so the track plays through to its natural end."""
+        engine, send = _make_engine()
+        engine.state.duration = 180.0
+        engine.state.position = 172.0  # 8 s from end
+        engine.preload_next(_track(2))
+        send.assert_not_called()
+        assert engine._lookahead_path is None
+
+    def test_preload_next_appends_when_outside_guard_window(self) -> None:
+        """preload_next must work normally when the current position is well
+        before the gapless danger window."""
+        engine, send = _make_engine()
+        engine.state.duration = 180.0
+        engine.state.position = 60.0  # 2 minutes from end
+        engine.preload_next(_track(2))
+        send.assert_called_once_with("loadfile", "/music/02.mp3", "append")
+        assert engine.has_lookahead is True
+
+    def test_preload_next_removes_stale_lookahead_even_within_guard_window(
+        self,
+    ) -> None:
+        """The old lookahead must still be evicted when near the end so the
+        wrong track does not play gaplessly."""
+        engine, send = _make_engine()
+        engine.preload_next(_track(2))  # prime with track 2 while not near end
+        engine.state.duration = 180.0
+        engine.state.position = 172.0  # now near end
+        send.reset_mock()
+        engine.preload_next(_track(3))  # swap to track 3 while near end
+        send.assert_called_once_with("playlist-remove", 1)
+        assert engine._lookahead_path is None  # new track NOT appended
+
+    def test_preload_next_appends_when_duration_unknown(self) -> None:
+        """When duration is 0 (not yet received from mpv), the guard must not
+        block the append — we have no basis to judge nearness to end."""
+        engine, send = _make_engine()
+        engine.state.duration = 0.0
+        engine.state.position = 0.0
+        engine.preload_next(_track(2))
+        send.assert_called_once_with("loadfile", "/music/02.mp3", "append")
+
+    # ------------------------------------------------------------------
     # end-file gapless cleanup
     # ------------------------------------------------------------------
 
