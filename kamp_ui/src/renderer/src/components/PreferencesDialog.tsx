@@ -4,7 +4,6 @@ import type { ExtensionInfo, ExtensionSettingSchema } from '../../../shared/kamp
 import type { ExtensionStateHook } from '../hooks/useExtensionState'
 import { useExtensionInstall } from '../hooks/useExtensionInstall'
 import { connectLastfm, disconnectLastfm, disconnectBandcamp } from '../api/client'
-import { MODULE_REGISTRY } from './modules/registry'
 
 // Keys whose values must be integers — sent as strings over the wire but
 // stored as numbers in the config.
@@ -925,10 +924,7 @@ export function PreferencesDialog({
   const scanProgress = useStore((s) => s.scanProgress)
   const prefsInitialTab = useStore((s) => s.prefsInitialTab)
 
-  const moduleOrder = useStore((s) => s.moduleOrder)
-  const setModuleOrder = useStore((s) => s.setModuleOrder)
-
-  const [activeTab, setActiveTab] = useState<'general' | 'services' | 'extensions' | 'home'>(
+  const [activeTab, setActiveTab] = useState<'general' | 'services' | 'extensions'>(
     () => prefsInitialTab
   )
 
@@ -1035,14 +1031,6 @@ export function PreferencesDialog({
             onClick={() => setActiveTab('general')}
           >
             General
-          </button>
-          <button
-            role="tab"
-            aria-selected={activeTab === 'home'}
-            className={`prefs-tab${activeTab === 'home' ? ' prefs-tab--active' : ''}`}
-            onClick={() => setActiveTab('home')}
-          >
-            Base Kamp
           </button>
           <button
             role="tab"
@@ -1207,78 +1195,6 @@ export function PreferencesDialog({
                   </div>
                 </>
               )}
-            </>
-          )}
-
-          {activeTab === 'home' && (
-            <>
-              <div className="prefs-section">
-                <div className="prefs-section-label">Modules</div>
-                {moduleOrder.length === 0 && (
-                  <p className="prefs-hint">No modules enabled. Add one below.</p>
-                )}
-                {moduleOrder.map((id, idx) => {
-                  const mod = MODULE_REGISTRY.find((m) => m.id === id)
-                  if (!mod) return null
-                  return (
-                    <div key={id} className="prefs-row prefs-module-row">
-                      <span className="prefs-label">{mod.title}</span>
-                      <div className="prefs-module-actions">
-                        <button
-                          className="prefs-module-btn"
-                          disabled={idx === 0}
-                          onClick={() => {
-                            const next = [...moduleOrder]
-                            ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
-                            setModuleOrder(next)
-                          }}
-                          aria-label="Move up"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          className="prefs-module-btn"
-                          disabled={idx === moduleOrder.length - 1}
-                          onClick={() => {
-                            const next = [...moduleOrder]
-                            ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
-                            setModuleOrder(next)
-                          }}
-                          aria-label="Move down"
-                        >
-                          ↓
-                        </button>
-                        <button
-                          className="prefs-module-btn prefs-module-btn--remove"
-                          onClick={() => setModuleOrder(moduleOrder.filter((i) => i !== id))}
-                          aria-label="Remove module"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-                {MODULE_REGISTRY.filter((m) => !moduleOrder.includes(m.id)).map((mod) => (
-                  <div
-                    key={mod.id}
-                    className="prefs-row prefs-module-row prefs-module-row--disabled"
-                  >
-                    <span className="prefs-label" style={{ color: 'var(--text-dim)' }}>
-                      {mod.title}
-                    </span>
-                    <div className="prefs-module-actions">
-                      <button
-                        className="prefs-module-btn"
-                        onClick={() => setModuleOrder([...moduleOrder, mod.id])}
-                        aria-label="Add module"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </>
           )}
 

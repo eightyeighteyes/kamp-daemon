@@ -13,6 +13,8 @@ export function BaseKampView(): React.JSX.Element {
   const editMode = useStore((s) => s.baseKampEditMode)
   const toggleEditMode = useStore((s) => s.toggleBaseKampEditMode)
   const [menu, setMenu] = useState<Menu | null>(null)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   const modules = moduleOrder
     .map((id) => MODULE_REGISTRY.find((m) => m.id === id))
@@ -30,10 +32,19 @@ export function BaseKampView(): React.JSX.Element {
     setModuleOrder(next)
   }
 
+  function dropModule(targetId: string): void {
+    if (!dragId || dragId === targetId) return
+    const fromIdx = moduleOrder.indexOf(dragId)
+    const toIdx = moduleOrder.indexOf(targetId)
+    if (fromIdx === -1 || toIdx === -1) return
+    const next = [...moduleOrder]
+    next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, dragId)
+    setModuleOrder(next)
+  }
+
   if (modules.length === 0) {
-    return (
-      <div className="base-kamp-empty">No modules configured. Add some in Preferences → Home.</div>
-    )
+    return <div className="base-kamp-empty">No modules configured.</div>
   }
 
   const menuIdx = menu ? moduleOrder.indexOf(menu.id) : -1
@@ -52,22 +63,52 @@ export function BaseKampView(): React.JSX.Element {
         </button>
       </div>
       {modules.map((mod) => (
-        <section key={mod.id} className="base-kamp-module">
+        <section
+          key={mod.id}
+          className={`base-kamp-module${dragOverId === mod.id && dragId !== mod.id ? ' drag-over' : ''}`}
+          onDragOver={(e) => {
+            if (!dragId) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            if (dragId !== mod.id) setDragOverId(mod.id)
+          }}
+          onDragLeave={() => setDragOverId(null)}
+          onDrop={(e) => {
+            e.preventDefault()
+            dropModule(mod.id)
+            setDragId(null)
+            setDragOverId(null)
+          }}
+        >
           <div className="base-kamp-module-label">
-            <button
-              className="base-kamp-drag-handle"
-              title="Reorder module"
-              onClick={(e) => setMenu({ x: e.clientX, y: e.clientY, id: mod.id })}
-            >
-              <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
-                <circle cx="3" cy="3" r="1.5" fill="currentColor" />
-                <circle cx="7" cy="3" r="1.5" fill="currentColor" />
-                <circle cx="3" cy="7" r="1.5" fill="currentColor" />
-                <circle cx="7" cy="7" r="1.5" fill="currentColor" />
-                <circle cx="3" cy="11" r="1.5" fill="currentColor" />
-                <circle cx="7" cy="11" r="1.5" fill="currentColor" />
-              </svg>
-            </button>
+            {editMode && (
+              <button
+                className="base-kamp-drag-handle"
+                title="Drag to reorder, right-click for options"
+                draggable
+                onDragStart={(e) => {
+                  setDragId(mod.id)
+                  e.dataTransfer.effectAllowed = 'move'
+                }}
+                onDragEnd={() => {
+                  setDragId(null)
+                  setDragOverId(null)
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setMenu({ x: e.clientX, y: e.clientY, id: mod.id })
+                }}
+              >
+                <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
+                  <circle cx="3" cy="3" r="1.5" fill="currentColor" />
+                  <circle cx="7" cy="3" r="1.5" fill="currentColor" />
+                  <circle cx="3" cy="7" r="1.5" fill="currentColor" />
+                  <circle cx="7" cy="7" r="1.5" fill="currentColor" />
+                  <circle cx="3" cy="11" r="1.5" fill="currentColor" />
+                  <circle cx="7" cy="11" r="1.5" fill="currentColor" />
+                </svg>
+              </button>
+            )}
             {mod.title}
           </div>
           <div className={`base-kamp-config-row${editMode ? ' visible' : ''}`}>
