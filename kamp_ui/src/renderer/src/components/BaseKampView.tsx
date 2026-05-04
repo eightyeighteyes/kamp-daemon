@@ -113,7 +113,11 @@ export function BaseKampView(): React.JSX.Element {
                     <circle cx="7" cy="11" r="1.5" fill="currentColor" />
                   </svg>
                 </button>
-                <button className="base-kamp-remove-btn" title="Remove Module" onClick={() => hideModule(mod.id)}>
+                <button
+                  className="base-kamp-remove-btn"
+                  title="Remove Module"
+                  onClick={() => hideModule(mod.id)}
+                >
                   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
                     <circle cx="7" cy="7" r="7" fill="#aa1111" />
                     <rect x="2.5" y="5.5" width="9" height="3" rx="1" fill="white" />
