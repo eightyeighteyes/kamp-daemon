@@ -2797,6 +2797,7 @@ body,
   gap: 16px;
   padding: 8px 10px;
   align-items: flex-end;
+  justify-content: flex-end;
   border-bottom: 1px solid var(--border);
 }
 
