@@ -659,34 +659,59 @@ class TestMpvPlaybackEngine:
         engine.seek(42.5)
         send.assert_called_once_with("seek", 42.5, "absolute")
 
-    def test_seek_removes_lookahead_before_seeking(self) -> None:
-        """Seeking with a lookahead must remove it first to prevent an immediate
-        gapless transition that stops time-pos events from flowing."""
+    def test_seek_into_guard_window_removes_lookahead(self) -> None:
+        """Seeking into the gapless danger window must remove the lookahead first
+        to prevent an immediate mpv gapless transition that freezes time-pos."""
         engine, send = _make_engine()
+        engine.state.duration = 240.0
         engine.preload_next(_track(2))
         send.reset_mock()
-        engine.seek(170.0)
+        engine.seek(235.0)  # within last 10 s
         send.assert_any_call("playlist-remove", 1)
         assert engine._lookahead_path is None
 
-    def test_seek_sends_playlist_remove_before_seek_command(self) -> None:
-        """playlist-remove must precede the seek command so mpv drops the lookahead
-        before repositioning, preventing a premature gapless EOF."""
+    def test_seek_into_guard_window_sends_playlist_remove_before_seek(self) -> None:
+        """playlist-remove must arrive at mpv before the seek so the lookahead is
+        gone before mpv repositions, preventing a premature gapless EOF."""
         engine, send = _make_engine()
+        engine.state.duration = 240.0
         engine.preload_next(_track(2))
         send.reset_mock()
         calls: list[tuple[object, ...]] = []
         send.side_effect = lambda *a: calls.append(a)
-        engine.seek(170.0)
+        engine.seek(235.0)  # within last 10 s
         remove_idx = next(i for i, c in enumerate(calls) if c[0] == "playlist-remove")
         seek_idx = next(i for i, c in enumerate(calls) if c[0] == "seek")
         assert remove_idx < seek_idx
+
+    def test_seek_outside_guard_window_preserves_lookahead(self) -> None:
+        """Seeking to an early/middle position must NOT remove the lookahead.
+        The danger window is only the last _GAPLESS_GUARD_SECS seconds; removing
+        the lookahead unconditionally breaks gapless at the track's natural EOF."""
+        engine, send = _make_engine()
+        engine.state.duration = 240.0
+        engine.preload_next(_track(2))
+        send.reset_mock()
+        engine.seek(60.0)  # well outside the danger window
+        send.assert_called_once_with("seek", 60.0, "absolute")
+        assert engine._lookahead_path is not None
 
     def test_seek_without_lookahead_sends_only_seek_command(self) -> None:
         """No playlist-remove should be sent when there is no active lookahead."""
         engine, send = _make_engine()
         engine.seek(42.5)
         send.assert_called_once_with("seek", 42.5, "absolute")
+
+    def test_seek_with_unknown_duration_preserves_lookahead(self) -> None:
+        """When duration is 0 (not yet received from mpv), the guard cannot
+        evaluate — leave the lookahead in place and just send the seek."""
+        engine, send = _make_engine()
+        engine.state.duration = 0.0
+        engine.preload_next(_track(2))
+        send.reset_mock()
+        engine.seek(235.0)
+        send.assert_called_once_with("seek", 235.0, "absolute")
+        assert engine._lookahead_path is not None
 
     def test_set_volume_sends_set_property(self) -> None:
         engine, send = _make_engine()

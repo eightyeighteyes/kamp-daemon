@@ -493,12 +493,15 @@ class MpvPlaybackEngine:
         self._send_command("set_property", "pause", False)
 
     def seek(self, position: float) -> None:
-        # A preloaded lookahead in mpv's playlist slot 1 causes an immediate
-        # gapless transition when seeking near the end of the current track,
-        # which stops time-pos events from flowing and freezes the seek bar.
-        # Remove the lookahead first; on_track_end will start the next track
-        # via engine.play() (non-gapless) when the current track reaches EOF.
-        if self._lookahead_path is not None:
+        # Only remove the lookahead when the seek target lands within the
+        # gapless danger window.  Seeking to an early/middle position carries
+        # no gapless risk — removing the lookahead there breaks gapless at the
+        # track's natural EOF without any benefit (KAMP-261 / KAMP-276).
+        if (
+            self._lookahead_path is not None
+            and self.state.duration > 0
+            and position >= self.state.duration - _GAPLESS_GUARD_SECS
+        ):
             self._lookahead_path = None
             self._send_command("playlist-remove", 1)
         self._send_command("seek", position, "absolute")
