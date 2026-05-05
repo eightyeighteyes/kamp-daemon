@@ -316,6 +316,72 @@
   animation-duration: 1.6s;
 }
 
+/* ── pressed ────────────────────────────────────────────────────────────── */
+
+/* Breathing ring: slow cycle between bright and dim white.
+   One-pixel tight ring + diffuse outer bloom — thin and premium.
+   Use box-shadow, not outline — .playing already owns outline. */
+@keyframes pressed-breath {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.25),
+      0 0 8px 4px rgba(255, 255, 255, 0.07);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.65),
+      0 0 16px 6px rgba(255, 255, 255, 0.18);
+  }
+}
+
+.album-card--highlight-pressed {
+  animation: pressed-breath 4s ease-in-out infinite;
+}
+
+/* Glint sweep: narrow (10%) silver-white diagonal band at 45°.
+   5s cycle, 0.9s active sweep (18% of cycle), holds off-screen the rest. */
+@keyframes pressed-glint-loop {
+  0%     { transform: translateX(-150%); }
+  18%    { transform: translateX(150%); }
+  18.01% { transform: translateX(-150%); }
+  100%   { transform: translateX(-150%); }
+}
+
+/* Single sweep for the hover double-flash */
+@keyframes pressed-glint-once {
+  from { transform: translateX(-150%); }
+  to   { transform: translateX(150%); }
+}
+
+.pressed-glint,
+.pressed-glint-hover {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    135deg,
+    transparent 42%,
+    rgba(255, 255, 255, 0.05) 46%,
+    rgba(235, 242, 255, 0.28) 50%,
+    rgba(255, 255, 255, 0.05) 54%,
+    transparent 58%
+  );
+}
+
+.pressed-glint {
+  animation: pressed-glint-loop 5s ease-in-out infinite;
+}
+
+.pressed-glint-hover {
+  transform: translateX(-150%);
+}
+
+/* On hover: fire an immediate sweep alongside the periodic glint */
+.album-card--highlight-pressed:hover .pressed-glint-hover {
+  animation: pressed-glint-once 0.5s ease-in-out forwards;
+}
+
 /* ── Reduced motion: static golden outline only (shiny) ────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -350,5 +416,15 @@
   .album-card--highlight-proud {
     animation: none;
     /* static stripes — identity signal without motion */
+  }
+
+  .album-card--highlight-pressed {
+    animation: none;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.50);
+  }
+
+  .pressed-glint,
+  .pressed-glint-hover {
+    display: none;
   }
 }

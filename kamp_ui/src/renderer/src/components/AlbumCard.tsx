@@ -115,6 +115,12 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
         {isNew && highlightStyle === 'vaporwave' && (
           <span className="vaporwave-scanlines" aria-hidden="true" />
         )}
+        {isNew && highlightStyle === 'pressed' && (
+          <>
+            <span className="pressed-glint" aria-hidden="true" />
+            <span className="pressed-glint-hover" aria-hidden="true" />
+          </>
+        )}
       </div>
 
       {isNew &&
