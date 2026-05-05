@@ -6,6 +6,10 @@ import { AlbumContextMenu } from './AlbumContextMenu'
 
 type MenuPos = { x: number; y: number }
 
+function rnd(min: number, max: number): number {
+  return min + Math.random() * (max - min)
+}
+
 interface StarParticle {
   id: number
   left: number
@@ -13,6 +17,30 @@ interface StarParticle {
   duration: number
   delay: number
 }
+
+interface SparkParticle {
+  id: number
+  left: number
+  top: number
+  blinkDur: number
+  blinkDelay: number
+  sparkOpacity: number
+}
+
+// Frame 0 is the brightest gray — shown when prefers-reduced-motion is set.
+// All frames use `from 180deg` so the 0/360deg seam lands at the bottom of the
+// card (behind the album-info text) rather than the visible top edge.
+// First and last stops match so the gradient closes without a color jump.
+const STATIC_BORDER_FRAMES = [
+  'conic-gradient(from 180deg, #bbb 0deg, #888 50deg, #aaa 110deg, #ccc 170deg, #999 220deg, #aaa 280deg, #bbb 360deg)',
+  'conic-gradient(from 180deg, #222 0deg, #777 45deg, #111 90deg, #555 145deg, #333 195deg, #888 250deg, #111 310deg, #222 360deg)',
+  'conic-gradient(from 180deg, #555 0deg, #111 55deg, #888 115deg, #222 165deg, #666 225deg, #333 280deg, #555 360deg)',
+  'conic-gradient(from 180deg, #888 0deg, #333 70deg, #111 140deg, #666 205deg, #222 265deg, #888 360deg)',
+  'conic-gradient(from 180deg, #111 0deg, #666 60deg, #333 125deg, #999 185deg, #444 245deg, #777 305deg, #111 360deg)',
+  'conic-gradient(from 180deg, #333 0deg, #999 50deg, #111 105deg, #666 160deg, #444 215deg, #111 270deg, #333 360deg)',
+  'conic-gradient(from 180deg, #777 0deg, #222 65deg, #555 135deg, #111 200deg, #888 270deg, #777 360deg)',
+  'conic-gradient(from 180deg, #444 0deg, #888 80deg, #111 160deg, #777 220deg, #333 290deg, #444 360deg)'
+]
 
 export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
   const selectAlbum = useStore((s) => s.selectAlbum)
@@ -35,6 +63,11 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
   // Start mounting=true so the fast sweep fires immediately; cleared after 1.2s
   const [isMounting, setIsMounting] = useState(isNew)
   const [starParticles, setStarParticles] = useState<StarParticle[]>([])
+  const [sparkParticles, setSparkParticles] = useState<SparkParticle[]>([])
+  const [hoverSparkParticles, setHoverSparkParticles] = useState<SparkParticle[]>([])
+  const [isHovered, setIsHovered] = useState(false)
+  const [auraActive, setAuraActive] = useState(false)
+  const [borderFrame, setBorderFrame] = useState(0)
 
   useEffect(() => {
     if (!isNew) return
@@ -50,6 +83,28 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
           delay: Math.random() * 2
         }))
       )
+      const sparkCount = 25 + Math.floor(Math.random() * 16) // 25–40
+      setSparkParticles(
+        Array.from({ length: sparkCount }, (_, i) => ({
+          id: i,
+          left: rnd(5, 85),
+          top: rnd(5, 85),
+          blinkDur: rnd(0.08, 0.22),
+          blinkDelay: rnd(0, 0.5),
+          sparkOpacity: rnd(0.4, 1.0)
+        }))
+      )
+      // pre-generate hover spark positions so they don't jump on every hover
+      setHoverSparkParticles(
+        Array.from({ length: 6 }, (_, i) => ({
+          id: i + 100,
+          left: rnd(5, 85),
+          top: rnd(5, 85),
+          blinkDur: rnd(0.3, 0.5),
+          blinkDelay: rnd(0, 0.5),
+          sparkOpacity: rnd(0.4, 1.0)
+        }))
+      )
     }, 0)
     const mountTimer = setTimeout(() => setIsMounting(false), 1200)
     return () => {
@@ -57,6 +112,67 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
       clearTimeout(mountTimer)
     }
   }, [isNew])
+
+  // Randomize spark positions over time — updating top/left without touching the
+  // animation props so blink cycles continue uninterrupted (no jarring reset)
+  useEffect(() => {
+    if (!isNew || highlightStyle !== 'static') return
+    const id = setInterval(() => {
+      setSparkParticles((prev) => prev.map((p) => ({ ...p, left: rnd(5, 85), top: rnd(5, 85) })))
+    }, 150)
+    return () => clearInterval(id)
+  }, [isNew, highlightStyle])
+
+  // Gradient border: cycle through gray/black frames at random ~60–150ms intervals.
+  // Skip when prefers-reduced-motion is set — frame 0 (brightest) stays active.
+  useEffect(() => {
+    if (!isNew || highlightStyle !== 'static') return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    let cancelled = false
+    const schedule = (): void => {
+      setTimeout(
+        () => {
+          if (cancelled) return
+          setBorderFrame(Math.floor(Math.random() * STATIC_BORDER_FRAMES.length))
+          schedule()
+        },
+        rnd(60, 150)
+      )
+    }
+    schedule()
+    return () => {
+      cancelled = true
+    }
+  }, [isNew, highlightStyle])
+
+  // White aura that fires at random intervals — like a voltage surge on a CRT
+  useEffect(() => {
+    if (!isNew || highlightStyle !== 'static') return
+    let cancelled = false
+
+    const schedule = (): void => {
+      setTimeout(
+        () => {
+          if (cancelled) return
+          setAuraActive(true)
+          setTimeout(
+            () => {
+              if (cancelled) return
+              setAuraActive(false)
+              schedule()
+            },
+            rnd(10, 300)
+          )
+        },
+        rnd(30, 1000)
+      )
+    }
+
+    schedule()
+    return () => {
+      cancelled = true
+    }
+  }, [isNew, highlightStyle])
 
   const handleSelect = (): void => {
     if (activeView !== 'library') void setActiveView('library')
@@ -75,10 +191,19 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
   return (
     <div
       className={cardClass}
+      style={
+        isNew && highlightStyle === 'static'
+          ? ({
+              '--static-border-gradient': STATIC_BORDER_FRAMES[borderFrame]
+            } as React.CSSProperties)
+          : undefined
+      }
       tabIndex={0}
       draggable
       onClick={handleSelect}
       onKeyDown={(e) => e.key === 'Enter' && handleSelect()}
+      onMouseEnter={isNew && highlightStyle === 'static' ? () => setIsHovered(true) : undefined}
+      onMouseLeave={isNew && highlightStyle === 'static' ? () => setIsHovered(false) : undefined}
       onContextMenu={(e) => {
         e.preventDefault()
         setMenu({ x: e.clientX, y: e.clientY })
@@ -120,6 +245,48 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
             <span className="pressed-glint" aria-hidden="true" />
             <span className="pressed-glint-hover" aria-hidden="true" />
           </>
+        )}
+        {isNew && highlightStyle === 'static' && (
+          <div className="static-aura" style={{ opacity: auraActive ? 1 : 0 }} aria-hidden="true" />
+        )}
+        {isNew && highlightStyle === 'static' && (
+          <div
+            className="static-sparks"
+            style={{ '--spark-speed-mult': isHovered ? 1.4 : 1 } as React.CSSProperties}
+            aria-hidden="true"
+          >
+            {sparkParticles.map((p) => (
+              <span
+                key={p.id}
+                className="static-spark"
+                style={
+                  {
+                    '--blink-dur': `${p.blinkDur}s`,
+                    '--blink-delay': `${p.blinkDelay}s`,
+                    '--spark-opacity': p.sparkOpacity,
+                    top: `${p.top}%`,
+                    left: `${p.left}%`
+                  } as React.CSSProperties
+                }
+              />
+            ))}
+            {isHovered &&
+              hoverSparkParticles.map((p) => (
+                <span
+                  key={p.id}
+                  className="static-spark"
+                  style={
+                    {
+                      '--blink-dur': `${p.blinkDur}s`,
+                      '--blink-delay': `${p.blinkDelay}s`,
+                      '--spark-opacity': p.sparkOpacity,
+                      top: `${p.top}%`,
+                      left: `${p.left}%`
+                    } as React.CSSProperties
+                  }
+                />
+              ))}
+          </div>
         )}
       </div>
 
