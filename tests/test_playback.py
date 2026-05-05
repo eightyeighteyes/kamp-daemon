@@ -659,34 +659,71 @@ class TestMpvPlaybackEngine:
         engine.seek(42.5)
         send.assert_called_once_with("seek", 42.5, "absolute")
 
-    def test_seek_removes_lookahead_before_seeking(self) -> None:
-        """Seeking with a lookahead must remove it first to prevent an immediate
-        gapless transition that stops time-pos events from flowing."""
+    def test_seek_into_guard_window_removes_lookahead(self) -> None:
+        """Seeking into the gapless danger window must remove the lookahead first
+        to prevent an immediate mpv gapless transition that freezes time-pos."""
         engine, send = _make_engine()
+        engine.state.duration = 240.0
         engine.preload_next(_track(2))
         send.reset_mock()
-        engine.seek(170.0)
+        engine.seek(235.0)  # within last 10 s
         send.assert_any_call("playlist-remove", 1)
         assert engine._lookahead_path is None
 
-    def test_seek_sends_playlist_remove_before_seek_command(self) -> None:
-        """playlist-remove must precede the seek command so mpv drops the lookahead
-        before repositioning, preventing a premature gapless EOF."""
+    def test_seek_into_guard_window_sends_playlist_remove_before_seek(self) -> None:
+        """playlist-remove must arrive at mpv before the seek so the lookahead is
+        gone before mpv repositions, preventing a premature gapless EOF."""
         engine, send = _make_engine()
+        engine.state.duration = 240.0
         engine.preload_next(_track(2))
         send.reset_mock()
         calls: list[tuple[object, ...]] = []
         send.side_effect = lambda *a: calls.append(a)
-        engine.seek(170.0)
+        engine.seek(235.0)  # within last 10 s
         remove_idx = next(i for i, c in enumerate(calls) if c[0] == "playlist-remove")
         seek_idx = next(i for i, c in enumerate(calls) if c[0] == "seek")
         assert remove_idx < seek_idx
+
+    def test_seek_outside_guard_window_preserves_lookahead(self) -> None:
+        """Seeking to an early/middle position must NOT remove the lookahead.
+        The danger window is only the last _GAPLESS_GUARD_SECS seconds; removing
+        the lookahead unconditionally breaks gapless at the track's natural EOF."""
+        engine, send = _make_engine()
+        engine.state.duration = 240.0
+        engine.preload_next(_track(2))
+        send.reset_mock()
+        engine.seek(60.0)  # well outside the danger window
+        send.assert_called_once_with("seek", 60.0, "absolute")
+        assert engine._lookahead_path is not None
+
+    def test_seek_at_exact_guard_boundary_preserves_lookahead(self) -> None:
+        """The guard uses strict '>' (matching preload_next), so a seek to exactly
+        duration - _GAPLESS_GUARD_SECS is outside the danger window and must
+        preserve the lookahead."""
+        engine, send = _make_engine()
+        engine.state.duration = 240.0
+        engine.preload_next(_track(2))
+        send.reset_mock()
+        engine.seek(230.0)  # exactly duration - _GAPLESS_GUARD_SECS, not inside
+        send.assert_called_once_with("seek", 230.0, "absolute")
+        assert engine._lookahead_path is not None
 
     def test_seek_without_lookahead_sends_only_seek_command(self) -> None:
         """No playlist-remove should be sent when there is no active lookahead."""
         engine, send = _make_engine()
         engine.seek(42.5)
         send.assert_called_once_with("seek", 42.5, "absolute")
+
+    def test_seek_with_unknown_duration_preserves_lookahead(self) -> None:
+        """When duration is 0 (not yet received from mpv), the guard cannot
+        evaluate — leave the lookahead in place and just send the seek."""
+        engine, send = _make_engine()
+        engine.state.duration = 0.0
+        engine.preload_next(_track(2))
+        send.reset_mock()
+        engine.seek(235.0)
+        send.assert_called_once_with("seek", 235.0, "absolute")
+        assert engine._lookahead_path is not None
 
     def test_set_volume_sends_set_property(self) -> None:
         engine, send = _make_engine()
@@ -1038,6 +1075,46 @@ class TestMpvPlaybackEngine:
         engine.state.position = 0.0
         engine.preload_next(_track(2))
         send.assert_called_once_with("loadfile", "/music/02.mp3", "append")
+
+    def test_file_loaded_resets_state_so_lookahead_re_arms_after_gapless(
+        self,
+    ) -> None:
+        """Regression for KAMP-276: after a gapless transition the file-loaded
+        event must reset position/duration before calling on_file_loaded so the
+        preload_next guard (position > duration - 10s) does not fire on stale
+        old-track values and block the lookahead for the second transition."""
+        engine, send = _make_engine()
+
+        # Prime: track 2 is preloaded at the start (position≈0, guard passes)
+        engine.preload_next(_track(2))
+
+        # Simulate the near-end state that exists when end-file fires
+        engine.state.position = 238.0
+        engine.state.duration = 240.0
+
+        # Wire on_file_loaded to capture state at callback time and then call
+        # preload_next for the third track, mirroring what the queue manager does.
+        state_at_callback: list[tuple[float, float]] = []
+
+        def _on_file_loaded() -> None:
+            state_at_callback.append((engine.state.position, engine.state.duration))
+            engine.preload_next(_track(3))
+
+        engine.on_file_loaded = _on_file_loaded
+
+        send.reset_mock()
+
+        # Gapless transition: mpv fires end-file/eof, clearing _lookahead_path
+        engine._handle_event({"event": "end-file", "reason": "eof"})
+        assert engine._lookahead_path is None
+
+        # file-loaded for track 2: stale position/duration would satisfy the guard
+        # (238 > 240-10) and block the append without the fix.
+        engine._handle_event({"event": "file-loaded"})
+
+        # The reset must have happened BEFORE on_file_loaded fired.
+        assert state_at_callback == [(0.0, 0.0)]
+        assert engine._lookahead_path == Path("/music/03.mp3")
 
     # ------------------------------------------------------------------
     # end-file gapless cleanup
