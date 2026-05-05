@@ -288,7 +288,7 @@
   background-clip: padding-box, border-box;
   background-size: auto, 170px 170px;
   box-shadow: inset 0 0 8px 1px rgba(85, 205, 252, 0.15);
-  animation: proud-barber 3s linear infinite;
+  animation: proud-barber 6s linear infinite;
 }
 
 /* .album-card:hover uses the `background` shorthand, resetting background-image,
@@ -313,7 +313,7 @@
   background-origin: padding-box, border-box;
   background-clip: padding-box, border-box;
   background-size: auto, 170px 170px;
-  animation-duration: 0.8s;
+  animation-duration: 1.6s;
 }
 
 /* ── Reduced motion: static golden outline only (shiny) ────────────────── */
