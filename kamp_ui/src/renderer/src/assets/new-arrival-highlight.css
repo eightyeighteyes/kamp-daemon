@@ -149,8 +149,8 @@
 .album-card--highlight-boring .album-art::after,
 .album-card--highlight-boring .boring-hover {
   position: absolute;
-  top: 12px;
-  right: -39px;
+  top: 23px;
+  right: -28px;
   width: 120px;
   padding: 5px 0;
   line-height: 1;
@@ -168,7 +168,7 @@
 }
 
 .album-card--highlight-boring .album-art::after {
-  content: 'NEW';
+  content: 'New';
 }
 
 .album-card--highlight-boring .boring-hover {
