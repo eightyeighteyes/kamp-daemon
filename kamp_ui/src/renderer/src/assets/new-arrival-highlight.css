@@ -141,6 +141,45 @@
     newmoji-hover-scale 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 1 forwards;
 }
 
+/* ── boring ─────────────────────────────────────────────────────────────── */
+
+/* Shared ribbon geometry — ::after (NEW) and .boring-hover span (wow!) */
+.album-card--highlight-boring .album-art::after,
+.album-card--highlight-boring .boring-hover {
+  position: absolute;
+  top: 14px;
+  right: -24px;
+  width: 80px;
+  padding: 3px 0;
+  background: #3B6FD4;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  transform: rotate(38deg);
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 80ms ease;
+}
+
+.album-card--highlight-boring .album-art::after {
+  content: 'NEW';
+}
+
+.album-card--highlight-boring .boring-hover {
+  opacity: 0;
+}
+
+.album-card--highlight-boring:hover .album-art::after {
+  opacity: 0;
+}
+
+.album-card--highlight-boring:hover .boring-hover {
+  opacity: 1;
+}
+
 /* ── Reduced motion: static golden outline only (shiny) ────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
