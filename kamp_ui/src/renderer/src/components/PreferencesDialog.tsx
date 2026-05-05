@@ -1150,13 +1150,7 @@ export function PreferencesDialog({
                         <SelectRow
                           label="Highlight style"
                           configKey="highlight.style"
-                          options={[
-                            'shiny',
-                            'newmoji',
-                            'vaporwave',
-                            'proud',
-                            'boring'
-                          ]}
+                          options={['shiny', 'newmoji', 'vaporwave', 'proud', 'boring']}
                           initialValue={highlightStyle}
                           onSave={handleHighlightSave}
                         />
