@@ -141,6 +141,48 @@
     newmoji-hover-scale 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 1 forwards;
 }
 
+/* ── boring ─────────────────────────────────────────────────────────────── */
+
+/* Shared ribbon geometry — ::after (NEW) and .boring-hover span (wow!)
+   Width 120px + right:-50px places the center on the corner diagonal (x+y=W)
+   for any square art width W, so overflow:hidden clips all four corners cleanly. */
+.album-card--highlight-boring .album-art::after,
+.album-card--highlight-boring .boring-hover {
+  position: absolute;
+  top: 23px;
+  right: -28px;
+  width: 120px;
+  padding: 5px 0;
+  line-height: 1;
+  background: #3B6FD4;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  transform: rotate(45deg);
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 80ms ease;
+}
+
+.album-card--highlight-boring .album-art::after {
+  content: 'New';
+}
+
+.album-card--highlight-boring .boring-hover {
+  opacity: 0;
+}
+
+.album-card--highlight-boring:hover .album-art::after {
+  opacity: 0;
+}
+
+.album-card--highlight-boring:hover .boring-hover {
+  opacity: 1;
+}
+
 /* ── Reduced motion: static golden outline only (shiny) ────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

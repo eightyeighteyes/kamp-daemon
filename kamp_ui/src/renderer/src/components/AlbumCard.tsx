@@ -107,6 +107,11 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
         )}
         {playing && isActive && <div className="now-playing-badge">▶</div>}
         {isNew && highlightStyle === 'shiny' && <span className="shiny-sweep" aria-hidden="true" />}
+        {isNew && highlightStyle === 'boring' && (
+          <span className="boring-hover" aria-hidden="true">
+            wow!
+          </span>
+        )}
       </div>
 
       {isNew &&
