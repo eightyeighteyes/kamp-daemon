@@ -398,7 +398,7 @@
   background-color: var(--surface);
   background-image:
     linear-gradient(var(--surface), var(--surface)),
-    var(--static-border-gradient, conic-gradient(#bbb 0deg, #999 180deg, #bbb 360deg));
+    var(--static-border-gradient, conic-gradient(from 180deg, #bbb 0deg, #999 180deg, #bbb 360deg));
   background-origin: padding-box, border-box;
   background-clip: padding-box, border-box;
 }
@@ -407,7 +407,7 @@
   background-color: var(--surface-hover);
   background-image:
     linear-gradient(var(--surface-hover), var(--surface-hover)),
-    var(--static-border-gradient, conic-gradient(#bbb 0deg, #999 180deg, #bbb 360deg));
+    var(--static-border-gradient, conic-gradient(from 180deg, #bbb 0deg, #999 180deg, #bbb 360deg));
   background-origin: padding-box, border-box;
   background-clip: padding-box, border-box;
 }

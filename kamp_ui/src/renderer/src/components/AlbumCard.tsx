@@ -27,16 +27,19 @@ interface SparkParticle {
   sparkOpacity: number
 }
 
-// Frame 0 is the brightest gray — shown when prefers-reduced-motion is set
+// Frame 0 is the brightest gray — shown when prefers-reduced-motion is set.
+// All frames use `from 180deg` so the 0/360deg seam lands at the bottom of the
+// card (behind the album-info text) rather than the visible top edge.
+// First and last stops match so the gradient closes without a color jump.
 const STATIC_BORDER_FRAMES = [
-  'conic-gradient(#bbb 0deg, #888 50deg, #aaa 100deg, #ccc 160deg, #999 210deg, #aaa 270deg, #bbb 360deg)',
-  'conic-gradient(#222 0deg, #777 40deg, #111 90deg, #555 140deg, #333 190deg, #888 240deg, #111 300deg, #444 350deg)',
-  'conic-gradient(#555 0deg, #111 55deg, #888 110deg, #222 165deg, #666 220deg, #333 275deg, #999 330deg)',
-  'conic-gradient(#888 0deg, #333 70deg, #111 140deg, #666 200deg, #222 260deg, #777 320deg)',
-  'conic-gradient(#111 0deg, #666 60deg, #333 120deg, #999 180deg, #444 240deg, #777 300deg, #222 360deg)',
-  'conic-gradient(#333 0deg, #999 50deg, #111 100deg, #666 160deg, #444 210deg, #111 270deg, #888 320deg)',
-  'conic-gradient(#777 0deg, #222 65deg, #555 130deg, #111 200deg, #888 265deg, #333 330deg)',
-  'conic-gradient(#444 0deg, #888 75deg, #111 150deg, #777 220deg, #333 290deg, #999 360deg)'
+  'conic-gradient(from 180deg, #bbb 0deg, #888 50deg, #aaa 110deg, #ccc 170deg, #999 220deg, #aaa 280deg, #bbb 360deg)',
+  'conic-gradient(from 180deg, #222 0deg, #777 45deg, #111 90deg, #555 145deg, #333 195deg, #888 250deg, #111 310deg, #222 360deg)',
+  'conic-gradient(from 180deg, #555 0deg, #111 55deg, #888 115deg, #222 165deg, #666 225deg, #333 280deg, #555 360deg)',
+  'conic-gradient(from 180deg, #888 0deg, #333 70deg, #111 140deg, #666 205deg, #222 265deg, #888 360deg)',
+  'conic-gradient(from 180deg, #111 0deg, #666 60deg, #333 125deg, #999 185deg, #444 245deg, #777 305deg, #111 360deg)',
+  'conic-gradient(from 180deg, #333 0deg, #999 50deg, #111 105deg, #666 160deg, #444 215deg, #111 270deg, #333 360deg)',
+  'conic-gradient(from 180deg, #777 0deg, #222 65deg, #555 135deg, #111 200deg, #888 270deg, #777 360deg)',
+  'conic-gradient(from 180deg, #444 0deg, #888 80deg, #111 160deg, #777 220deg, #333 290deg, #444 360deg)'
 ]
 
 export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
