@@ -78,7 +78,8 @@ export function NewArrivalsModule({ displayStyle }: ModuleProps): React.JSX.Elem
         .filter((a) => a.added_at !== null)
         .sort((a, b) => (b.added_at ?? 0) - (a.added_at ?? 0))
       const cutoff = days > 0 ? Date.now() / 1000 - days * 86400 : null
-      const inWindow = cutoff !== null ? withDate.filter((a) => (a.added_at ?? 0) >= cutoff) : withDate
+      const inWindow =
+        cutoff !== null ? withDate.filter((a) => (a.added_at ?? 0) >= cutoff) : withDate
       // Fall back to most-recently-added if the date window returns nothing (e.g. older libraries)
       setAlbums((inWindow.length > 0 ? inWindow : withDate).slice(0, count > 0 ? count : undefined))
     })
