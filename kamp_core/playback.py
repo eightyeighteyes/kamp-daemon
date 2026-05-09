@@ -393,7 +393,7 @@ class _UnixSocketTransport(_IPCTransport):
         # AF_UNIX exists on POSIX; the typeshed stub elides it on Windows.
         # _UnixSocketTransport is only constructed off Windows (see
         # _make_ipc_transport) so the lookup is runtime-safe.
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)  # type: ignore[attr-defined]
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)  # type: ignore[attr-defined,unused-ignore]
         sock.connect(self._sock_path)
         self._sock = sock
 
@@ -473,9 +473,16 @@ class _WindowsNamedPipeTransport(_IPCTransport):
         self, timeout: float, proc: subprocess.Popen[bytes]
     ) -> None:  # pragma: no cover
         # Imported lazily so the module still imports cleanly off Windows
-        # (multiprocessing.connection.PipeConnection is Win32-only).
-        import _winapi
-        from multiprocessing.connection import PipeConnection
+        # (multiprocessing.connection.PipeConnection is Win32-only). Cast to
+        # Any so mypy on Linux/macOS does not flag the platform-conditional
+        # _winapi attributes — this method only runs when sys.platform ==
+        # "win32" (see _make_ipc_transport).
+        import _winapi as _winapi_mod
+        from multiprocessing.connection import (  # type: ignore[attr-defined,unused-ignore]
+            PipeConnection,
+        )
+
+        _winapi: Any = _winapi_mod
 
         deadline = time.monotonic() + timeout
         last_err: OSError | None = None

@@ -266,7 +266,7 @@ def _apply_landlock(allowed_write_paths: list[str]) -> None:
                 # Windows. _linux.py is only loaded by the Linux sandbox
                 # dispatch, so the lookup is runtime-safe even though mypy
                 # checks this file when running on Windows.
-                fd = os.open(str(path), _O_PATH | os.O_CLOEXEC)  # type: ignore[attr-defined]
+                fd = os.open(str(path), _O_PATH | os.O_CLOEXEC)  # type: ignore[attr-defined,unused-ignore]
             except OSError:
                 continue
             try:
