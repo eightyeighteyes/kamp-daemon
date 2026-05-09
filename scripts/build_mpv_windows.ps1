@@ -74,7 +74,13 @@ Invoke-Msys "rm -rf $mpvSrcUnix && git clone --depth=1 --branch $MpvTag https://
 # Audio-only meson configuration. Windows-only differences from the macOS
 # build: no coreaudio, no avfoundation; WASAPI is built-in (auto-enabled when
 # building on win32 -- no flag needed). All video/scripting/optical-disc
-# features are disabled the same way as on macOS.
+# features are disabled the same way as on macOS, plus the Windows-specific
+# video output and hwaccel backends (d3d11, direct3d/D3D9, gl/gl-win32/
+# gl-dxinterop, vaapi/vaapi-win32, vdpau, egl-angle, caca, d3d-hwaccel/
+# d3d9-hwaccel) which would otherwise auto-enable and pull video/vaapi.c
+# via video/out/d3d11/context.h -- triggering a DXGI_DEBUG_D3D11 redefinition
+# clash with newer mingw-w64 d3d11sdklayers.h. All flag names verified
+# against mpv v0.41.0's meson.options.
 Write-Host "==> Configuring mpv with audio-only feature set"
 Invoke-Msys @"
 set -euo pipefail
@@ -100,7 +106,21 @@ meson setup build \
     -Dalsa=disabled \
     -Dvulkan=disabled \
     -Dshaderc=disabled \
-    -Dpipewire=disabled
+    -Dpipewire=disabled \
+    -Dgl=disabled \
+    -Dgl-win32=disabled \
+    -Dgl-dxinterop=disabled \
+    -Dd3d11=disabled \
+    -Ddirect3d=disabled \
+    -Dd3d-hwaccel=disabled \
+    -Dd3d9-hwaccel=disabled \
+    -Dvaapi=disabled \
+    -Dvaapi-win32=disabled \
+    -Dvdpau=disabled \
+    -Degl-angle=disabled \
+    -Degl-angle-lib=disabled \
+    -Degl-angle-win32=disabled \
+    -Dcaca=disabled
 "@
 
 Write-Host "==> Building mpv (ninja)"
