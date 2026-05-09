@@ -521,12 +521,34 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Download bundle artifact
-        # No `path:` -- extract at GITHUB_WORKSPACE so the workspace-relative
-        # kamp_ui/resources/ and kamp_ui/build/icon.ico paths from the upload
-        # land in their original locations.
+        # upload-artifact strips the least common ancestor of all `path:` entries
+        # from archive paths -- with `kamp_ui/resources/` + `kamp_ui/build/icon.ico`
+        # the LCA is `kamp_ui/`, so the artifact stores `resources/...` and
+        # `build/icon.ico`. Setting download path to `kamp_ui` restores the
+        # layout electron-builder expects (`kamp_ui/resources/kamp/kamp.exe`).
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: bundle-win-x64
+          path: kamp_ui
+
+      - name: Verify bundle layout
+        # Pre-flight: if extraResources sources are missing, electron-builder
+        # silently produces a daemon-less installer (it logs "file source
+        # doesn't exist" but still succeeds). Fail loudly here instead.
+        run: |
+          $required = @(
+            'kamp_ui\resources\kamp\kamp.exe',
+            'kamp_ui\resources\mpv\mpv.exe',
+            'kamp_ui\resources\node.exe',
+            'kamp_ui\resources\npm\bin\npm-cli.js',
+            'kamp_ui\build\icon.ico'
+          )
+          $missing = $required | Where-Object { -not (Test-Path $_) }
+          if ($missing) {
+            Write-Error "Bundle artifact missing files:`n  $($missing -join "`n  ")"
+            exit 1
+          }
+          Write-Host "OK: bundle layout intact ($($required.Count) required paths present)"
 
       - name: Cache electron-builder binaries
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
