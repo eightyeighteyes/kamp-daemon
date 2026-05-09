@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import random
 import secrets
 import shutil
@@ -22,7 +21,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import BinaryIO, Callable
+from typing import Any, Callable
 
 from kamp_core.library import Track
 
@@ -426,19 +425,27 @@ class _UnixSocketTransport(_IPCTransport):
 class _WindowsNamedPipeTransport(_IPCTransport):
     """mpv on Windows binds --input-ipc-server=NAME to a Win32 named pipe.
 
-    We pass a fully-qualified \\\\.\\pipe\\NAME path so mpv and the connecting
-    client agree on the same endpoint regardless of how mpv normalizes the
-    argument internally.
+    Per mpv's own docs (DOCS/man/ipc.rst):
 
-    The pipe is opened with TWO separate file handles — one read-only, one
-    write-only — opened sequentially. Win32 named pipe servers (mpv) treat
-    each CreateFile from a client as a new pipe instance, so the read and
-    write handles correspond to distinct instances even though they refer
-    to the same NAME. Using a single duplex handle (r+b) on Windows leads
-    to a deadlock pattern in practice: a long blocking ReadFile in one
-    thread serializes against a blocking WriteFile in another at the stdio
-    layer, even though the kernel-level operations target independent
-    inbound/outbound buffers. Two handles avoid this entirely.
+        "To be able to simultaneously read and write from the IPC pipe, like
+         on Linux, it's necessary to write an external program that uses
+         overlapped file I/O (or some wrapper like .NET's
+         NamedPipeClientStream)."
+
+    Without FILE_FLAG_OVERLAPPED on the client-side CreateFile, Windows
+    serializes I/O on the handle: a thread parked in ReadFile blocks a
+    concurrent WriteFile on the same handle. Bare os.read / os.write don't
+    escape that — verified by py-spy on a deadlocked daemon (main thread
+    parked in WriteFile, reader thread parked in ReadFile, same fd). Two
+    separate handles avoid the deadlock but lose property events because
+    mpv routes property-change events back on the connection that
+    subscribed; the read-only handle never subscribed.
+
+    The fix matches what python-mpv-jsonipc has shipped for years: open
+    the pipe via _winapi.CreateFile with FILE_FLAG_OVERLAPPED, then wrap
+    the handle in multiprocessing.connection.PipeConnection. send_bytes /
+    recv_bytes issue per-call overlapped I/O, so a parked recv does not
+    block a concurrent send.
     """
 
     # ERROR_PIPE_BUSY: all instances of the named pipe are saturated; retry.
@@ -448,8 +455,15 @@ class _WindowsNamedPipeTransport(_IPCTransport):
         # 16 hex chars = 64 bits of entropy — collision-free across concurrent
         # daemons on the same machine.
         self._pipe_name = rf"\\.\pipe\kamp-mpv-{secrets.token_hex(8)}"
-        self._read_file: BinaryIO | None = None
-        self._write_file: BinaryIO | None = None
+        self._conn: Any = None
+        # send_bytes is overlapped but not self-thread-safe; serialize writes.
+        # MpvPlaybackEngine._lock already wraps _send_command, but a
+        # transport-local lock keeps the contract local to this class.
+        self._write_lock = threading.Lock()
+        # recv_bytes returns one whole frame per call (mpv writes one
+        # newline-terminated JSON message per WriteFile). Buffer leftovers so
+        # the existing recv(n)-style contract is preserved for callers.
+        self._read_buf = bytearray()
 
     @property
     def server_arg(self) -> str:
@@ -458,53 +472,37 @@ class _WindowsNamedPipeTransport(_IPCTransport):
     def open(
         self, timeout: float, proc: subprocess.Popen[bytes]
     ) -> None:  # pragma: no cover
+        # Imported lazily so the module still imports cleanly off Windows
+        # (multiprocessing.connection.PipeConnection is Win32-only).
+        import _winapi
+        from multiprocessing.connection import PipeConnection
+
         deadline = time.monotonic() + timeout
         last_err: OSError | None = None
-        # Open the read handle first; mpv must be listening before either
-        # CreateFile call succeeds. Use os.open (not the "rb" / "wb" modes of
-        # builtins.open) because Python's stdio mode strings imply O_TRUNC
-        # for write modes, which named pipes reject with EINVAL. os.open
-        # with bare O_RDONLY / O_WRONLY avoids that.
         while time.monotonic() < deadline:
             try:
-                fd = os.open(self._pipe_name, os.O_RDONLY | os.O_BINARY)
-                self._read_file = os.fdopen(fd, "rb", buffering=0)
-                break
+                handle = _winapi.CreateFile(
+                    self._pipe_name,
+                    _winapi.GENERIC_READ | _winapi.GENERIC_WRITE,
+                    0,  # dwShareMode
+                    _winapi.NULL,  # lpSecurityAttributes
+                    _winapi.OPEN_EXISTING,
+                    _winapi.FILE_FLAG_OVERLAPPED,
+                    _winapi.NULL,  # hTemplateFile
+                )
             except FileNotFoundError as exc:
                 # mpv has not called CreateNamedPipe yet — retry.
                 last_err = exc
+                time.sleep(0.05)
+                continue
             except OSError as exc:
                 if getattr(exc, "winerror", None) == self._ERROR_PIPE_BUSY:
                     last_err = exc
-                else:
-                    raise
-            time.sleep(0.05)
-        if self._read_file is None:
-            self._raise_open_timeout(proc, timeout, last_err)
-        # Now open a separate write handle. mpv accepts a second client
-        # connection on the same pipe name; reads and writes go through
-        # independent kernel buffers.
-        while time.monotonic() < deadline:
-            try:
-                fd = os.open(self._pipe_name, os.O_WRONLY | os.O_BINARY)
-                self._write_file = os.fdopen(fd, "wb", buffering=0)
-                return
-            except FileNotFoundError as exc:
-                last_err = exc
-            except OSError as exc:
-                if getattr(exc, "winerror", None) == self._ERROR_PIPE_BUSY:
-                    last_err = exc
-                else:
-                    raise
-            time.sleep(0.05)
-        self._raise_open_timeout(proc, timeout, last_err)
-
-    def _raise_open_timeout(
-        self,
-        proc: subprocess.Popen[bytes],
-        timeout: float,
-        last_err: OSError | None,
-    ) -> None:  # pragma: no cover
+                    time.sleep(0.05)
+                    continue
+                raise
+            self._conn = PipeConnection(handle)
+            return
         detail = ""
         if proc.poll() is not None and proc.stderr is not None:
             stderr_bytes = proc.stderr.read()
@@ -516,35 +514,42 @@ class _WindowsNamedPipeTransport(_IPCTransport):
         )
 
     def sendall(self, data: bytes) -> None:  # pragma: no cover
-        if self._write_file is None:
+        if self._conn is None:
             raise OSError("transport closed")
-        # Buffered=0 FileIO writes the buffer in one WriteFile call, but Win32
-        # pipes can do partial writes under load — loop to drain.
-        view = memoryview(data)
-        while view:
-            written = self._write_file.write(view)
-            if not written:
-                raise OSError("named pipe closed during write")
-            view = view[written:]
+        with self._write_lock:
+            try:
+                self._conn.send_bytes(data)
+            except (BrokenPipeError, EOFError) as exc:
+                raise OSError(str(exc)) from exc
 
     def recv(self, n: int) -> bytes:  # pragma: no cover
-        if self._read_file is None:
-            return b""
-        try:
-            chunk = self._read_file.read(n)
-        except OSError:
-            return b""
-        return chunk or b""
+        # Refill the local buffer if empty — recv_bytes returns one whole
+        # mpv frame per call, which is fine for the engine's line-oriented
+        # parser. Do NOT pass `n` to recv_bytes: that argument is maxlength
+        # and raises if the incoming frame is larger.
+        if not self._read_buf:
+            if self._conn is None:
+                return b""
+            try:
+                frame = self._conn.recv_bytes()
+            except (EOFError, OSError):
+                return b""
+            self._read_buf.extend(frame)
+        if len(self._read_buf) <= n:
+            chunk = bytes(self._read_buf)
+            self._read_buf.clear()
+            return chunk
+        chunk = bytes(self._read_buf[:n])
+        del self._read_buf[:n]
+        return chunk
 
     def close(self) -> None:
-        for attr in ("_read_file", "_write_file"):
-            f = getattr(self, attr, None)
-            if f is not None:
-                try:
-                    f.close()
-                except OSError:
-                    pass
-                setattr(self, attr, None)
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except OSError:
+                pass
+            self._conn = None
 
 
 def _make_ipc_transport() -> _IPCTransport:
