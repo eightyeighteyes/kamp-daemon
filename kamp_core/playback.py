@@ -10,15 +10,18 @@ from __future__ import annotations
 import json
 import logging
 import random
+import secrets
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from kamp_core.library import Track
 
@@ -318,6 +321,252 @@ class PlaybackQueue:
 
 
 # ---------------------------------------------------------------------------
+# IPC transport
+# ---------------------------------------------------------------------------
+
+# mpv's JSON IPC channel is a Unix domain socket on macOS/Linux and a Win32
+# named pipe on Windows. Both speak the same wire protocol (newline-delimited
+# JSON), but the connect step differs: Unix selects via filesystem path and
+# AF_UNIX, Windows selects via \\.\pipe\NAME and a duplex file handle.
+# _IPCTransport keeps that platform branch isolated so MpvPlaybackEngine
+# stays platform-neutral.
+
+
+class _IPCTransport(ABC):
+    """mpv JSON-IPC transport with a uniform sendall/recv surface."""
+
+    @property
+    @abstractmethod
+    def server_arg(self) -> str:
+        """Value passed to mpv's --input-ipc-server flag."""
+
+    @abstractmethod
+    def open(self, timeout: float, proc: subprocess.Popen[bytes]) -> None:
+        """Block until mpv has bound the IPC endpoint, then connect.
+
+        Reads any captured stderr from *proc* into the diagnostic message if
+        mpv exits before the endpoint appears.
+        """
+
+    @abstractmethod
+    def sendall(self, data: bytes) -> None:
+        """Write *data* to mpv. Raises OSError if the channel is dead."""
+
+    @abstractmethod
+    def recv(self, n: int) -> bytes:
+        """Read up to *n* bytes; returns b'' on EOF or error."""
+
+    @abstractmethod
+    def close(self) -> None:
+        """Close the connection and remove any filesystem artifacts."""
+
+
+class _UnixSocketTransport(_IPCTransport):
+    def __init__(self) -> None:
+        # Hold the tmpdir so cleanup can rm the socket file mpv leaves behind.
+        self._tmpdir = tempfile.mkdtemp(prefix="kamp-mpv-")
+        self._sock_path = str(Path(self._tmpdir) / "mpv.sock")
+        self._sock: socket.socket | None = None
+
+    @property
+    def server_arg(self) -> str:
+        return self._sock_path
+
+    def open(
+        self, timeout: float, proc: subprocess.Popen[bytes]
+    ) -> None:  # pragma: no cover
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if Path(self._sock_path).exists():
+                break
+            time.sleep(0.05)
+        else:
+            detail = ""
+            if proc.poll() is not None and proc.stderr is not None:
+                stderr_bytes = proc.stderr.read()
+                if stderr_bytes:
+                    detail = f": {stderr_bytes.decode(errors='replace').strip()}"
+            raise RuntimeError(
+                f"mpv IPC socket did not appear at {self._sock_path} "
+                f"within {timeout}s{detail}."
+            )
+        # AF_UNIX exists on POSIX; the typeshed stub elides it on Windows.
+        # _UnixSocketTransport is only constructed off Windows (see
+        # _make_ipc_transport) so the lookup is runtime-safe.
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)  # type: ignore[attr-defined,unused-ignore]
+        sock.connect(self._sock_path)
+        self._sock = sock
+
+    def sendall(self, data: bytes) -> None:  # pragma: no cover
+        if self._sock is None:
+            raise OSError("transport closed")
+        self._sock.sendall(data)
+
+    def recv(self, n: int) -> bytes:  # pragma: no cover
+        if self._sock is None:
+            return b""
+        try:
+            return self._sock.recv(n)
+        except OSError:
+            return b""
+
+    def close(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
+        if self._tmpdir:
+            shutil.rmtree(self._tmpdir, ignore_errors=True)
+            self._tmpdir = ""
+
+
+class _WindowsNamedPipeTransport(_IPCTransport):
+    """mpv on Windows binds --input-ipc-server=NAME to a Win32 named pipe.
+
+    Per mpv's own docs (DOCS/man/ipc.rst):
+
+        "To be able to simultaneously read and write from the IPC pipe, like
+         on Linux, it's necessary to write an external program that uses
+         overlapped file I/O (or some wrapper like .NET's
+         NamedPipeClientStream)."
+
+    Without FILE_FLAG_OVERLAPPED on the client-side CreateFile, Windows
+    serializes I/O on the handle: a thread parked in ReadFile blocks a
+    concurrent WriteFile on the same handle. Bare os.read / os.write don't
+    escape that — verified by py-spy on a deadlocked daemon (main thread
+    parked in WriteFile, reader thread parked in ReadFile, same fd). Two
+    separate handles avoid the deadlock but lose property events because
+    mpv routes property-change events back on the connection that
+    subscribed; the read-only handle never subscribed.
+
+    The fix matches what python-mpv-jsonipc has shipped for years: open
+    the pipe via _winapi.CreateFile with FILE_FLAG_OVERLAPPED, then wrap
+    the handle in multiprocessing.connection.PipeConnection. send_bytes /
+    recv_bytes issue per-call overlapped I/O, so a parked recv does not
+    block a concurrent send.
+    """
+
+    # ERROR_PIPE_BUSY: all instances of the named pipe are saturated; retry.
+    _ERROR_PIPE_BUSY = 231
+
+    def __init__(self) -> None:
+        # 16 hex chars = 64 bits of entropy — collision-free across concurrent
+        # daemons on the same machine.
+        self._pipe_name = rf"\\.\pipe\kamp-mpv-{secrets.token_hex(8)}"
+        self._conn: Any = None
+        # send_bytes is overlapped but not self-thread-safe; serialize writes.
+        # MpvPlaybackEngine._lock already wraps _send_command, but a
+        # transport-local lock keeps the contract local to this class.
+        self._write_lock = threading.Lock()
+        # recv_bytes returns one whole frame per call (mpv writes one
+        # newline-terminated JSON message per WriteFile). Buffer leftovers so
+        # the existing recv(n)-style contract is preserved for callers.
+        self._read_buf = bytearray()
+
+    @property
+    def server_arg(self) -> str:
+        return self._pipe_name
+
+    def open(
+        self, timeout: float, proc: subprocess.Popen[bytes]
+    ) -> None:  # pragma: no cover
+        # Imported lazily so the module still imports cleanly off Windows
+        # (multiprocessing.connection.PipeConnection is Win32-only). Cast to
+        # Any so mypy on Linux/macOS does not flag the platform-conditional
+        # _winapi attributes — this method only runs when sys.platform ==
+        # "win32" (see _make_ipc_transport).
+        import _winapi as _winapi_mod
+        from multiprocessing.connection import (  # type: ignore[attr-defined,unused-ignore]
+            PipeConnection,
+        )
+
+        _winapi: Any = _winapi_mod
+
+        deadline = time.monotonic() + timeout
+        last_err: OSError | None = None
+        while time.monotonic() < deadline:
+            try:
+                handle = _winapi.CreateFile(
+                    self._pipe_name,
+                    _winapi.GENERIC_READ | _winapi.GENERIC_WRITE,
+                    0,  # dwShareMode
+                    _winapi.NULL,  # lpSecurityAttributes
+                    _winapi.OPEN_EXISTING,
+                    _winapi.FILE_FLAG_OVERLAPPED,
+                    _winapi.NULL,  # hTemplateFile
+                )
+            except FileNotFoundError as exc:
+                # mpv has not called CreateNamedPipe yet — retry.
+                last_err = exc
+                time.sleep(0.05)
+                continue
+            except OSError as exc:
+                if getattr(exc, "winerror", None) == self._ERROR_PIPE_BUSY:
+                    last_err = exc
+                    time.sleep(0.05)
+                    continue
+                raise
+            self._conn = PipeConnection(handle)
+            return
+        detail = ""
+        if proc.poll() is not None and proc.stderr is not None:
+            stderr_bytes = proc.stderr.read()
+            if stderr_bytes:
+                detail = f": {stderr_bytes.decode(errors='replace').strip()}"
+        raise RuntimeError(
+            f"mpv IPC pipe at {self._pipe_name} did not become connectable "
+            f"within {timeout}s{detail}: {last_err!r}"
+        )
+
+    def sendall(self, data: bytes) -> None:  # pragma: no cover
+        if self._conn is None:
+            raise OSError("transport closed")
+        with self._write_lock:
+            try:
+                self._conn.send_bytes(data)
+            except (BrokenPipeError, EOFError) as exc:
+                raise OSError(str(exc)) from exc
+
+    def recv(self, n: int) -> bytes:  # pragma: no cover
+        # Refill the local buffer if empty — recv_bytes returns one whole
+        # mpv frame per call, which is fine for the engine's line-oriented
+        # parser. Do NOT pass `n` to recv_bytes: that argument is maxlength
+        # and raises if the incoming frame is larger.
+        if not self._read_buf:
+            if self._conn is None:
+                return b""
+            try:
+                frame = self._conn.recv_bytes()
+            except (EOFError, OSError):
+                return b""
+            self._read_buf.extend(frame)
+        if len(self._read_buf) <= n:
+            chunk = bytes(self._read_buf)
+            self._read_buf.clear()
+            return chunk
+        chunk = bytes(self._read_buf[:n])
+        del self._read_buf[:n]
+        return chunk
+
+    def close(self) -> None:
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except OSError:
+                pass
+            self._conn = None
+
+
+def _make_ipc_transport() -> _IPCTransport:
+    """Return the IPC transport appropriate for the current platform."""
+    if sys.platform == "win32":
+        return _WindowsNamedPipeTransport()
+    return _UnixSocketTransport()
+
+
+# ---------------------------------------------------------------------------
 # MpvPlaybackEngine
 # ---------------------------------------------------------------------------
 
@@ -334,11 +583,12 @@ _OBSERVED: list[tuple[int, str]] = [
 
 
 class MpvPlaybackEngine:
-    """Controls mpv via its JSON IPC socket.
+    """Controls mpv via its JSON IPC channel.
 
-    mpv is started as a subprocess with --input-ipc-server pointing at a
-    temporary Unix socket. A background thread reads the event stream and
-    updates self.state. Commands are sent synchronously via _send_command.
+    mpv is started as a subprocess with --input-ipc-server pointing at the
+    transport-specific endpoint (a temporary Unix socket on macOS/Linux, a
+    Win32 named pipe on Windows). A background thread reads the event stream
+    and updates self.state. Commands are sent synchronously via _send_command.
     """
 
     def __init__(self, mpv_bin: str = "mpv") -> None:
@@ -348,9 +598,7 @@ class MpvPlaybackEngine:
         self.on_play_state_changed: Callable[[], None] | None = None
         self._mpv_bin = mpv_bin
         self._proc: subprocess.Popen[bytes] | None = None
-        self._sock: socket.socket | None = None
-        self._sock_path = ""
-        self._sock_tmpdir = ""
+        self._ipc: _IPCTransport = _make_ipc_transport()
         self._reader_thread: threading.Thread | None = None
         # RLock so the reader thread can re-acquire the lock inside callbacks
         # (e.g. on_track_end → engine.play() → _send_command) while still
@@ -369,17 +617,14 @@ class MpvPlaybackEngine:
         self._start_mpv()
 
     def _start_mpv(self) -> None:  # pragma: no cover
-        """Launch mpv and connect to its IPC socket."""
-        tmpdir = tempfile.mkdtemp(prefix="kamp-mpv-")
-        self._sock_tmpdir = tmpdir
-        self._sock_path = str(Path(tmpdir) / "mpv.sock")
+        """Launch mpv and connect to its IPC channel."""
         self._proc = subprocess.Popen(
             [
                 self._mpv_bin,
                 "--no-video",
                 "--idle=yes",
                 "--really-quiet",
-                f"--input-ipc-server={self._sock_path}",
+                f"--input-ipc-server={self._ipc.server_arg}",
                 # Prevent mpv from intercepting media keys via its IOKit HID tap.
                 # Media key events are now handled by the Electron now-playing-helper
                 # subprocess via MPRemoteCommandCenter (registered by the process
@@ -390,36 +635,19 @@ class MpvPlaybackEngine:
             # Capture stderr so we can surface it if mpv fails to start.
             stderr=subprocess.PIPE,
         )
-        self._connect_socket()
+        try:
+            self._ipc.open(timeout=5.0, proc=self._proc)
+        except RuntimeError as exc:
+            # Re-raise with the binary path so PATH/installation issues are
+            # obvious in logs (the transport doesn't know which mpv we asked for).
+            raise RuntimeError(
+                f"{exc} Is '{self._mpv_bin}' installed and on PATH?"
+            ) from None
         self._observe_properties()
         self._reader_thread = threading.Thread(
             target=self._read_loop, daemon=True, name="mpv-reader"
         )
         self._reader_thread.start()
-
-    def _connect_socket(self, timeout: float = 5.0) -> None:  # pragma: no cover
-        """Poll until mpv creates its IPC socket, then connect."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if Path(self._sock_path).exists():
-                break
-            time.sleep(0.05)
-        else:
-            # Try to collect any error output from mpv before raising.
-            assert self._proc is not None
-            detail = ""
-            if self._proc.poll() is not None and self._proc.stderr:
-                stderr_bytes = self._proc.stderr.read()
-                if stderr_bytes:
-                    detail = f": {stderr_bytes.decode(errors='replace').strip()}"
-            raise RuntimeError(
-                f"mpv IPC socket did not appear at {self._sock_path} "
-                f"within {timeout}s{detail}. "
-                f"Is '{self._mpv_bin}' installed and in PATH?"
-            )
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect(self._sock_path)
-        self._sock = sock
 
     def _observe_properties(self) -> None:  # pragma: no cover
         """Ask mpv to stream property changes for state tracking."""
@@ -537,41 +765,32 @@ class MpvPlaybackEngine:
         if self._proc is not None:
             self._proc.terminate()
             self._proc = None
-        if self._sock is not None:
-            try:
-                self._sock.close()
-            except OSError:
-                pass
-            self._sock = None
-        if self._sock_tmpdir:
-            shutil.rmtree(self._sock_tmpdir, ignore_errors=True)
-            self._sock_tmpdir = ""
+        # Closing the transport unblocks the reader thread's blocking recv()
+        # so the daemon shuts down cleanly. Tolerate cleanup errors so a
+        # crashing transport never aborts daemon shutdown.
+        try:
+            self._ipc.close()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Internal: IPC send/receive
     # ------------------------------------------------------------------
 
     def _send_command(self, *args: object) -> None:
-        """Serialize and send a command to mpv over the IPC socket."""
-        if self._sock is None:
-            return
+        """Serialize and send a command to mpv over the IPC channel."""
         msg = json.dumps({"command": list(args)}) + "\n"
         with self._lock:
             try:
-                self._sock.sendall(msg.encode())
+                self._ipc.sendall(msg.encode())
             except OSError:
                 logger.warning("Failed to send command to mpv: %s", args)
 
     def _read_loop(self) -> None:  # pragma: no cover
         """Background thread: read JSON events from mpv and dispatch them."""
-        if self._sock is None:
-            return
         buf = b""
         while True:
-            try:
-                chunk = self._sock.recv(4096)
-            except OSError:
-                break
+            chunk = self._ipc.recv(4096)
             if not chunk:
                 break
             buf += chunk

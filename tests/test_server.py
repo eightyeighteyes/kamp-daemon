@@ -386,7 +386,11 @@ class TestMissingAlbumEndpoints:
             "/api/v1/tracks?album_artist=&album=&file_path=%2Fmusic%2F01.mp3"
         ).json()
         assert len(data) == 1
-        mock_index.get_track_by_path.assert_called_once_with(Path("/music/01.mp3"))
+        # Server resolves the path before lookup; on Windows that prepends the
+        # current drive letter, so assert against the same resolved form.
+        mock_index.get_track_by_path.assert_called_once_with(
+            Path("/music/01.mp3").resolve()
+        )
         mock_index.tracks_for_album.assert_not_called()
 
     def test_album_art_endpoint_uses_file_path_when_provided(
@@ -404,7 +408,9 @@ class TestMissingAlbumEndpoints:
                 "/api/v1/album-art?album_artist=&album=&file_path=%2Fmusic%2F01.mp3"
             )
         assert res.status_code == 200
-        mock_index.get_track_by_path.assert_called_once_with(Path("/music/01.mp3"))
+        mock_index.get_track_by_path.assert_called_once_with(
+            Path("/music/01.mp3").resolve()
+        )
         mock_index.tracks_for_album.assert_not_called()
 
 
@@ -1441,9 +1447,13 @@ class TestFavoriteEndpoint:
         )
         assert resp.status_code == 200
         assert resp.json() == {"ok": True}
-        mock_index.set_favorite.assert_called_once_with(Path("/music/01.mp3"), True)
+        mock_index.set_favorite.assert_called_once_with(
+            Path("/music/01.mp3").resolve(), True
+        )
         # Queue must also be updated so the next player-state snapshot is correct.
-        mock_queue.update_favorite.assert_called_once_with(Path("/music/01.mp3"), True)
+        mock_queue.update_favorite.assert_called_once_with(
+            Path("/music/01.mp3").resolve(), True
+        )
 
     def test_set_favorite_returns_404_for_unknown_track(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
@@ -2492,3 +2502,24 @@ class TestCORSMiddleware:
         assert (
             resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
         )
+
+    def test_vite_alternate_port_allowed_in_dev_mode(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """Vite rolls forward to 5174/5175/... when 5173 is occupied (e.g. a
+        stale dev session). dev_mode CORS must accept any localhost port so
+        the renderer keeps working across restarts."""
+        client = self._make_client(mock_index, mock_engine, mock_queue, dev_mode=True)
+        resp = self._preflight(client, "http://localhost:5174")
+        assert (
+            resp.headers.get("access-control-allow-origin") == "http://localhost:5174"
+        )
+
+    def test_non_localhost_origin_rejected_even_in_dev_mode(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """The dev regex must only match localhost/127.0.0.1, not arbitrary
+        origins. Otherwise an attacker on the LAN could hit the dev daemon."""
+        client = self._make_client(mock_index, mock_engine, mock_queue, dev_mode=True)
+        resp = self._preflight(client, "http://192.168.1.10:5173")
+        assert "access-control-allow-origin" not in resp.headers
