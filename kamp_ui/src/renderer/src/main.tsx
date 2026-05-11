@@ -10,6 +10,10 @@ import { theme } from '../../shared/theme'
 // BrowserWindow options (e.g. backgroundColor).
 document.documentElement.style.setProperty('--bg', theme.bg)
 
+// Expose the platform to CSS so platform-specific chrome (e.g. right padding
+// on .view-tabs that clears the Windows titleBarOverlay) can target it.
+document.documentElement.dataset.platform = window.electron.process.platform
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

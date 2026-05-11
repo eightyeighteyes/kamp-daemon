@@ -468,9 +468,16 @@ function createWindow(): void {
     // Match the app's dark background so the native window surface never
     // shows through as white gutters during resize or repaint.
     backgroundColor: theme.bg,
-    // Remove the native title bar on macOS — the view-tabs nav takes its place
-    // and acts as the drag region. Traffic lights remain visible at top-left.
-    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const } : {}),
+    // Hide the native title bar on macOS and Windows — the view-tabs nav takes
+    // its place and acts as the drag region. macOS keeps traffic lights at
+    // top-left; Windows keeps min/max/close as an overlay at top-right (see
+    // the .view-tabs right-padding in layout.css that reserves space for it).
+    ...(process.platform === 'darwin' || process.platform === 'win32'
+      ? { titleBarStyle: 'hidden' as const }
+      : {}),
+    ...(process.platform === 'win32'
+      ? { titleBarOverlay: { color: theme.bg, symbolColor: '#e6e6e6' } }
+      : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

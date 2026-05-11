@@ -123,12 +123,19 @@
   border-bottom: 1px solid var(--border);
   padding: 0 8px;
   /* Left padding reserves space for macOS traffic lights (close/min/max).
-     On non-macOS this is just a little extra breathing room. */
+     Overridden below on Windows, which has no left-side chrome. */
   padding-left: 76px;
   gap: 2px;
   flex-shrink: 0;
   /* Make the nav bar the window drag region so the user can move the window. */
   -webkit-app-region: drag;
+}
+
+/* Windows: no traffic lights on the left, but reserve space on the right for
+   the titleBarOverlay min/max/close buttons. */
+html[data-platform='win32'] .view-tabs {
+  padding-left: 8px;
+  padding-right: 140px;
 }
 
 .view-tabs button {
