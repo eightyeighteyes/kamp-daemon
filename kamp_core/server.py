@@ -581,6 +581,7 @@ def create_app(
             if (a.album_artist, a.album) in fts_keys
             or (a.missing_album and a.file_path in fts_paths)
         ]
+        albums.sort(key=lambda a: not a.favorite)
         return SearchOut(
             albums=albums, tracks=[TrackOut.from_track(t) for t in fts_tracks]
         )
