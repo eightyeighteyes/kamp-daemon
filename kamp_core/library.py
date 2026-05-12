@@ -1074,8 +1074,10 @@ class LibraryIndex:
             SELECT t.*
             FROM tracks_fts f
             JOIN tracks t ON f.rowid = t.id
+            LEFT JOIN album_favorites af
+                ON t.album_artist = af.album_artist AND t.album = af.album
             WHERE tracks_fts MATCH ?
-            ORDER BY f.rank
+            ORDER BY (t.favorite OR af.album_artist IS NOT NULL) DESC, f.rank
             """,
             (fts_expr,),
         ).fetchall()

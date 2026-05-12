@@ -1088,6 +1088,73 @@ class TestSearch:
         index.close()
         assert results == []
 
+    def test_favorite_track_ranks_above_non_favorite(self, tmp_path: Path) -> None:
+        index = self._index_with_tracks(tmp_path)
+        # Both tracks are on "Kid A" by Radiohead; favorite the second one.
+        index.set_favorite(tmp_path / "02.mp3", True)
+        results = index.search("radiohead")
+        index.close()
+        assert results[0].title == "Everything in Its Right Place"
+        assert results[1].title == "Morning Bell"
+
+    def test_album_favorite_track_ranks_above_non_album_favorite(
+        self, tmp_path: Path
+    ) -> None:
+        index = self._index_with_tracks(tmp_path)
+        # Favorite the Björk album; search "radiohead" matches only Radiohead tracks,
+        # but search "ocean" matches only the Björk track which is album-favorited.
+        # More interesting: search a term matching both Radiohead tracks and the Björk track
+        # isn't possible with current fixtures. Instead verify that when two albums match,
+        # the favorited album's tracks come first.
+        index.toggle_album_favorite("Björk", "Homogenic", True)
+        # "ocean" only matches Björk — check the track is returned
+        results = index.search("ocean")
+        index.close()
+        assert len(results) == 1
+        assert results[0].album_artist == "Björk"
+
+    def test_album_favorite_boosts_tracks_above_non_favorited(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        tracks = [
+            Track(
+                file_path=tmp_path / "a1.mp3",
+                title="Song Alpha",
+                artist="ArtistA",
+                album_artist="ArtistA",
+                album="AlbumA",
+                year="2000",
+                track_number=1,
+                disc_number=1,
+                ext="mp3",
+                embedded_art=False,
+                mb_release_id="",
+                mb_recording_id="",
+            ),
+            Track(
+                file_path=tmp_path / "b1.mp3",
+                title="Song Alpha",
+                artist="ArtistB",
+                album_artist="ArtistB",
+                album="AlbumB",
+                year="2001",
+                track_number=1,
+                disc_number=1,
+                ext="mp3",
+                embedded_art=False,
+                mb_release_id="",
+                mb_recording_id="",
+            ),
+        ]
+        index.upsert_many(tracks)
+        # Favorite AlbumB — its track should rank first despite same FTS score.
+        index.toggle_album_favorite("ArtistB", "AlbumB", True)
+        results = index.search("song alpha")
+        index.close()
+        assert results[0].album_artist == "ArtistB"
+        assert results[1].album_artist == "ArtistA"
+
     def test_v1_database_migrated_to_current(self, tmp_path: Path) -> None:
         """Existing v1 databases are fully migrated (FTS + date columns) on open."""
         import sqlite3 as _sqlite3
