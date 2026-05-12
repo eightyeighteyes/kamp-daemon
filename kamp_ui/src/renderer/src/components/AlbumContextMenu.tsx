@@ -27,7 +27,9 @@ export function AlbumContextMenu({ x, y, album, onClose }: Props): React.JSX.Ele
           onClose()
         }}
       >
-        <span style={{ marginRight: 6, verticalAlign: 'middle', flexShrink: 0, display: 'inline-flex' }}>
+        <span
+          style={{ marginRight: 6, verticalAlign: 'middle', flexShrink: 0, display: 'inline-flex' }}
+        >
           <PlayNextIcon size={12} />
         </span>
         Play Next
@@ -39,7 +41,9 @@ export function AlbumContextMenu({ x, y, album, onClose }: Props): React.JSX.Ele
           onClose()
         }}
       >
-        <span style={{ marginRight: 6, verticalAlign: 'middle', flexShrink: 0, display: 'inline-flex' }}>
+        <span
+          style={{ marginRight: 6, verticalAlign: 'middle', flexShrink: 0, display: 'inline-flex' }}
+        >
           <QueueAddIcon size={12} />
         </span>
         Add to Queue
