@@ -78,15 +78,19 @@
   gap: 8px;
 }
 
+/* Button content is now an SVG (KAMP-291) rather than a system-font glyph, so
+   no font-size / line-height — the button height is driven by the SVG box +
+   padding, and inline-flex centers the SVG inside the button. */
 .transport-btn {
   background: none;
   border: none;
   color: var(--text);
-  font-size: 18px;
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 4px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition:
     color 0.1s,
     background 0.1s;
@@ -95,10 +99,6 @@
 .transport-btn:hover {
   color: var(--accent);
   background: var(--surface-hover);
-}
-
-.transport-btn.primary {
-  font-size: 22px;
 }
 
 .transport-progress {
@@ -124,7 +124,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+}
+
+/* Wrap the VolumeIcon SVG in an inline-flex span so its box centers on the
+   flex row's centerline, matching .transport-btn's centering. */
+.volume-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
 }
 
 .volume-slider {

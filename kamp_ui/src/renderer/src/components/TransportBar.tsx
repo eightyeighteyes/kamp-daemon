@@ -1,5 +1,14 @@
 import React, { useRef, useState } from 'react'
 import { useStore } from '../store'
+import {
+  NextIcon,
+  PauseIcon,
+  PlayIcon,
+  PrevIcon,
+  QueueIcon,
+  StopIcon,
+  VolumeIcon
+} from './TransportIcons'
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -94,21 +103,22 @@ export function TransportBar(): React.JSX.Element {
       </button>
 
       <div className="transport-controls">
-        <button className="transport-btn" onClick={prev} title="Previous (←)">
-          ⏮
+        <button className="transport-btn" onClick={prev} title="Previous (←)" aria-label="Previous">
+          <PrevIcon />
         </button>
         <button
           className="transport-btn primary"
           onClick={togglePlayPause}
           title={playing ? 'Pause (Space)' : 'Play (Space)'}
+          aria-label={playing ? 'Pause' : 'Play'}
         >
-          {playing ? '⏸' : '▶'}
+          {playing ? <PauseIcon /> : <PlayIcon />}
         </button>
-        <button className="transport-btn" onClick={stop} title="Stop">
-          ⏹
+        <button className="transport-btn" onClick={stop} title="Stop" aria-label="Stop">
+          <StopIcon />
         </button>
-        <button className="transport-btn" onClick={next} title="Next (→)">
-          ⏭
+        <button className="transport-btn" onClick={next} title="Next (→)" aria-label="Next">
+          <NextIcon />
         </button>
       </div>
 
@@ -162,7 +172,9 @@ export function TransportBar(): React.JSX.Element {
       </div>
 
       <div className="transport-volume">
-        <span title="Volume">🔊</span>
+        <span className="volume-icon" title="Volume" aria-hidden="true">
+          <VolumeIcon />
+        </span>
         <input
           type="range"
           className="volume-slider"
@@ -179,8 +191,10 @@ export function TransportBar(): React.JSX.Element {
         className={`transport-btn queue-toggle-btn${queueVisible ? ' active' : ''}`}
         onClick={toggleQueuePanel}
         title="Queue (Q)"
+        aria-label="Queue"
+        aria-pressed={queueVisible}
       >
-        ☰
+        <QueueIcon />
       </button>
     </div>
   )
