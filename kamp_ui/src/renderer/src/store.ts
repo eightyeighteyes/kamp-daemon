@@ -579,20 +579,21 @@ export const useStore = create<PlayerStore>((set, get) => ({
 
   setAlbumFavorite: async (albumArtist, album, favorite) => {
     await api.setAlbumFavorite(albumArtist, album, favorite)
-    // Patch the album in the library grid so the badge updates immediately.
+    const patchAlbum = (a: api.Album): api.Album =>
+      a.album_artist === albumArtist && a.album === album ? { ...a, favorite } : a
     set((s) => ({
       library: {
         ...s.library,
-        albums: s.library.albums.map((a) =>
-          a.album_artist === albumArtist && a.album === album ? { ...a, favorite } : a
-        ),
-        // Patch the open album view too if it matches.
+        albums: s.library.albums.map(patchAlbum),
         selectedAlbum:
           s.library.selectedAlbum?.album_artist === albumArtist &&
           s.library.selectedAlbum?.album === album
             ? { ...s.library.selectedAlbum, favorite }
             : s.library.selectedAlbum
-      }
+      },
+      searchResults: s.searchResults
+        ? { ...s.searchResults, albums: s.searchResults.albums.map(patchAlbum) }
+        : s.searchResults
     }))
   },
 

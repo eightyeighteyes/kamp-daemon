@@ -57,6 +57,11 @@ function SearchAlbumCard({
             onError={() => setArtLoaded(false)}
           />
         )}
+        {album.favorite && (
+          <div className="album-fav-badge">
+            <FavoriteIcon active size={14} />
+          </div>
+        )}
       </div>
       <div className="search-album-info">
         <div className="search-album-title">{album.album}</div>
