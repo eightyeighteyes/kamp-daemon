@@ -42,6 +42,7 @@ use windows::Win32::System::Threading::ExitProcess;
 use windows::Win32::System::WinRT::{
     ISystemMediaTransportControlsInterop, RoInitialize, RO_INIT_SINGLETHREADED,
 };
+use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, PostMessageW,
     RegisterClassW, TranslateMessage, MSG, WM_APP, WM_QUIT, WNDCLASSW, WS_EX_NOACTIVATE,
@@ -519,6 +520,15 @@ fn post_ui_command(cmd: UiCommand) {
 // ---------------------------------------------------------------------------
 
 fn main() -> Result<()> {
+    // Tag this process with Kamp's AppUserModelID before SMTC initializes so
+    // the Action Center Now Playing widget resolves the app name + icon from
+    // the Start menu shortcut electron-builder's NSIS installer registers
+    // (instead of showing "unknown app"). Must match Electron main's
+    // setAppUserModelId('com.kamp.app') and electron-builder.yml appId.
+    unsafe {
+        SetCurrentProcessExplicitAppUserModelID(windows::core::w!("com.kamp.app"))?;
+    }
+
     // Single-threaded apartment matches the UI-thread model: SMTC controls
     // are consumed from one thread (the message pump), and the WinRT button
     // callback marshals back here via PostMessage rather than running cross-

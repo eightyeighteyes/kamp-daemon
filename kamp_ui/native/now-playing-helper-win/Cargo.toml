@@ -23,6 +23,10 @@ windows = { version = "0.59", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Threading",
     "Win32_System_WinRT",
+    # SetCurrentProcessExplicitAppUserModelID lives in Win32::UI::Shell;
+    # required so SMTC resolves the AUMID to "Kamp" rather than "unknown app"
+    # in the Action Center Now Playing widget.
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-core = "0.59"
