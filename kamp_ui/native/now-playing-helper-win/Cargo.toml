@@ -1,0 +1,44 @@
+[package]
+name = "now-playing-helper"
+version = "0.1.0"
+edition = "2021"
+
+# Single-binary crate: the Windows SMTC bridge spawned by Electron main
+# (kamp_ui/src/main/index.ts) and protocol-compatible with the macOS Swift
+# helper at kamp_ui/native/NowPlayingHelper.swift.
+[[bin]]
+name = "now-playing-helper"
+path = "src/main.rs"
+
+[dependencies]
+windows = { version = "0.59", features = [
+    "Foundation",
+    "Foundation_Collections",
+    "Media",
+    "Storage_Streams",
+    "Win32_Foundation",
+    # WNDCLASSW + RegisterClassW are gated behind Win32_Graphics_Gdi in
+    # windows-rs (the struct holds HCURSOR / HICON / HBRUSH GDI handles).
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_System_WinRT",
+    # SetCurrentProcessExplicitAppUserModelID lives in Win32::UI::Shell;
+    # required so SMTC resolves the AUMID to "Kamp" rather than "unknown app"
+    # in the Action Center Now Playing widget.
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "0.59"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[profile.release]
+# Optimize for binary size; the helper is bundled in the installer and the
+# stripped exe lands at ~1.5-2 MB with these settings (vs ~6 MB default).
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
