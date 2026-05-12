@@ -247,11 +247,6 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
           />
         )}
         {playing && isActive && <div className="now-playing-badge">▶</div>}
-        {album.favorite && (
-          <div className="album-fav-badge">
-            <FavoriteIcon active size={14} />
-          </div>
-        )}
         {isNew && highlightStyle === 'shiny' && <span className="shiny-sweep" aria-hidden="true" />}
         {isNew && highlightStyle === 'boring' && (
           <span className="boring-hover" aria-hidden="true">
@@ -344,6 +339,11 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
         )}
         <div className="album-artist">{album.album_artist}</div>
         <div className="album-year">{album.year}</div>
+        {album.favorite && (
+          <div className="album-fav-badge">
+            <FavoriteIcon active size={14} />
+          </div>
+        )}
       </div>
 
       {menu && (
