@@ -71,6 +71,7 @@
   left: 6px;
   display: flex;
   align-items: center;
+  color: var(--accent);
 }
 
 .album-info {
