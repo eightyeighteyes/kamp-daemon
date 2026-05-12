@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store'
 import { artUrl } from '../api/client'
 import { TrackContextMenu } from './TrackContextMenu'
-import { FavoriteIcon } from './TransportIcons'
+import { FavoriteIcon, PlayIcon, PauseIcon } from './TransportIcons'
 
 type ContextMenu = { x: number; y: number; filePath: string; favorite: boolean }
 
@@ -95,10 +95,14 @@ export function TrackList(): React.JSX.Element | null {
         </div>
         <button
           className="play-all-btn"
-          aria-label="Play all"
-          onClick={() => playTrack(album.album_artist, album.album, 0, album.file_path)}
+          aria-label={isCurrentAlbum && playing ? 'Pause' : 'Play all'}
+          onClick={() =>
+            isCurrentAlbum
+              ? togglePlayPause()
+              : playTrack(album.album_artist, album.album, 0, album.file_path)
+          }
         >
-          ▶
+          {isCurrentAlbum && playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
         </button>
       </div>
 
