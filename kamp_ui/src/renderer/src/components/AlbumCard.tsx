@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { artUrl } from '../api/client'
 import type { Album } from '../api/client'
 import { AlbumContextMenu } from './AlbumContextMenu'
+import { FavoriteIcon } from './TransportIcons'
 
 type MenuPos = { x: number; y: number }
 
@@ -338,6 +339,11 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
         )}
         <div className="album-artist">{album.album_artist}</div>
         <div className="album-year">{album.year}</div>
+        {album.favorite && (
+          <div className="album-fav-badge">
+            <FavoriteIcon active size={14} />
+          </div>
+        )}
       </div>
 
       {menu && (

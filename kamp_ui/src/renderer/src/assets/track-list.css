@@ -149,6 +149,16 @@
   min-width: 0;
 }
 
+.track-list-album-fav-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: block;
+  margin-bottom: 6px;
+  line-height: 0;
+}
+
 .track-list-album-title {
   font-size: 26px;
   font-weight: 700;

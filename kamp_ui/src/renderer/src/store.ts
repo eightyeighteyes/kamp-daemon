@@ -123,6 +123,7 @@ type PlayerStore = {
   clearQueue: () => Promise<void>
   clearRemainingQueue: (position: number) => Promise<void>
   setFavorite: (filePath: string, favorite: boolean) => Promise<void>
+  setAlbumFavorite: (albumArtist: string, album: string, favorite: boolean) => Promise<void>
   refreshOpenAlbum: () => Promise<void>
   scanLibrary: () => Promise<void>
   setLibraryPath: (path: string) => Promise<void>
@@ -574,6 +575,26 @@ export const useStore = create<PlayerStore>((set, get) => ({
     }))
     // Reload the open album track list so the heart in track rows updates.
     await get().refreshOpenAlbum()
+  },
+
+  setAlbumFavorite: async (albumArtist, album, favorite) => {
+    await api.setAlbumFavorite(albumArtist, album, favorite)
+    const patchAlbum = (a: api.Album): api.Album =>
+      a.album_artist === albumArtist && a.album === album ? { ...a, favorite } : a
+    set((s) => ({
+      library: {
+        ...s.library,
+        albums: s.library.albums.map(patchAlbum),
+        selectedAlbum:
+          s.library.selectedAlbum?.album_artist === albumArtist &&
+          s.library.selectedAlbum?.album === album
+            ? { ...s.library.selectedAlbum, favorite }
+            : s.library.selectedAlbum
+      },
+      searchResults: s.searchResults
+        ? { ...s.searchResults, albums: s.searchResults.albums.map(patchAlbum) }
+        : s.searchResults
+    }))
   },
 
   setLibraryPath: async (path) => {

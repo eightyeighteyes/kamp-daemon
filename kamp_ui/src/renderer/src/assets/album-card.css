@@ -67,6 +67,16 @@
 
 .album-info {
   padding: 8px;
+  position: relative;
+}
+
+.album-fav-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  color: var(--accent);
 }
 
 .album-title {

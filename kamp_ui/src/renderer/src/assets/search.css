@@ -128,6 +128,7 @@
 
 .search-album-info {
   padding: 8px;
+  position: relative;
 }
 
 .search-album-title {
