@@ -157,12 +157,6 @@
   display: block;
   margin-bottom: 6px;
   line-height: 0;
-  opacity: 0.85;
-  transition: opacity 0.1s;
-}
-
-.track-list-album-fav-btn:hover {
-  opacity: 1;
 }
 
 .track-list-album-title {

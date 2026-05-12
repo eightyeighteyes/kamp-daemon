@@ -81,8 +81,9 @@ export function TrackList(): React.JSX.Element | null {
       <div className="track-list-identity">
         <div className="track-list-identity-text">
           <button
-            className="track-list-album-fav-btn"
+            className={`track-list-album-fav-btn favorite-btn${album.favorite ? ' active' : ''}`}
             aria-label={album.favorite ? 'Remove from favorites' : 'Add to favorites'}
+            aria-pressed={album.favorite}
             onClick={() => setAlbumFavorite(album.album_artist, album.album, !album.favorite)}
           >
             <FavoriteIcon active={album.favorite} size={36} />
