@@ -320,7 +320,8 @@ export const setAlbumFavorite = (
   albumArtist: string,
   album: string,
   favorite: boolean
-): Promise<unknown> => post('/api/v1/albums/favorite', { album_artist: albumArtist, album, favorite })
+): Promise<unknown> =>
+  post('/api/v1/albums/favorite', { album_artist: albumArtist, album, favorite })
 
 // ---------------------------------------------------------------------------
 // WebSocket state stream
