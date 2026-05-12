@@ -20,6 +20,7 @@ files:
   - '!resources/npm/**'
   - '!resources/icon_1024.png'
   - '!resources/now-playing-helper'
+  - '!resources/now-playing-helper.exe'
   - '!resources/kamp-keychain-helper'
   # Explicitly include compiled JS (electron-vite output) so it is packed into
   # the ASAR. Without this, the positive 'extensions/**' pattern below changes
@@ -54,6 +55,11 @@ win:
       to: mpv
       filter:
         - '**/*'
+    # Rust SMTC helper — Windows analog of the macOS Swift now-playing-helper.
+    # Owns SystemMediaTransportControls so media keys route to Kamp and the
+    # Action Center Now Playing widget shows the current track (KAMP-56).
+    - from: resources/now-playing-helper.exe
+      to: now-playing-helper.exe
     # Bundled Node + npm — required for community-extension install where
     # the user may have no Node.js on their machine.
     - from: resources/node.exe

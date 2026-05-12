@@ -499,6 +499,27 @@ jobs:
           }
           Write-Host "OK: $build/icon.ico ($((Get-Item "$build/icon.ico").Length) bytes)"
 
+      - name: Set up Rust toolchain
+        # SMTC helper (KAMP-56) is a small Rust crate at
+        # kamp_ui/native/now-playing-helper-win/. The rust-toolchain.toml in
+        # that directory pins to stable-x86_64-pc-windows-msvc; the action
+        # honors it. windows-latest has VS Build Tools preinstalled so the
+        # MSVC linker is on PATH out of the box.
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build (now-playing-helper)
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae  # v2
+        with:
+          workspaces: kamp_ui/native/now-playing-helper-win
+          shared-key: now-playing-helper-win
+
+      - name: Build Now Playing helper (Rust SMTC bridge)
+        # Compiles the Windows SMTC helper and stages it at
+        # resources/now-playing-helper.exe for electron-builder extraResources.
+        run: pwsh kamp_ui/native/build-native.ps1
+
       - name: Upload bundle artifact
         # upload-artifact preserves workspace-relative paths, so multiple
         # source paths recreate that layout on download. The package job
@@ -539,6 +560,7 @@ jobs:
           $required = @(
             'kamp_ui\resources\kamp\kamp.exe',
             'kamp_ui\resources\mpv\mpv.exe',
+            'kamp_ui\resources\now-playing-helper.exe',
             'kamp_ui\resources\node.exe',
             'kamp_ui\resources\npm\bin\npm-cli.js',
             'kamp_ui\build\icon.ico'

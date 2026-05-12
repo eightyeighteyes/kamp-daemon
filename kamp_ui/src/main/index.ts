@@ -53,17 +53,24 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
 app.setName('Kamp')
 
 // ---------------------------------------------------------------------------
-// Swift Now Playing helper
+// Now Playing helper (per-platform)
 // ---------------------------------------------------------------------------
-// macOS routes media keys to the process that owns MPNowPlayingInfoCenter.
-// Chromium's Media Session API only activates that ownership when Chromium itself
-// is producing audio output — which Kamp does not (audio goes through mpv).
-// A dedicated Swift helper runs as a hidden AppKit application, which is the
-// minimum requirement for MPRemoteCommandCenter to receive media key callbacks.
-// The helper owns the Now Playing session; Electron relays player state to it
-// via stdin and receives media key events back on stdout.
+// macOS routes media keys to the process that owns MPNowPlayingInfoCenter;
+// Windows routes them to the process that owns SystemMediaTransportControls.
+// Chromium's Media Session API only activates either ownership when Chromium
+// itself is producing audio output — which Kamp does not (audio goes through
+// mpv). A dedicated helper subprocess owns the OS session and bridges media
+// key events back to the Python daemon via the player REST API.
+//
+//   macOS:   Swift CLI (native/NowPlayingHelper.swift) → MPRemoteCommandCenter
+//   Windows: Rust CLI (native/now-playing-helper-win/) → SMTC
+//
+// Both speak the same newline-delimited JSON protocol over stdin/stdout so
+// the relay code below is platform-agnostic. Electron sends a 30s heartbeat
+// ping so the helper can detect a deadlocked pump and self-exit.
 
 let _helper: ChildProcess | null = null
+let _heartbeatInterval: NodeJS.Timeout | null = null
 let _isPlaying = false // tracks current playback state to correctly handle togglePlayPause
 // Cache artwork as base64 strings keyed by "album_artist|album" so we only
 // fetch once per album rather than on every position-tick update.
@@ -73,12 +80,16 @@ const _artworkCache = new Map<string, string>()
 let _currentAlbumKey = ''
 
 function findNowPlayingBinary(): string | null {
+  // Binary filename diverges by platform: Windows needs the .exe suffix
+  // both for filesystem lookup and for execFile resolution (PATHEXT only
+  // applies to bare-name lookups on PATH, not absolute paths — same trap
+  // documented in CLAUDE.md "Cross-platform bundled-asset filename divergence").
+  const exeName = process.platform === 'win32' ? 'now-playing-helper.exe' : 'now-playing-helper'
   if (app.isPackaged) {
-    const bundled = join(process.resourcesPath, 'now-playing-helper')
+    const bundled = join(process.resourcesPath, exeName)
     if (existsSync(bundled)) return bundled
   }
-  // Dev: built binary lives at kamp_ui/resources/now-playing-helper
-  const dev = resolve(app.getAppPath(), 'resources/now-playing-helper')
+  const dev = resolve(app.getAppPath(), 'resources', exeName)
   if (existsSync(dev)) return dev
   return null
 }
@@ -95,10 +106,9 @@ function postToPlayer(path: string): void {
 }
 
 function startNowPlayingHelper(): void {
-  // The helper wraps MPRemoteCommandCenter / MPNowPlayingInfoCenter, both
-  // macOS-only frameworks. Skip on every other platform — Windows SMTC and
-  // Linux MPRIS integration are tracked as separate work.
-  if (process.platform !== 'darwin') return
+  // Linux MPRIS integration is a separate task. macOS and Windows share the
+  // helper spawn path; the binary is selected by findNowPlayingBinary().
+  if (process.platform !== 'darwin' && process.platform !== 'win32') return
   const binary = findNowPlayingBinary()
   if (!binary) {
     console.warn('[kamp] now-playing-helper binary not found — media keys disabled')
@@ -107,6 +117,10 @@ function startNowPlayingHelper(): void {
   _helper = spawn(binary, [], { stdio: ['pipe', 'pipe', 'inherit'] })
   _helper.on('exit', () => {
     _helper = null
+    if (_heartbeatInterval) {
+      clearInterval(_heartbeatInterval)
+      _heartbeatInterval = null
+    }
   })
 
   // Parse newline-delimited JSON events emitted by the helper to stdout.
@@ -136,10 +150,19 @@ function startNowPlayingHelper(): void {
       // Ignore malformed lines
     }
   })
+
+  // 30s heartbeat — the helper's watchdog exits the process if no input
+  // arrives for >90s, so this is the keepalive that prevents a self-kill
+  // during long idle pauses where the player state isn't changing.
+  _heartbeatInterval = setInterval(() => sendToHelper({ cmd: 'ping' }), 30_000)
 }
 
 function stopNowPlayingHelper(): void {
   sendToHelper({ cmd: 'stop' })
+  if (_heartbeatInterval) {
+    clearInterval(_heartbeatInterval)
+    _heartbeatInterval = null
+  }
   _helper?.kill()
   _helper = null
 }
