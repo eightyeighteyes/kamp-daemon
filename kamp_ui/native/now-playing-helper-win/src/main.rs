@@ -44,8 +44,8 @@ use windows::Win32::System::WinRT::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, PostMessageW,
-    PostQuitMessage, RegisterClassW, TranslateMessage, HWND_MESSAGE, MSG, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_APP, WNDCLASSW,
+    RegisterClassW, TranslateMessage, HWND_MESSAGE, MSG, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_APP, WM_QUIT, WNDCLASSW,
 };
 
 // ---------------------------------------------------------------------------
@@ -173,28 +173,34 @@ impl SmtcState {
 
         // Hook button presses.  The handler fires on a thread-pool worker —
         // it does NOT need to be on the UI thread; we only emit stdout from
-        // it, which is thread-safe.
-        let handler: TypedEventHandler<
+        // it, which is thread-safe.  Closure args are explicitly typed because
+        // windows-rs 0.59's TypedEventHandler::new takes a closure of shape
+        // `&<T as Type<T>>::Default` (i.e. `&Option<T>` for WinRT class types),
+        // which the compiler can't infer from the surrounding let-binding alone.
+        let handler = TypedEventHandler::<
             SystemMediaTransportControls,
             SystemMediaTransportControlsButtonPressedEventArgs,
-        > = TypedEventHandler::new(|_sender, args| {
-            if let Some(args) = args.as_ref() {
-                let button = args.Button()?;
-                let event = match button {
-                    SystemMediaTransportControlsButton::Play => "play",
-                    SystemMediaTransportControlsButton::Pause => "pause",
-                    SystemMediaTransportControlsButton::Next => "next",
-                    SystemMediaTransportControlsButton::Previous => "prev",
-                    // togglePlayPause is not a separate SMTC button — Windows
-                    // routes the physical play/pause key as Play or Pause
-                    // depending on advertised state.  Electron-side relay
-                    // already toggles via _isPlaying.
-                    _ => return Ok(()),
-                };
-                emit(event);
-            }
-            Ok(())
-        });
+        >::new(
+            |_sender: &Option<SystemMediaTransportControls>,
+             args: &Option<SystemMediaTransportControlsButtonPressedEventArgs>|
+             -> windows::core::Result<()> {
+                if let Some(args) = args.as_ref() {
+                    let button = args.Button()?;
+                    let event = match button {
+                        SystemMediaTransportControlsButton::Play => "play",
+                        SystemMediaTransportControlsButton::Pause => "pause",
+                        SystemMediaTransportControlsButton::Next => "next",
+                        SystemMediaTransportControlsButton::Previous => "prev",
+                        // togglePlayPause is not a separate SMTC button —
+                        // Windows routes the physical play/pause key as Play
+                        // or Pause depending on advertised state.
+                        _ => return Ok(()),
+                    };
+                    emit(event);
+                }
+                Ok(())
+            },
+        );
         controls.ButtonPressed(&handler)?;
 
         // Claim ownership immediately with a placeholder so media keys route
@@ -463,7 +469,7 @@ fn start_stdin_reader() {
             unsafe {
                 let _ = PostMessageW(
                     Some(HWND(hwnd_isize as *mut _)),
-                    windows::Win32::UI::WindowsAndMessaging::WM_QUIT,
+                    WM_QUIT,
                     WPARAM(0),
                     LPARAM(0),
                 );
