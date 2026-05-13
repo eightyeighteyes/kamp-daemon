@@ -157,8 +157,13 @@ After a successful signed+notarized build:
 
 kamp's Windows installer is signed via **Azure Trusted Signing** — Microsoft's cloud HSM-backed
 code-signing service. The cert lives in Azure's HSM; CI authenticates as a service principal and
-calls the signing API during each build. This gives immediate SmartScreen reputation because
-Microsoft is the CA.
+calls the signing API during each build.
+
+**SmartScreen behavior:** A newly-signed installer from an unknown publisher shows "an unrecognized
+app" (softer than the unsigned "Windows protected your PC" — your publisher name is shown and users
+can click *More info → Run anyway*). SmartScreen reputation builds automatically as downloads
+accumulate over weeks to months; no manual action is required. Only EV certificates (DigiCert
+KeyLocker) grant instant reputation, at ~$500–700/yr and a registered-business requirement.
 
 **Why not the same `.p12`-in-Secrets approach as macOS?** As of June 2023 (CA/B Forum baseline),
 all new Windows code-signing certificates must have private keys in FIPS 140-2 Level 2 hardware
@@ -366,8 +371,9 @@ and `.github/workflows/build-app.yml` already passes all seven secrets as env va
 
 After a successful signed build:
 
-- Install on any Windows machine — SmartScreen should either not appear or show your publisher
-  name (not "unknown publisher")
+- Install on any Windows machine — SmartScreen will show "an unrecognized app" with your publisher
+  name until enough downloads have accumulated to build reputation (weeks to months). This is
+  expected and correct; it is a softer warning than the unsigned state.
 - Verify from PowerShell:
 
   ```powershell
