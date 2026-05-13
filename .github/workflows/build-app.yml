@@ -592,9 +592,13 @@ jobs:
         working-directory: kamp_ui
 
       - name: Build NSIS installer
-        # No code signing in this task -- KAMP-278 produces an unsigned
-        # installer. Code signing is tracked separately.
+        # Azure Trusted Signing — AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET are read
+        # by DefaultAzureCredential; the remaining four configure the account and
+        # profile. See docs/code-signing.md for setup instructions.
         env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           DEBUG: electron-builder
         run: npm run build:win
         working-directory: kamp_ui

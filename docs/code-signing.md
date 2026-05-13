@@ -153,53 +153,233 @@ After a successful signed+notarized build:
 
 ---
 
-## Windows (deferred)
+## Windows
 
-kamp's Windows installer is currently **unsigned**. First-run users see "Windows protected your PC" → click *More info* → *Run anyway*. This is acceptable for early/internal distribution. It is not acceptable for a public Windows launch.
+kamp's Windows installer is signed via **Azure Trusted Signing** — Microsoft's cloud HSM-backed
+code-signing service. The cert lives in Azure's HSM; CI authenticates as a service principal and
+calls the signing API during each build.
 
-This section captures what we've decided and what the next attempt looks like, so picking this up later is cheap.
+**SmartScreen behavior:** A newly-signed installer from an unknown publisher shows "an unrecognized
+app" (softer than the unsigned "Windows protected your PC" — your publisher name is shown and users
+can click *More info → Run anyway*). SmartScreen reputation builds automatically as downloads
+accumulate over weeks to months; no manual action is required. Only EV certificates (DigiCert
+KeyLocker) grant instant reputation, at ~$500–700/yr and a registered-business requirement.
 
-### Why this can't be a copy of the macOS path
+**Why not the same `.p12`-in-Secrets approach as macOS?** As of June 2023 (CA/B Forum baseline),
+all new Windows code-signing certificates must have private keys in FIPS 140-2 Level 2 hardware
+(token or cloud HSM). The base64-encoded `.p12` pattern cannot be used for new Windows certs.
 
-As of June 2023 (CA/B Forum baseline), all newly-issued Windows code-signing certs — OV and EV — must have private keys stored in FIPS 140-2 Level 2 hardware (a physical token or a cloud HSM). The macOS-style pattern of base64-encoding a `.p12` into a GitHub secret (`CSC_LINK` / `CSC_KEY_PASSWORD`) is **not** available for new Windows certs.
+**Prerequisites:** An Azure subscription with billing configured, and a US or Canadian identity
+(required for the individual-developer track). Non-US/CA developers must use the Organization
+track, which requires a registered business.
 
-Any path forward needs either:
+---
 
-- a cloud signing service (the cert lives in someone else's HSM; CI calls a signing API), or
-- a self-hosted runner with a hardware token plugged into a physical machine.
+### What you're collecting
 
-The cloud-service path is the realistic one for kamp.
+Three GitHub secrets (the auth credentials — kept out of the repo):
 
-### Three viable paths
+| GitHub Secret | What it is |
+|---|---|
+| `AZURE_TENANT_ID` | Microsoft Entra ID (Azure AD) tenant / directory ID |
+| `AZURE_CLIENT_ID` | Service principal (App Registration) client ID |
+| `AZURE_CLIENT_SECRET` | Service principal client secret |
 
-| Path | Cost | SmartScreen | CI fit | Notes |
-|---|---|---|---|---|
-| **Azure Trusted Signing** *(recommended)* | ~$10/mo + per-signature fee | Immediate (Microsoft is the CA) | Native — `win.azureSignOptions` in electron-builder | US/Canada only; individual-developer track is open. Lowest cost, simplest CI. |
-| SSL.com eSigner (OV) | ~$200–300/yr | Builds over time as downloads accumulate | `signtoolOptions.sign` callback shim (CodeSignTool / eSigner CKA) | Works internationally. Initial users still see SmartScreen warnings until reputation builds. |
-| DigiCert KeyLocker (EV) | ~$500–700/yr | Immediate | `electron/windows-sign` or callback | Requires registered business identity. Most expensive. |
+Four non-secret config values hardcoded in `kamp_ui/electron-builder.yml` (not secrets —
+fine to commit):
 
-**Recommendation when revisited:** Azure Trusted Signing, individual-developer track, US identity. Cheapest, simplest CI integration, immediate SmartScreen reputation.
+| Field | What it is |
+|---|---|
+| `endpoint` | Regional endpoint URL for your Trusted Signing account |
+| `codeSigningAccountName` | Name of your Trusted Signing account resource |
+| `certificateProfileName` | Name of your certificate profile |
+| `publisherName` | Your verified publisher name — the CN that appears in signed binaries; available after identity verification completes |
 
-### Implementation hook points
+> **Why hardcode instead of env vars?** electron-builder does not apply `${env.VAR}` interpolation
+> inside `azureSignOptions` fields — the literal string is passed verbatim to the Azure signing
+> DLIB, causing a `UriFormatException` at runtime. Only `DefaultAzureCredential`'s three env vars
+> (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`) are read from the environment.
 
-When this work is picked up, the changes land in these files:
+---
 
-- [`kamp_ui/electron-builder.yml`](../kamp_ui/electron-builder.yml) — extend the `win:` block with `azureSignOptions` (or `signtoolOptions.sign` for the SSL.com path).
-- [`.github/workflows/build-app.yml`](../.github/workflows/build-app.yml) — `package-windows` job, near the existing *"No code signing in this task"* comment around the `npm run build:win` step. Add the env vars the chosen path needs:
+### Step 1 — Create an Azure subscription
 
-  | Path | Env vars |
-  |---|---|
-  | Azure Trusted Signing | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_CODE_SIGNING_ACCOUNT_NAME`, `AZURE_CERT_PROFILE_NAME` |
-  | SSL.com eSigner (OV) | `SSL_USERNAME`, `SSL_PASSWORD`, `SSL_CREDENTIAL_ID`, `SSL_TOTP_SECRET` |
-  | DigiCert KeyLocker (EV) | `SM_HOST`, `SM_API_KEY`, `SM_CLIENT_CERT_FILE`, `SM_CLIENT_CERT_PASSWORD`, `SM_CODE_SIGNING_CERT_SHA1_HASH` |
+If you don't already have one, go to [portal.azure.com](https://portal.azure.com) and sign in with
+a Microsoft account (personal or work/school). Set up a subscription with a billing method — the
+free tier does not cover Trusted Signing.
 
-- GitHub repo Secrets — add the chosen path's secrets when the cert exists.
-- Update the *"No code signing in this task"* comment in the workflow to point at this section once signing is live.
+---
 
-### Revisit triggers
+### Step 2 — Register the Microsoft.CodeSigning resource provider
 
-Reopen [KAMP-279](https://eightyeighteyes.atlassian.net/browse/KAMP-279) when any of these become true:
+This is a one-time step per subscription before Trusted Signing resources can be created.
 
-- Public Windows launch / promoted download link in `README.md`.
-- Reports of Windows users abandoning install at the SmartScreen prompt.
-- More than ~100 monthly Windows installs (the rough threshold where reputation buildup with OV becomes feasible *and* the warning starts hurting more users than the cert costs).
+1. In the Azure portal, navigate to **Subscriptions** and select your subscription
+2. Click **Resource providers** in the left sidebar
+3. Search for `Microsoft.CodeSigning`
+4. Click **Register** — takes about a minute
+
+---
+
+### Step 3 — Create a Trusted Signing account
+
+1. In the Azure portal, click **+ Create a resource** and search for **Trusted Signing**
+2. Select **Trusted Signing** and click **Create**
+3. Fill in:
+   - **Resource group:** create a new one (e.g. `kamp-signing`) or use an existing group
+   - **Account name:** unique within your region (e.g. `kamp-signing`) — this is your `AZURE_CODE_SIGNING_ACCOUNT_NAME`
+   - **Region:** choose a supported region; note the endpoint for your choice:
+
+     | Region | Endpoint |
+     |---|---|
+     | East US | `https://eus.codesigning.azure.net/` |
+     | West US 2 | `https://wus2.codesigning.azure.net/` |
+     | West Central US | `https://wcus.codesigning.azure.net/` |
+     | North Europe | `https://neu.codesigning.azure.net/` |
+     | West Europe | `https://weu.codesigning.azure.net/` |
+     | East Asia | `https://ea.codesigning.azure.net/` |
+
+   - **SKU:** Basic (~$10/month)
+4. Click **Review + create**, then **Create**
+
+The endpoint URL you chose is your `AZURE_CODE_SIGNING_ENDPOINT`.
+
+---
+
+### Step 4 — Complete identity verification
+
+Microsoft verifies your identity before issuing a certificate. This is what grants SmartScreen
+reputation — the cert CN comes from the verified identity, not from a self-declared string.
+
+**4a. Grant yourself the Identity Verifier role**
+
+Before you can submit an identity validation request, your own Azure user account needs the
+**Trusted Signing Identity Verifier** role on the account. (This is separate from the service
+principal role set up in step 7.)
+
+1. In your Trusted Signing account, click **Access control (IAM)**
+2. Click **+ Add → Add role assignment**
+3. Search for and select **Trusted Signing Identity Verifier**
+4. Click **Next**, then **+ Select members** — select your own Azure user account (not the service principal you'll create later)
+5. Click **Review + assign** twice
+6. Wait ~2 minutes, then refresh before proceeding — the portal warning will clear once the role propagates
+
+**4b. Submit the identity validation request**
+
+1. Navigate to your Trusted Signing account in the Azure portal
+2. Under **Settings**, click **Identity validation**
+3. Click **+ Add** and choose:
+   - **Individual publisher** — for individuals signing under their own name; requires government-issued photo ID; US/Canada only
+   - **Organization** — for signing under a business name; requires business registration documents
+4. Fill in your legal name, address, country, and email exactly as on your government ID
+5. Upload the requested ID document when prompted
+6. Submit — verification is typically automated and completes within seconds to minutes, though it can take up to 1 business day
+
+**After verification,** return to the Identity validation page. The verified publisher name shown
+there (the CN that will appear in signed binaries and in the SmartScreen prompt) is your
+`AZURE_PUBLISHER_NAME`.
+
+---
+
+### Step 5 — Create a certificate profile
+
+1. In your Trusted Signing account, click **Certificate profiles** under **Objects**
+2. Click **+ Add**
+3. Fill in:
+   - **Profile name:** e.g. `kamp-public` — this is your `AZURE_CERT_PROFILE_NAME`
+   - **Profile type:** `PublicTrust` — required for external distribution; gives immediate SmartScreen reputation because Microsoft is the CA
+   - **Identity validation:** select the identity you verified in step 4
+4. Click **Create**
+
+---
+
+### Step 6 — Create a service principal for CI
+
+CI authenticates to Azure using a service principal (an App Registration). This is the machine
+identity that GitHub Actions uses when calling the signing API.
+
+1. In the Azure portal, navigate to **Microsoft Entra ID** (search in the top bar)
+2. Click **App registrations** → **+ New registration**
+3. Fill in:
+   - **Name:** e.g. `kamp-ci-signer`
+   - **Supported account types:** Single tenant
+4. Click **Register**
+5. On the overview page, note:
+   - **Application (client) ID** → `AZURE_CLIENT_ID`
+   - **Directory (tenant) ID** → `AZURE_TENANT_ID`
+
+**Create a client secret:**
+
+1. In the app registration, click **Certificates & secrets** → **New client secret**
+2. Set a description (e.g. "GitHub Actions") and expiry (24 months max)
+3. Click **Add** — **copy the secret Value immediately**, it is shown only once
+4. This is your `AZURE_CLIENT_SECRET`
+
+---
+
+### Step 7 — Grant the service principal signing permission
+
+1. Navigate back to your **Trusted Signing account** in the Azure portal
+2. Click **Access control (IAM)** in the left sidebar
+3. Click **+ Add** → **Add role assignment**
+4. On the **Role** tab, search for and select **Trusted Signing Certificate Profile Signer**
+5. Click **Next**, then under **Members** click **+ Select members**
+6. Search for your app registration (e.g. `kamp-ci-signer`) and select it
+7. Click **Review + assign** twice to confirm
+
+---
+
+### Step 8 — Add secrets to GitHub and update electron-builder.yml
+
+**GitHub secrets (three):**
+
+1. Go to your repository on GitHub
+2. **Settings → Secrets and variables → Actions**
+3. Click **New repository secret** for each of the three auth values:
+
+| Name | Value |
+|---|---|
+| `AZURE_TENANT_ID` | Directory (tenant) ID from step 6 |
+| `AZURE_CLIENT_ID` | Application (client) ID from step 6 |
+| `AZURE_CLIENT_SECRET` | Client secret value from step 6 |
+
+**electron-builder.yml (four hardcoded values):**
+
+Open `kamp_ui/electron-builder.yml` and fill in the `azureSignOptions` block under `win:`:
+
+```yaml
+  azureSignOptions:
+    publisherName: "Your Verified Name"   # from step 4 identity validation page
+    endpoint: "https://eus.codesigning.azure.net/"  # from step 3 region table
+    codeSigningAccountName: "your-account-name"     # from step 3
+    certificateProfileName: "your-profile-name"     # from step 5
+```
+
+Commit and push this change — these values are not secrets.
+
+---
+
+### Step 9 — CI wiring (already in the repo)
+
+`kamp_ui/electron-builder.yml` already has the `azureSignOptions` block in the `win:` section,
+and `.github/workflows/build-app.yml` already passes all seven secrets as env vars to the
+**Build NSIS installer** step. Signing is active in CI as soon as the secrets are populated.
+
+---
+
+### Verification
+
+After a successful signed build:
+
+- Install on any Windows machine — SmartScreen will show "an unrecognized app" with your publisher
+  name until enough downloads have accumulated to build reputation (weeks to months). This is
+  expected and correct; it is a softer warning than the unsigned state.
+- Verify from PowerShell:
+
+  ```powershell
+  Get-AuthenticodeSignature .\kamp-<version>-setup.exe
+  ```
+
+  `Status` should be `Valid` and `SignerCertificate` should show your publisher name
+
+- The installed executables under `%LOCALAPPDATA%\Programs\Kamp\` will also be individually signed
