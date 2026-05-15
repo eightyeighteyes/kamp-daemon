@@ -275,16 +275,19 @@ export const useStore = create<PlayerStore>((set, get) => ({
 
   setActiveView: async (view) => {
     const { artistPanelVisible, artistPanelSnapshot } = get()
-    if (view === 'now-playing') {
-      // Hide the artist panel (non-functional in Now Playing) and save its state.
-      // Persist false so a restart with Now Playing active doesn't reopen the panel.
-      set({ activeView: view, artistPanelSnapshot: artistPanelVisible, artistPanelVisible: false })
-      localStorage.setItem('kamp:artist-panel-visible', 'false')
-    } else {
-      // Restore the artist panel to its pre-Now-Playing state.
+    if (view === 'library') {
+      // Restore the artist panel to its pre-non-library state.
       const restored = artistPanelSnapshot ?? artistPanelVisible
       set({ activeView: view, artistPanelSnapshot: null, artistPanelVisible: restored })
       localStorage.setItem('kamp:artist-panel-visible', String(restored))
+    } else {
+      // Hide the artist panel (only relevant in Library) on any non-library view.
+      // Preserve any existing snapshot so round-trips through multiple non-library views
+      // (e.g. now-playing → home → library) still restore the original user preference.
+      // Persist false so a restart outside the library doesn't reopen the panel.
+      const snapshot = artistPanelSnapshot ?? artistPanelVisible
+      set({ activeView: view, artistPanelSnapshot: snapshot, artistPanelVisible: false })
+      localStorage.setItem('kamp:artist-panel-visible', 'false')
     }
     try {
       await api.setActiveViewApi(view)
