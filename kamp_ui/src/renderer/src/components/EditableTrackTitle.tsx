@@ -73,6 +73,20 @@ export function EditableTrackTitle({
           e.stopPropagation()
           setValue(title)
           inputRef.current?.blur()
+        } else if (e.key === 'Tab') {
+          const inputs = Array.from(
+            document.querySelectorAll<HTMLInputElement>('.track-row-title--input:not(:disabled)')
+          )
+          const idx = inputRef.current ? inputs.indexOf(inputRef.current) : -1
+          const next = e.shiftKey ? inputs[idx - 1] : inputs[idx + 1]
+          if (next) {
+            // Prevent the browser landing on the <li tabIndex={0}> between inputs.
+            e.preventDefault()
+            e.stopPropagation()
+            inputRef.current?.blur() // commits current edit
+            next.focus()
+          }
+          // No next/prev input: let Tab fall through and blur naturally commits.
         }
       }}
       // Prevent row double-click from triggering play when clicking the input.
