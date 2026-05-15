@@ -5,6 +5,10 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { buildKampAPI, onBandcampSyncStatus, onPipelineStage } from './kampAPI'
 
+// In packaged apps the preload runs from inside app.asar; in dev it runs
+// directly from the filesystem. The .asar extension in __dirname is definitive.
+const isPackaged: boolean = __dirname.includes('.asar')
+
 function _kampTokenFilePath(): string {
   if (process.platform === 'win32') {
     return join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'kamp', '.token')
@@ -22,6 +26,7 @@ function _readKampToken(): string | null {
 
 // Custom APIs for renderer
 const api = {
+  isPackaged,
   openDirectory: (): Promise<string | null> => ipcRenderer.invoke('open-directory'),
   onOpenPreferences: (callback: () => void): (() => void) => {
     const handler = (): void => callback()

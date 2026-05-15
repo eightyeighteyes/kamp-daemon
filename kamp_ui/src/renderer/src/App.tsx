@@ -146,11 +146,31 @@ export default function App(): React.JSX.Element {
         setSplashHiding(true)
         splashFadeRef.current = setTimeout(() => setSplashGone(true), 500)
       }, 1000)
+    } else {
+      // Reset a mid-fade splash so it stays fully visible while retrying.
+      // No-op if splashGone is already true (splash is not in the DOM).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSplashHiding(false)
     }
     return () => {
       clearTimeout(splashLingerRef.current)
       clearTimeout(splashFadeRef.current)
     }
+  }, [serverStatus])
+
+  // In packaged mode, show a slow-start hint on the splash after 60s of reconnecting
+  // so users understand a first-launch antivirus scan is the cause of the delay.
+  const [slowStart, setSlowStart] = useState(false)
+  const slowStartTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => {
+    if (serverStatus === 'reconnecting' && window.api.isPackaged) {
+      slowStartTimerRef.current = setTimeout(() => setSlowStart(true), 60_000)
+    } else {
+      clearTimeout(slowStartTimerRef.current)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSlowStart(false)
+    }
+    return () => clearTimeout(slowStartTimerRef.current)
   }, [serverStatus])
 
   // Determine onboarding requirement once the splash clears (by which time
@@ -169,7 +189,10 @@ export default function App(): React.JSX.Element {
     void loadConfig()
 
     let attempts = 0
-    const MAX_ATTEMPTS = 8
+    // In packaged mode the daemon is always auto-started; a long startup means
+    // Defender is scanning (first launch), not that the server is permanently down.
+    // Never give up in packaged mode — retry indefinitely at the 30s cap.
+    const MAX_ATTEMPTS = window.api.isPackaged ? Infinity : 8
 
     const connect = (): (() => void) => {
       return connectStateStream(
@@ -416,7 +439,7 @@ export default function App(): React.JSX.Element {
             Start it with <code>kamp server</code>
           </div>
         </div>
-        {!splashGone && <SplashScreen hiding={splashHiding} />}
+        {!splashGone && <SplashScreen hiding={splashHiding} slowStart={slowStart} />}
         <PreferencesDialog
           extensions={allExtensions}
           extState={extState}
@@ -541,7 +564,7 @@ export default function App(): React.JSX.Element {
         {!showSetup && isPanelVisible(rightPanel) && <SlotPanel panel={rightPanel!} />}
       </div>
       {bottomPanel && <SlotPanel panel={bottomPanel} />}
-      {!splashGone && <SplashScreen hiding={splashHiding} />}
+      {!splashGone && <SplashScreen hiding={splashHiding} slowStart={slowStart} />}
       <PreferencesDialog
         extensions={allExtensions}
         extState={extState}
