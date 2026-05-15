@@ -9,6 +9,8 @@ import { NowPlayingView } from './components/NowPlayingView'
 import { PanelPicker } from './components/PanelPicker'
 import { PreferencesDialog } from './components/PreferencesDialog'
 import { QueuePanel } from './components/QueuePanel'
+import { BandcampButton } from './components/BandcampButton'
+import { PipelineIndicator } from './components/PipelineIndicator'
 import { SearchBar } from './components/SearchBar'
 import { SearchView } from './components/SearchView'
 import { OnboardingScreen } from './components/OnboardingScreen'
@@ -525,6 +527,10 @@ export default function App(): React.JSX.Element {
           </button>
         ))}
         <SearchBar ref={searchBarRef} />
+        <div className="status-rail">
+          <PipelineIndicator />
+          <BandcampButton />
+        </div>
         <PanelPicker layout={layout} />
       </nav>
       <div className="app-body">

@@ -163,6 +163,19 @@ html[data-platform='win32'] .view-tabs {
   color: var(--text);
 }
 
+/* Status Rail: pipeline + bandcamp indicators in the view-tabs nav bar ----- */
+
+.status-rail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 58px;
+  justify-content: flex-end;
+  /* Opt out of the window drag region so pointer events register. */
+  -webkit-app-region: no-drag;
+}
+
 /* Bandcamp sync button ----------------------------------------------------- */
 
 .bandcamp-btn-anchor {
@@ -190,12 +203,6 @@ html[data-platform='win32'] .view-tabs {
 
 .bandcamp-btn--syncing {
   animation: bandcamp-pulse 1.4s ease-in-out infinite;
-}
-
-.album-grid-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .pipeline-indicator {
