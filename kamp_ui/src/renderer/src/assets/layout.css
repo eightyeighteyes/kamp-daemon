@@ -473,7 +473,6 @@ html[data-platform='win32'] .view-tabs {
 }
 
 .album-card:active {
-  transform: translateY(0);
   box-shadow: none;
 }
 

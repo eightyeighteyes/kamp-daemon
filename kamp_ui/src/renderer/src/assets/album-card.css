@@ -5,14 +5,15 @@
   overflow: hidden;
   background: var(--surface);
   transition:
-    transform 0.1s,
     background 0.1s,
     box-shadow 0.1s;
 }
 
+/* Lift cue is shadow-only: a translateY here would shift the hover hit-test box
+   off the cursor at the card's bottom edge, creating a hover/un-hover flicker
+   loop (KAMP-299). The shadow alone is enough visual feedback. */
 .album-card:hover {
   background: var(--surface-hover);
-  transform: translateY(-3px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
