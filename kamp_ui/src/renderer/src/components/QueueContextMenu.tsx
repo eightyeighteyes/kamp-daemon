@@ -81,7 +81,9 @@ export function QueueContextMenu({
               }}
             >
               <FavoriteIcon active={!favorite} size={14} />
-              <span style={{ marginLeft: 6 }}>{favorite ? 'Remove from Favorites' : 'Add to Favorites'}</span>
+              <span style={{ marginLeft: 6 }}>
+                {favorite ? 'Remove from Favorites' : 'Add to Favorites'}
+              </span>
             </button>
           )}
           <div className="track-context-menu-divider" />
