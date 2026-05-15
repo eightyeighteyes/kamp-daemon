@@ -524,3 +524,154 @@ class TestPatchTrackTagsEndpoint:
         assert updated is not None
         assert updated.title == "New"
         db.close()
+
+    def test_returns_503_when_library_path_not_configured(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        db = LibraryIndex(tmp_path / "db.sqlite")
+        track = _sample_track(tmp_path / "01.mp3")
+        db.upsert_track(track)
+        app = create_app(index=db, engine=_mock_engine, queue=_mock_queue)
+        client = TestClient(app, raise_server_exceptions=False)
+        row = db.get_track_by_path(tmp_path / "01.mp3")
+        assert row is not None
+        resp = client.patch(f"/api/v1/tracks/{row.id}/tags", json={"title": "X"})
+        assert resp.status_code == 503
+        db.close()
+
+    def test_returns_422_on_invalid_template(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - Old.mp3"
+        mp3.parent.mkdir(parents=True)
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track="1",
+            title="Old",
+        )
+        track = _sample_track(
+            mp3, title="Old", album_artist="Artist", album="Album", year="2024"
+        )
+        db = LibraryIndex(tmp_path / "db.sqlite")
+        db.upsert_track(track)
+        app = create_app(
+            index=db,
+            engine=_mock_engine,
+            queue=_mock_queue,
+            library_path=tmp_path,
+            config_values={"library.path_template": "{nonexistent_key}"},
+        )
+        client = TestClient(app, raise_server_exceptions=False)
+        row = db.get_track_by_path(mp3)
+        assert row is not None
+        resp = client.patch(f"/api/v1/tracks/{row.id}/tags", json={"title": "New"})
+        assert resp.status_code == 422
+        db.close()
+
+    def test_case_only_rename_uses_two_step(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """Case-only rename uses two-step via temp name and does not 409."""
+        mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - Hello.mp3"
+        mp3.parent.mkdir(parents=True)
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track="1",
+            title="Hello",
+        )
+        track = _sample_track(
+            mp3, title="Hello", album_artist="Artist", album="Album", year="2024"
+        )
+        client, index = self._client_with_track(
+            tmp_path, track, _mock_engine, _mock_queue
+        )
+        row = index.get_track_by_path(mp3)
+        assert row is not None
+
+        resp = client.patch(f"/api/v1/tracks/{row.id}/tags", json={"title": "hello"})
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "hello"
+        # DB updated to new path (case-only change is still a path change in the index).
+        new_mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - hello.mp3"
+        updated = index.get_track_by_path(new_mp3)
+        assert updated is not None
+        assert updated.title == "hello"
+        index.close()
+
+    def test_on_track_file_moved_callback_is_called(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - Old Title.mp3"
+        mp3.parent.mkdir(parents=True)
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track="1",
+            title="Old Title",
+        )
+        track = _sample_track(
+            mp3, title="Old Title", album_artist="Artist", album="Album", year="2024"
+        )
+        client, index = self._client_with_track(
+            tmp_path, track, _mock_engine, _mock_queue
+        )
+        row = index.get_track_by_path(mp3)
+        assert row is not None
+
+        calls: list[tuple[Path, Path]] = []
+        from fastapi.testclient import TestClient as _TC  # noqa: F401
+
+        # Inject the callback via app.state after client creation.
+        client.app.state.on_track_file_moved = lambda old, new: calls.append((old, new))  # type: ignore[union-attr]
+
+        resp = client.patch(
+            f"/api/v1/tracks/{row.id}/tags", json={"title": "New Title"}
+        )
+        assert resp.status_code == 200
+        assert len(calls) == 1
+        assert (
+            calls[0][1] == tmp_path / "Artist" / "2024 - Album" / "01 - New Title.mp3"
+        )
+        index.close()
+
+    def test_on_track_file_moved_callback_exception_is_swallowed(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - Old Title.mp3"
+        mp3.parent.mkdir(parents=True)
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track="1",
+            title="Old Title",
+        )
+        track = _sample_track(
+            mp3, title="Old Title", album_artist="Artist", album="Album", year="2024"
+        )
+        client, index = self._client_with_track(
+            tmp_path, track, _mock_engine, _mock_queue
+        )
+        row = index.get_track_by_path(mp3)
+        assert row is not None
+
+        def _bad_callback(old: Path, new: Path) -> None:
+            raise RuntimeError("simulated callback failure")
+
+        client.app.state.on_track_file_moved = _bad_callback  # type: ignore[union-attr]
+
+        # Exception in callback must not surface as a 500 — endpoint still succeeds.
+        resp = client.patch(
+            f"/api/v1/tracks/{row.id}/tags", json={"title": "New Title"}
+        )
+        assert resp.status_code == 200
+        index.close()

@@ -583,7 +583,14 @@ def create_app(
             updated = index.get_track_by_id(track_id)
             return TrackOut.from_track(updated)  # type: ignore[arg-type]
 
-        if new_path.exists():
+        # Detect case-only renames before the existence check: on case-insensitive
+        # filesystems (HFS+, APFS, NTFS) new_path.exists() returns True for the
+        # same inode, which would incorrectly trigger a 409 collision.
+        is_case_only = (
+            str(old_path).lower() == str(new_path).lower() and old_path != new_path
+        )
+
+        if not is_case_only and new_path.exists():
             if not req.overwrite:
                 existing = index.get_track_by_path(new_path)
                 raise HTTPException(
@@ -594,14 +601,13 @@ def create_app(
                     },
                 )
             # Overwrite requested: remove the conflicting DB entry.
-            if new_path != old_path:
-                index.remove_track(new_path)
+            # (new_path != old_path is guaranteed here: old_path == new_path returns early above)
+            index.remove_track(new_path)
 
         # Order: write tags → move file → update DB.
         write_title_to_file(old_path, req.title)
         new_path.parent.mkdir(parents=True, exist_ok=True)
-        if str(old_path).lower() == str(new_path).lower() and old_path != new_path:
-            # Case-only rename on a case-insensitive filesystem (HFS+, APFS, NTFS).
+        if is_case_only:
             # Two-step via a temp name so the OS doesn't silently treat it as a no-op.
             tmp_path = old_path.with_suffix(f".kamp_rename{old_path.suffix}")
             shutil.move(str(old_path), tmp_path)
