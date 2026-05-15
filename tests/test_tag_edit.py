@@ -273,6 +273,76 @@ class TestPatchTrackTagsEndpoint:
         assert updated.id == row.id  # id preserved
         index.close()
 
+    def test_rename_patches_queue_in_place(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """Renaming a queued track updates the queue immediately so mpv keeps working."""
+        mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - Old Title.mp3"
+        mp3.parent.mkdir(parents=True)
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track="1",
+            title="Old Title",
+        )
+        track = _sample_track(
+            mp3, title="Old Title", album_artist="Artist", album="Album", year="2024"
+        )
+        client, index = self._client_with_track(
+            tmp_path, track, _mock_engine, _mock_queue
+        )
+        row = index.get_track_by_path(mp3)
+        assert row is not None
+
+        resp = client.patch(
+            f"/api/v1/tracks/{row.id}/tags", json={"title": "New Title"}
+        )
+        assert resp.status_code == 200
+        new_mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - New Title.mp3"
+        _mock_queue.update_track_path.assert_called_once_with(mp3, new_mp3, "New Title")
+        index.close()
+
+    def test_title_only_edit_patches_queue(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """A same-path title edit also patches the queue title in place."""
+        mp3 = tmp_path / "Artist" / "2024 - Album" / "track.mp3"
+        mp3.parent.mkdir(parents=True)
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track="1",
+            title="Old",
+        )
+        track = _sample_track(
+            mp3, title="Old", album_artist="Artist", album="Album", year="2024"
+        )
+        db = LibraryIndex(tmp_path / "db.sqlite")
+        db.upsert_track(track)
+        app = create_app(
+            index=db,
+            engine=_mock_engine,
+            queue=_mock_queue,
+            library_path=tmp_path,
+            config_values={
+                "library.path_template": "{album_artist}/{year} - {album}/track.{ext}"
+            },
+        )
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app, raise_server_exceptions=False)
+        row = db.get_track_by_path(mp3)
+        assert row is not None
+
+        resp = client.patch(f"/api/v1/tracks/{row.id}/tags", json={"title": "New"})
+        assert resp.status_code == 200
+        _mock_queue.update_track_path.assert_called_once_with(mp3, mp3, "New")
+        db.close()
+
     def test_returns_404_for_unknown_track(
         self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
     ) -> None:

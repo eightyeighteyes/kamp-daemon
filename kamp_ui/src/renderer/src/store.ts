@@ -606,6 +606,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
     const result = await api.patchTrackTags(trackId, title, overwrite)
     if ('collision' in result) return result
     await get().refreshOpenAlbum()
+    void get().loadQueue()
     return null
   },
 

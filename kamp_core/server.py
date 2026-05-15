@@ -578,6 +578,7 @@ def create_app(
             # Path unchanged — just update the title tag and DB.
             write_title_to_file(old_path, req.title)
             index.move_track(old_path, old_path, req.title, _t.time())
+            queue.update_track_path(old_path, old_path, req.title)
             _notify_library_changed()
             updated = index.get_track_by_id(track_id)
             return TrackOut.from_track(updated)  # type: ignore[arg-type]
@@ -610,6 +611,10 @@ def create_app(
 
         new_mtime = _t.time()
         index.move_track(old_path, new_path, req.title, new_mtime)
+
+        # Patch the in-memory queue so mpv's next file reference and the
+        # player-state snapshot both use the new path immediately.
+        queue.update_track_path(old_path, new_path, req.title)
 
         # Suppress FSEvents from this move and fire a reconciliation scan.
         notify_track_moved = getattr(app.state, "on_track_file_moved", None)
