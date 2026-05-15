@@ -1,6 +1,7 @@
 import React from 'react'
 import { useStore } from '../store'
 import { ContextMenu } from './ContextMenu'
+import { FavoriteIcon } from './TransportIcons'
 
 interface Props {
   x: number
@@ -79,7 +80,8 @@ export function QueueContextMenu({
                 onClose()
               }}
             >
-              {favorite ? '♥ Unfavorite' : '♥ Favorite'}
+              <FavoriteIcon active={!!favorite} size={14} />
+              <span style={{ marginLeft: 6 }}>{favorite ? 'Unfavorite' : 'Favorite'}</span>
             </button>
           )}
           <div className="track-context-menu-divider" />
