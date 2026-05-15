@@ -194,7 +194,8 @@
    Inset on .track-list-body (not the full view) so all four edges are
    visible below the hero rather than mostly hidden behind it. */
 .track-list-view--edit .track-list-body {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* Scrollable body — transparent so the art can bleed through the top rows. */
