@@ -6,8 +6,6 @@ let savedScrollTop = 0
 import { useStore } from '../store'
 import { AlbumCard } from './AlbumCard'
 import { SortControl } from './SortControl'
-import { BandcampButton } from './BandcampButton'
-import { PipelineIndicator } from './PipelineIndicator'
 
 export function AlbumGrid(): React.JSX.Element {
   const albums = useStore((s) => s.library.albums)
@@ -32,10 +30,6 @@ export function AlbumGrid(): React.JSX.Element {
     <div className="album-grid-container" ref={containerRef}>
       <div className="album-grid-toolbar">
         <SortControl />
-        <div className="album-grid-toolbar-actions">
-          <PipelineIndicator />
-          <BandcampButton />
-        </div>
       </div>
       {visible.length === 0 ? (
         <div className="album-grid-empty">

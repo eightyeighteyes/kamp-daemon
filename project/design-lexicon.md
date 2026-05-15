@@ -34,3 +34,12 @@ A shared vocabulary for UI components, layout patterns, and interaction concepts
 ## Transport
 
 **Transport** — The persistent playback bar fixed at the bottom of the app. Contains play/pause, skip, scrubber, volume, and queue toggle.
+
+---
+
+## Status Rail
+
+**Status Rail** — The group of ambient status indicators mounted in the nav bar, between the search bar and the panel picker. Visible on every view. Currently contains:
+
+- **Pipeline indicator** — Shows whether the import pipeline is active. Dims when idle; pulses with the accent color when processing.
+- **Bandcamp button** — Shows when a Bandcamp account is connected. Click to trigger a sync; right-click to open Bandcamp preferences. Hidden when no account is configured.
