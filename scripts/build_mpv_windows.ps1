@@ -52,10 +52,16 @@ function Invoke-Msys($script) {
     }
 }
 
+Write-Host "==> Updating MSYS2 package database"
+# pacman -Syu upgrades pacman itself on the first run, which terminates the
+# MSYS2 process (expected; exit is non-zero). A second run completes the
+# system update with the refreshed pacman binary.
+& $msysBash -lc "pacman -Syu --noconfirm"
+Invoke-Msys "pacman -Syu --noconfirm"
+
 Write-Host "==> Installing mingw-w64 toolchain + mpv build deps via pacman"
 Invoke-Msys @'
 set -euo pipefail
-pacman -Syu --noconfirm
 pacman -S --needed --noconfirm \
     git \
     mingw-w64-x86_64-toolchain \
