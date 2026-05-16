@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { artUrl } from '../api/client'
-import type { Track, TrackTagsCollision } from '../api/client'
+import type { AlbumTagsCollision, Track, TrackTagsCollision } from '../api/client'
 import { TrackContextMenu } from './TrackContextMenu'
 import { EditableTrackTitle } from './EditableTrackTitle'
+import { EditableAlbumField } from './EditableAlbumField'
 import { CollisionModal } from './CollisionModal'
 import {
   FavoriteIcon,
@@ -14,7 +15,13 @@ import {
   PlayNextIcon
 } from './TransportIcons'
 
+const TOAST_TTL = 10_000 // ms
+
 type ContextMenu = { x: number; y: number; track: Track }
+type AlbumRenameToast = {
+  message: string
+  undo: () => Promise<AlbumTagsCollision | null>
+}
 
 function HeroImage({ src }: { src: string }): React.JSX.Element {
   const [loaded, setLoaded] = useState(false)
@@ -45,15 +52,28 @@ export function TrackList(): React.JSX.Element | null {
   const albumEditMode = useStore((s) => s.albumEditMode)
   const setAlbumEditMode = useStore((s) => s.setAlbumEditMode)
   const patchTrackTitle = useStore((s) => s.patchTrackTitle)
+  const patchAlbumTags = useStore((s) => s.patchAlbumTags)
+  const albumRenameProgress = useStore((s) => s.albumRenameProgress)
   const nextTrack = useStore((s) => s.player.next_track)
   const lockedIds = new Set(
     [currentTrack?.id, nextTrack?.id].filter((id): id is number => id != null)
   )
 
   const albumTitleRef = useRef<HTMLHeadingElement>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [collision, setCollision] = useState<
     (TrackTagsCollision & { pendingTrackId: number; pendingTitle: string }) | null
   >(null)
+  const [albumCollision, setAlbumCollision] = useState<
+    (AlbumTagsCollision & { pendingOpts: Parameters<typeof patchAlbumTags>[2] }) | null
+  >(null)
+  const [albumRenameToast, setAlbumRenameToast] = useState<AlbumRenameToast | null>(null)
+
+  const showRenameToast = (toast: AlbumRenameToast): void => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setAlbumRenameToast(toast)
+    toastTimerRef.current = setTimeout(() => setAlbumRenameToast(null), TOAST_TTL)
+  }
 
   // Focus the album title heading when entering edit mode so screen readers
   // receive the live-region announcement in context.
@@ -134,21 +154,70 @@ export function TrackList(): React.JSX.Element | null {
           >
             <FavoriteIcon active={album.favorite} size={36} />
           </button>
-          <h1 ref={albumTitleRef} className="track-list-album-title" tabIndex={-1}>
-            {album.album}
-          </h1>
-          <h2 className="track-list-album-artist">
-            <button
-              className="track-list-artist-link"
-              onClick={() => {
-                selectAlbum(null)
-                selectArtist(album.album_artist)
-              }}
-            >
-              {album.album_artist}
-            </button>
-          </h2>
+          <EditableAlbumField
+            value={album.album}
+            editMode={albumEditMode}
+            disabled={albumRenameProgress !== null}
+            className="track-list-album-title"
+            onSave={async (newAlbum) => {
+              const oldAlbum = album.album
+              const oldArtist = album.album_artist
+              const count = album.track_count
+              const result = await patchAlbumTags(oldArtist, oldAlbum, { album: newAlbum })
+              if (result?.collision) {
+                setAlbumCollision({ ...result, pendingOpts: { album: newAlbum } })
+              } else {
+                showRenameToast({
+                  message: `${count} ${count === 1 ? 'file' : 'files'} reorganized`,
+                  undo: () => patchAlbumTags(oldArtist, newAlbum, { album: oldAlbum })
+                })
+              }
+            }}
+            renderStatic={(val) => (
+              <h1 ref={albumTitleRef} className="track-list-album-title" tabIndex={-1}>
+                {val}
+              </h1>
+            )}
+          />
+          <EditableAlbumField
+            value={album.album_artist}
+            editMode={albumEditMode}
+            disabled={albumRenameProgress !== null}
+            className="track-list-album-artist-input"
+            onSave={async (newArtist) => {
+              const oldArtist = album.album_artist
+              const oldAlbum = album.album
+              const count = album.track_count
+              const result = await patchAlbumTags(oldArtist, oldAlbum, { album_artist: newArtist })
+              if (result?.collision) {
+                setAlbumCollision({ ...result, pendingOpts: { album_artist: newArtist } })
+              } else {
+                showRenameToast({
+                  message: `${count} ${count === 1 ? 'file' : 'files'} reorganized`,
+                  undo: () => patchAlbumTags(newArtist, oldAlbum, { album_artist: oldArtist })
+                })
+              }
+            }}
+            renderStatic={(val) => (
+              <h2 className="track-list-album-artist">
+                <button
+                  className="track-list-artist-link"
+                  onClick={() => {
+                    selectAlbum(null)
+                    selectArtist(album.album_artist)
+                  }}
+                >
+                  {val}
+                </button>
+              </h2>
+            )}
+          />
           {album.year && <div className="track-list-album-year">{album.year}</div>}
+          {albumRenameProgress && (
+            <div className="album-rename-progress" aria-live="polite">
+              Renaming {albumRenameProgress.done} of {albumRenameProgress.total}…
+            </div>
+          )}
         </div>
         <div className="album-controls">
           <button
@@ -262,6 +331,41 @@ export function TrackList(): React.JSX.Element | null {
           onSkip={() => setCollision(null)}
           onCancel={() => setCollision(null)}
         />
+      )}
+      {albumCollision && (
+        <CollisionModal
+          targetPath={albumCollision.first_path}
+          onOverwrite={() => {
+            const opts = albumCollision.pendingOpts
+            setAlbumCollision(null)
+            void patchAlbumTags(album.album_artist, album.album, { ...opts, overwrite: true })
+          }}
+          onSkip={() => {
+            const opts = albumCollision.pendingOpts
+            setAlbumCollision(null)
+            void patchAlbumTags(album.album_artist, album.album, {
+              ...opts,
+              skip_conflicts: true
+            })
+          }}
+          onCancel={() => setAlbumCollision(null)}
+        />
+      )}
+      {albumRenameToast && (
+        <div className="album-rename-toast" role="status">
+          <span className="album-rename-toast-text">{albumRenameToast.message}</span>
+          <button
+            className="album-rename-toast-undo"
+            onClick={() => {
+              setAlbumRenameToast(null)
+              if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+              void albumRenameToast.undo()
+            }}
+          >
+            Undo
+          </button>
+          <div className="album-rename-toast-bar" style={{ animationDuration: `${TOAST_TTL}ms` }} />
+        </div>
       )}
     </div>
   )

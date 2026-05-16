@@ -360,19 +360,67 @@ export const setAlbumFavorite = (
 ): Promise<unknown> =>
   post('/api/v1/albums/favorite', { album_artist: albumArtist, album, favorite })
 
+export type AlbumTagsCollision = {
+  collision: true
+  collision_count: number
+  first_path: string
+}
+
+export type AlbumTagsResult = {
+  moved: Track[]
+  skipped: string[]
+  failed: { track_id: number; old_path: string; new_path: string; error: string | null }[]
+}
+
+export async function patchAlbumTags(
+  albumArtist: string,
+  album: string,
+  opts: { album?: string; album_artist?: string; overwrite?: boolean; skip_conflicts?: boolean }
+): Promise<AlbumTagsResult | AlbumTagsCollision> {
+  const params = new URLSearchParams({ album_artist: albumArtist, album })
+  const res = await fetch(`${BASE_URL}/api/v1/albums/tags?${params}`, {
+    method: 'PATCH',
+    headers: _authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(opts)
+  })
+  if (res.status === 409) {
+    const detail = (await res.json()) as {
+      detail: { collision_count: number; first_path: string }
+    }
+    return { collision: true, ...detail.detail }
+  }
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`
+    try {
+      const json = (await res.json()) as { detail?: string }
+      if (json.detail && typeof json.detail === 'string') message = json.detail
+    } catch {
+      // ignore
+    }
+    throw new Error(message)
+  }
+  return res.json() as Promise<AlbumTagsResult>
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket state stream
 // ---------------------------------------------------------------------------
 
 export type StateMessage = PlayerState & { type: 'player.state' }
 export type LibraryChangedMessage = { type: 'library.changed' }
-export type ServerMessage = StateMessage | LibraryChangedMessage
+export type AlbumRenameProgressMessage = {
+  type: 'album.rename.progress'
+  done: number
+  total: number
+}
+export type ServerMessage = StateMessage | LibraryChangedMessage | AlbumRenameProgressMessage
 
 export function connectStateStream(
   onState: (state: PlayerState) => void,
   onClose?: () => void,
   onOpen?: () => void,
-  onLibraryChanged?: () => void
+  onLibraryChanged?: () => void,
+  onAlbumRenameProgress?: (done: number, total: number) => void
 ): () => void {
   const ws = new WebSocket(`${WS_BASE}/api/v1/ws`)
 
@@ -383,6 +431,7 @@ export function connectStateStream(
       const msg = JSON.parse(event.data as string) as ServerMessage
       if (msg.type === 'player.state') onState(msg)
       else if (msg.type === 'library.changed') onLibraryChanged?.()
+      else if (msg.type === 'album.rename.progress') onAlbumRenameProgress?.(msg.done, msg.total)
     } catch {
       // malformed message — ignore
     }

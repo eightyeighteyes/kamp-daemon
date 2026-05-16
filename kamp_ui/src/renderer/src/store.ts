@@ -10,6 +10,7 @@ import { create } from 'zustand'
 import * as api from './api/client'
 import type {
   Album,
+  AlbumTagsCollision,
   ConfigValues,
   PlayerState,
   QueueState,
@@ -54,6 +55,7 @@ type PlayerStore = {
   topAlbumsCount: number
   baseKampEditMode: boolean
   albumEditMode: boolean
+  albumRenameProgress: { done: number; total: number } | null
   sortOrder: 'album_artist' | 'album' | 'date_added' | 'last_played'
   searchQuery: string
   searchResults: SearchResult | null
@@ -131,6 +133,12 @@ type PlayerStore = {
     title: string,
     overwrite?: boolean
   ) => Promise<api.TrackTagsCollision | null>
+  patchAlbumTags: (
+    albumArtist: string,
+    album: string,
+    opts: { album?: string; album_artist?: string; overwrite?: boolean; skip_conflicts?: boolean }
+  ) => Promise<AlbumTagsCollision | null>
+  setAlbumRenameProgress: (progress: { done: number; total: number } | null) => void
   refreshOpenAlbum: () => Promise<void>
   scanLibrary: () => Promise<void>
   setLibraryPath: (path: string) => Promise<void>
@@ -218,6 +226,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
   })(),
   baseKampEditMode: localStorage.getItem('kamp:base-kamp-edit-mode') === 'true',
   albumEditMode: false,
+  albumRenameProgress: null,
   sortOrder: 'album_artist',
   searchQuery: '',
   searchResults: null,
@@ -607,6 +616,32 @@ export const useStore = create<PlayerStore>((set, get) => ({
     if ('collision' in result) return result
     await get().refreshOpenAlbum()
     void get().loadQueue()
+    return null
+  },
+
+  setAlbumRenameProgress: (progress) => set({ albumRenameProgress: progress }),
+
+  patchAlbumTags: async (albumArtist, album, opts) => {
+    const result = await api.patchAlbumTags(albumArtist, album, opts)
+    if ('collision' in result) return result
+    if (result.failed.length > 0) {
+      console.error('[kamp] album rename: tag write failed for', result.failed)
+    }
+    // Clear progress, reload library so sidebar and album card reflect new names.
+    set({ albumRenameProgress: null })
+    await get().loadLibrary()
+    // Refresh the queue so any queued tracks show the updated artist/album name.
+    void get().loadQueue()
+    // Re-select the open album under its new identity so the track list refreshes.
+    const newArtist = opts.album_artist ?? albumArtist
+    const newAlbum = opts.album ?? album
+    const updatedAlbum = get().library.albums.find(
+      (a) => a.album_artist === newArtist && a.album === newAlbum
+    )
+    if (updatedAlbum) {
+      set((s) => ({ library: { ...s.library, selectedAlbum: updatedAlbum } }))
+      await get().loadTracks(newArtist, newAlbum)
+    }
     return null
   },
 

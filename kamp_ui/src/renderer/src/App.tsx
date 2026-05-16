@@ -84,6 +84,7 @@ function SlotPanel({ panel }: { panel: UnifiedPanel }): React.JSX.Element {
 export default function App(): React.JSX.Element {
   const loadLibrary = useStore((s) => s.loadLibrary)
   const refreshOpenAlbum = useStore((s) => s.refreshOpenAlbum)
+  const setAlbumRenameProgress = useStore((s) => s.setAlbumRenameProgress)
   const loadUiState = useStore((s) => s.loadUiState)
   const loadConfig = useStore((s) => s.loadConfig)
   const applyServerState = useStore((s) => s.applyServerState)
@@ -216,6 +217,10 @@ export default function App(): React.JSX.Element {
         },
         () => {
           void loadLibrary().then(() => refreshOpenAlbum())
+          void loadQueue()
+        },
+        (done, total) => {
+          setAlbumRenameProgress(total === done ? null : { done, total })
         }
       )
     }
