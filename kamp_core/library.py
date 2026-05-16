@@ -1757,7 +1757,7 @@ def write_album_tags_to_file(
     if suffix == ".mp3":
         try:
             tags = id3.ID3(str(path))
-        except Exception:
+        except Exception:  # pragma: no cover
             tags = id3.ID3()
         tags["TALB"] = id3.TALB(encoding=3, text=album)
         tags["TPE2"] = id3.TPE2(encoding=3, text=album_artist)

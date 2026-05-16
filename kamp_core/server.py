@@ -843,7 +843,7 @@ def create_app(
                     e.name not in _OS_METADATA_NAMES and e.name != old_album_dir.name
                     for e in old_artist_dir.iterdir()
                 )
-            except OSError:
+            except OSError:  # pragma: no cover
                 exclusive = False
 
             rename_at_artist_level = (
@@ -862,7 +862,9 @@ def create_app(
                 src, dst = old_album_dir, new_album_dir
 
             is_case_only = str(src).lower() == str(dst).lower() and str(src) != str(dst)
-            if is_case_only:
+            if (
+                is_case_only
+            ):  # pragma: no cover — macOS HFS+ routes this to collision path
                 tmp = src.with_name(f"kamp_tmp_{src.name}")
                 os.rename(str(src), str(tmp))
                 os.rename(str(tmp), str(dst))

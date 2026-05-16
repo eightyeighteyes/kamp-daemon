@@ -90,14 +90,51 @@ class TestWriteAlbumTagsToFile:
         f = tmp_path / "track.flac"
         f.write_bytes(b"fLaC")
         mock_audio = MagicMock()
-        mock_audio.tags = {}
+        # tags=None exercises the add_tags() branch; after the call it becomes a dict.
+        mock_audio.tags = None
+
+        def _add_tags() -> None:
+            mock_audio.tags = {}
+
+        mock_audio.add_tags.side_effect = _add_tags
         with patch("kamp_core.library.mutagen.flac.FLAC", return_value=mock_audio):
+            # With artist — True branch.
             write_album_tags_to_file(f, "New Album", "New Artist", artist="New Artist")
+            assert mock_audio.tags["ARTIST"] == ["New Artist"]
+            # Without artist — False branch.
+            mock_audio.tags = {}
+            write_album_tags_to_file(f, "New Album", "New Artist")
+            assert "ARTIST" not in mock_audio.tags
 
         assert mock_audio.tags["ALBUM"] == ["New Album"]
         assert mock_audio.tags["ALBUMARTIST"] == ["New Artist"]
-        assert mock_audio.tags["ARTIST"] == ["New Artist"]
-        mock_audio.save.assert_called_once()
+        assert mock_audio.save.call_count == 2
+
+    def test_updates_m4a_album_artist_and_per_track_artist(
+        self, tmp_path: Path
+    ) -> None:
+        f = tmp_path / "track.m4a"
+        f.write_bytes(b"\x00" * 32)
+        mock_audio = MagicMock()
+        # tags=None exercises the add_tags() branch; after the call it becomes a dict.
+        mock_audio.tags = None
+
+        def _add_tags() -> None:
+            mock_audio.tags = {}
+
+        mock_audio.add_tags.side_effect = _add_tags
+        with patch("kamp_core.library.mutagen.mp4.MP4", return_value=mock_audio):
+            # With artist — True branch.
+            write_album_tags_to_file(f, "New Album", "New Artist", artist="New Artist")
+            assert mock_audio.tags["\xa9ART"] == ["New Artist"]
+            # Without artist — False branch.
+            mock_audio.tags = {}
+            write_album_tags_to_file(f, "New Album", "New Artist")
+            assert "\xa9ART" not in mock_audio.tags
+
+        assert mock_audio.tags["\xa9alb"] == ["New Album"]
+        assert mock_audio.tags["aART"] == ["New Artist"]
+        assert mock_audio.save.call_count == 2
 
     def test_updates_ogg_album_artist_and_per_track_artist(
         self, tmp_path: Path
@@ -105,16 +142,26 @@ class TestWriteAlbumTagsToFile:
         f = tmp_path / "track.ogg"
         f.write_bytes(b"OggS")
         mock_audio = MagicMock()
-        mock_audio.tags = {}
+        mock_audio.tags = None
+
+        def _add_tags() -> None:
+            mock_audio.tags = {}
+
+        mock_audio.add_tags.side_effect = _add_tags
         with patch(
             "kamp_core.library.mutagen.oggvorbis.OggVorbis", return_value=mock_audio
         ):
+            # With artist — True branch.
             write_album_tags_to_file(f, "New Album", "New Artist", artist="New Artist")
+            assert mock_audio.tags["ARTIST"] == ["New Artist"]
+            # Without artist — False branch.
+            mock_audio.tags = {}
+            write_album_tags_to_file(f, "New Album", "New Artist")
+            assert "ARTIST" not in mock_audio.tags
 
         assert mock_audio.tags["ALBUM"] == ["New Album"]
         assert mock_audio.tags["ALBUMARTIST"] == ["New Artist"]
-        assert mock_audio.tags["ARTIST"] == ["New Artist"]
-        mock_audio.save.assert_called_once()
+        assert mock_audio.save.call_count == 2
 
     def test_raises_on_unsupported_format(self, tmp_path: Path) -> None:
         f = tmp_path / "track.wav"
@@ -560,6 +607,69 @@ class TestPatchAlbumTagsEndpoint:
             json={"album": "New"},
         )
         assert resp.status_code == 503
+
+    def test_tag_write_failure_in_tag_only_path_reported_in_failed(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """Tag-write exceptions in the same-dir path populate failed[], not moved[]."""
+        flat_template = "{track:02d} - {title}.{ext}"
+        pairs = _make_album(tmp_path, "Artist", "Old Album", "2024", 1)
+        mp3, track = pairs[0]
+        flat = tmp_path / mp3.name
+        mp3.rename(flat)
+        tracks = [
+            _sample_track(
+                flat,
+                title=track.title,
+                album_artist="Artist",
+                album="Old Album",
+                year="2024",
+                track_number=track.track_number,
+            )
+        ]
+        client, _ = self._client_with_album(
+            tmp_path,
+            tracks,
+            _mock_engine,
+            _mock_queue,
+            config_values={"library.path_template": flat_template},
+        )
+        with patch(
+            "kamp_core.library.write_album_tags_to_file",
+            side_effect=OSError("disk full"),
+        ):
+            resp = client.patch(
+                "/api/v1/albums/tags",
+                params={"album_artist": "Artist", "album": "Old Album"},
+                json={"album": "New Album"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["failed"]) == 1
+        assert body["moved"] == []
+        assert "disk full" in body["failed"][0]["error"]
+
+    def test_tag_write_failure_in_atomic_rename_path_reported_in_failed(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """Tag-write exceptions after atomic dir rename populate failed[], not moved[]."""
+        pairs = _make_album(tmp_path, "Artist", "Old Album", "2024", 1)
+        tracks = [t for _, t in pairs]
+        client, _ = self._client_with_album(tmp_path, tracks, _mock_engine, _mock_queue)
+        with patch(
+            "kamp_core.library.write_album_tags_to_file",
+            side_effect=OSError("disk full"),
+        ):
+            resp = client.patch(
+                "/api/v1/albums/tags",
+                params={"album_artist": "Artist", "album": "Old Album"},
+                json={"album": "New Album"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["failed"]) == 1
+        assert body["moved"] == []
+        assert "disk full" in body["failed"][0]["error"]
 
     def test_on_album_tracks_moved_called_once_with_all_pairs(
         self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
