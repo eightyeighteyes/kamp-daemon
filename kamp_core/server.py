@@ -259,6 +259,30 @@ class TrackTagsRequest(BaseModel):
     overwrite: bool = False
 
 
+class AlbumTagsRequest(BaseModel):
+    album: str | None = None
+    album_artist: str | None = None
+    # overwrite=True: replace any file that already exists at the target path.
+    # skip_conflicts=True: leave colliding files at their old path, rename the rest.
+    # Default (both False): stop on first collision and return 409.
+    overwrite: bool = False
+    skip_conflicts: bool = False
+
+
+class AlbumTagsTrackResult(BaseModel):
+    track_id: int
+    old_path: str
+    new_path: str
+    error: str | None = None
+
+
+class AlbumTagsOut(BaseModel):
+    moved: list[TrackOut]
+    # Paths of files left at their original location due to skip_conflicts.
+    skipped: list[str]
+    failed: list[AlbumTagsTrackResult]
+
+
 class BandcampProxyFetchResult(BaseModel):
     id: str
     status: int
@@ -652,6 +676,178 @@ def create_app(
     def set_album_favorite(req: AlbumFavoriteRequest) -> dict[str, Any]:
         index.toggle_album_favorite(req.album_artist, req.album, req.favorite)
         return {"ok": True}
+
+    @app.patch("/api/v1/albums/tags")
+    def patch_album_tags(
+        album_artist: str, album: str, req: "AlbumTagsRequest"
+    ) -> "AlbumTagsOut":
+        """Rename album title and/or album artist, fanning out to every track in the album.
+
+        For each track: writes tags to the file, moves it to the new computed path,
+        and updates the DB row.  Broadcasts album.rename.progress events over WebSocket
+        during the batch so the renderer can show "Renaming N of M…".
+
+        Collision handling (files that already exist at the target path):
+        - Default (overwrite=False, skip_conflicts=False): pre-flight detects collisions
+          and returns 409 without moving anything.
+        - overwrite=True: existing files are replaced.
+        - skip_conflicts=True: colliding files are left at their old location; the rest
+          of the album is renamed normally.
+        - If Cancel is chosen by the user after a 409, already-moved files (from a prior
+          partial attempt) remain at their new locations — this is documented behaviour.
+        """
+        import shutil
+        import time as _t
+
+        from kamp_core.library import write_album_tags_to_file
+        from kamp_core.path_utils import make_path_vars, render_destination
+
+        tracks = index.tracks_for_album(album_artist, album)
+        if not tracks:
+            raise HTTPException(status_code=404, detail="Album not found")
+
+        new_album = req.album if req.album is not None else album
+        new_album_artist = (
+            req.album_artist if req.album_artist is not None else album_artist
+        )
+
+        if new_album == album and new_album_artist == album_artist:
+            raise HTTPException(status_code=400, detail="No changes requested")
+
+        lib_path: Path | None = _state["library_path"]
+        if lib_path is None:
+            raise HTTPException(status_code=503, detail="Library path not configured")
+
+        # Pre-flight: ensure the disk has enough headroom for the worst case
+        # (all files copied before the originals are removed).
+        try:
+            usage = shutil.disk_usage(lib_path)
+            total_size = sum(
+                t.file_path.stat().st_size for t in tracks if t.file_path.exists()
+            )
+            if usage.free < total_size * 1.1:
+                raise HTTPException(status_code=507, detail="Insufficient disk space")
+        except (OSError, AttributeError):
+            pass  # non-fatal: proceed and let individual moves fail
+
+        path_template: str = (
+            _state["config"].get("library.path_template")
+            or "{album_artist}/{year} - {album}/{track:02d} - {title}.{ext}"
+        )
+
+        # Compute all destination paths upfront so we can detect collisions before
+        # any files are moved (avoids leaving the album half-renamed on 409).
+        dest_map: dict[int, tuple[Path, Path]] = {}  # track_id → (old_path, new_path)
+        collisions: list[str] = []
+        for track in tracks:
+            tags = make_path_vars(
+                artist=track.artist,
+                album_artist=new_album_artist,
+                album=new_album,
+                year=track.year,
+                track=track.track_number,
+                disc=track.disc_number,
+                title=track.title,
+                ext=track.ext,
+            )
+            old_path = track.file_path
+            try:
+                new_path = render_destination(tags, lib_path, path_template)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+
+            is_case_only = str(old_path).lower() == str(new_path).lower() and str(
+                old_path
+            ) != str(new_path)
+            if (
+                str(old_path) != str(new_path)
+                and not is_case_only
+                and new_path.exists()
+            ):
+                collisions.append(str(new_path))
+
+            dest_map[track.id] = (old_path, new_path)
+
+        if collisions and not req.overwrite and not req.skip_conflicts:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "collision_count": len(collisions),
+                    "first_path": collisions[0],
+                },
+            )
+
+        # Fan-out: write tags, move file, update DB — one track at a time.
+        moved: list[TrackOut] = []
+        skipped: list[str] = []
+        failed: list[AlbumTagsTrackResult] = []
+        total = len(tracks)
+        notify_track_moved = getattr(app.state, "on_track_file_moved", None)
+
+        for i, track in enumerate(tracks):
+            _broadcast({"type": "album.rename.progress", "done": i, "total": total})
+            old_path, new_path = dest_map[track.id]
+
+            is_case_only = str(old_path).lower() == str(new_path).lower() and str(
+                old_path
+            ) != str(new_path)
+            collision = (
+                str(old_path) != str(new_path)
+                and not is_case_only
+                and new_path.exists()
+            )
+
+            if collision and req.skip_conflicts:
+                skipped.append(str(old_path))
+                continue
+
+            try:
+                write_album_tags_to_file(old_path, new_album, new_album_artist)
+
+                if str(old_path) != str(new_path):
+                    if collision and req.overwrite:
+                        index.remove_track(new_path)
+                    new_path.parent.mkdir(parents=True, exist_ok=True)
+                    if is_case_only:
+                        tmp_path = old_path.with_suffix(
+                            f".kamp_rename{old_path.suffix}"
+                        )
+                        shutil.move(str(old_path), tmp_path)
+                        shutil.move(str(tmp_path), new_path)
+                    else:
+                        shutil.move(str(old_path), new_path)
+
+                new_mtime = _t.time()
+                index.rename_album_track(
+                    old_path, new_path, new_album, new_album_artist, new_mtime
+                )
+
+                if notify_track_moved is not None and str(old_path) != str(new_path):
+                    try:
+                        notify_track_moved(old_path, new_path)
+                    except Exception:
+                        logger.exception("on_track_file_moved callback raised")
+
+                updated = index.get_track_by_id(track.id)
+                if updated is not None:
+                    moved.append(TrackOut.from_track(updated))
+
+            except Exception as exc:
+                logger.exception(
+                    "album rename failed for track %d (%s)", track.id, old_path
+                )
+                failed.append(
+                    AlbumTagsTrackResult(
+                        track_id=track.id,
+                        old_path=str(old_path),
+                        new_path=str(new_path),
+                        error=str(exc),
+                    )
+                )
+
+        _broadcast({"type": "album.rename.progress", "done": total, "total": total})
+        _notify_library_changed()
+        return AlbumTagsOut(moved=moved, skipped=skipped, failed=failed)
 
     @app.get("/api/v1/album-art")
     def get_album_art(

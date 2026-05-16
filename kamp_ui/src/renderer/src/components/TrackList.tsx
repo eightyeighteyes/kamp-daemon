@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { artUrl } from '../api/client'
-import type { Track, TrackTagsCollision } from '../api/client'
+import type { AlbumTagsCollision, Track, TrackTagsCollision } from '../api/client'
 import { TrackContextMenu } from './TrackContextMenu'
 import { EditableTrackTitle } from './EditableTrackTitle'
+import { EditableAlbumField } from './EditableAlbumField'
 import { CollisionModal } from './CollisionModal'
 import {
   FavoriteIcon,
@@ -45,6 +46,8 @@ export function TrackList(): React.JSX.Element | null {
   const albumEditMode = useStore((s) => s.albumEditMode)
   const setAlbumEditMode = useStore((s) => s.setAlbumEditMode)
   const patchTrackTitle = useStore((s) => s.patchTrackTitle)
+  const patchAlbumTags = useStore((s) => s.patchAlbumTags)
+  const albumRenameProgress = useStore((s) => s.albumRenameProgress)
   const nextTrack = useStore((s) => s.player.next_track)
   const lockedIds = new Set(
     [currentTrack?.id, nextTrack?.id].filter((id): id is number => id != null)
@@ -53,6 +56,9 @@ export function TrackList(): React.JSX.Element | null {
   const albumTitleRef = useRef<HTMLHeadingElement>(null)
   const [collision, setCollision] = useState<
     (TrackTagsCollision & { pendingTrackId: number; pendingTitle: string }) | null
+  >(null)
+  const [albumCollision, setAlbumCollision] = useState<
+    (AlbumTagsCollision & { pendingOpts: Parameters<typeof patchAlbumTags>[2] }) | null
   >(null)
 
   // Focus the album title heading when entering edit mode so screen readers
@@ -134,21 +140,63 @@ export function TrackList(): React.JSX.Element | null {
           >
             <FavoriteIcon active={album.favorite} size={36} />
           </button>
-          <h1 ref={albumTitleRef} className="track-list-album-title" tabIndex={-1}>
-            {album.album}
-          </h1>
-          <h2 className="track-list-album-artist">
-            <button
-              className="track-list-artist-link"
-              onClick={() => {
-                selectAlbum(null)
-                selectArtist(album.album_artist)
-              }}
-            >
-              {album.album_artist}
-            </button>
-          </h2>
+          <EditableAlbumField
+            value={album.album}
+            editMode={albumEditMode}
+            disabled={albumRenameProgress !== null}
+            className="track-list-album-title"
+            onSave={async (newAlbum) => {
+              const result = await patchAlbumTags(album.album_artist, album.album, {
+                album: newAlbum
+              })
+              if (result?.collision) {
+                setAlbumCollision({ ...result, pendingOpts: { album: newAlbum } })
+              }
+            }}
+            renderStatic={(val) => (
+              <h1 ref={albumTitleRef} className="track-list-album-title" tabIndex={-1}>
+                {val}
+              </h1>
+            )}
+          />
+          <EditableAlbumField
+            value={album.album_artist}
+            editMode={albumEditMode}
+            disabled={albumRenameProgress !== null}
+            className="track-list-album-artist-input"
+            onSave={async (newArtist) => {
+              const result = await patchAlbumTags(album.album_artist, album.album, {
+                album_artist: newArtist
+              })
+              if (result?.collision) {
+                setAlbumCollision({ ...result, pendingOpts: { album_artist: newArtist } })
+              }
+            }}
+            renderStatic={(val) => (
+              <h2 className="track-list-album-artist">
+                <button
+                  className="track-list-artist-link"
+                  onClick={() => {
+                    selectAlbum(null)
+                    selectArtist(album.album_artist)
+                  }}
+                >
+                  {val}
+                </button>
+              </h2>
+            )}
+          />
           {album.year && <div className="track-list-album-year">{album.year}</div>}
+          {albumRenameProgress && (
+            <div className="album-rename-progress" aria-live="polite">
+              Renaming {albumRenameProgress.done} of {albumRenameProgress.total}…
+            </div>
+          )}
+          {albumEditMode && !albumRenameProgress && (
+            <div className="album-rename-hint" aria-hidden="true">
+              {album.track_count} {album.track_count === 1 ? 'file' : 'files'} will be reorganized
+            </div>
+          )}
         </div>
         <div className="album-controls">
           <button
@@ -261,6 +309,25 @@ export function TrackList(): React.JSX.Element | null {
           }}
           onSkip={() => setCollision(null)}
           onCancel={() => setCollision(null)}
+        />
+      )}
+      {albumCollision && (
+        <CollisionModal
+          targetPath={albumCollision.first_path}
+          onOverwrite={() => {
+            const opts = albumCollision.pendingOpts
+            setAlbumCollision(null)
+            void patchAlbumTags(album.album_artist, album.album, { ...opts, overwrite: true })
+          }}
+          onSkip={() => {
+            const opts = albumCollision.pendingOpts
+            setAlbumCollision(null)
+            void patchAlbumTags(album.album_artist, album.album, {
+              ...opts,
+              skip_conflicts: true
+            })
+          }}
+          onCancel={() => setAlbumCollision(null)}
         />
       )}
     </div>
