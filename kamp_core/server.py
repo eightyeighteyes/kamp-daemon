@@ -480,6 +480,12 @@ def create_app(
     app.state.notify_pipeline_stage = _notify_pipeline_stage
 
     def _notify_deferred_op_completed(track_id: int, op_id: int) -> None:
+        # Refresh the in-memory queue so the renamed track shows the new path/title
+        # immediately; loadQueue() called by the frontend on library.changed will
+        # then see consistent data rather than the stale pre-rename Track object.
+        updated = index.get_track_by_id(track_id)
+        if updated is not None:
+            queue.update_track_by_id(track_id, updated)
         # Broadcast deferred_op.completed BEFORE library.changed (done in execute_op)
         # so the frontend clears the pip before the library reload re-renders.
         _broadcast(
@@ -870,6 +876,17 @@ def create_app(
                             new_path=str(new_path),
                         )
                     )
+                    # Pre-update DB album metadata so the library shows all tracks
+                    # under the new album name immediately; file stays at old_path
+                    # until the deferred op drains (idempotent when drain runs).
+                    db_pairs.append((old_path, old_path))
+                    queue.update_track_album_tags(
+                        old_path,
+                        old_path,
+                        new_album,
+                        new_album_artist,
+                        new_artist=new_artist,
+                    )
                     continue
                 try:
                     write_album_tags_to_file(
@@ -947,6 +964,17 @@ def create_app(
                                 old_path=str(old_path),
                                 new_path=str(new_path),
                             )
+                        )
+                        # Pre-update DB album metadata so the library rescan sees
+                        # all tracks under the new album name immediately.  The
+                        # file stays at old_path; drain moves it and updates file_path.
+                        db_pairs.append((old_path, old_path))
+                        queue.update_track_album_tags(
+                            old_path,
+                            old_path,
+                            new_album,
+                            new_album_artist,
+                            new_artist=new_artist,
                         )
                         continue
                     try:
@@ -1136,6 +1164,14 @@ def create_app(
                             old_path=str(old_path),
                             new_path=str(new_path),
                         )
+                    )
+                    db_pairs.append((old_path, old_path))
+                    queue.update_track_album_tags(
+                        old_path,
+                        old_path,
+                        new_album,
+                        new_album_artist,
+                        new_artist=new_artist,
                     )
                     continue
                 try:
@@ -1606,8 +1642,22 @@ def create_app(
         tracks, pos = queue.queue_tracks()
         return QueueOut(tracks=[TrackOut.from_track(t) for t in tracks], position=pos)
 
+    def _drain_unlocked(old_current: Any, old_lookahead: Any) -> None:
+        """Fire async drains for tracks that are no longer locked after a skip."""
+        drain = getattr(app.state, "drain_for_track_async", None)
+        if drain is None:
+            return
+        new_current = queue.current()
+        new_lookahead = queue.peek_next()
+        new_ids = {t.id for t in (new_current, new_lookahead) if t is not None}
+        for t in (old_current, old_lookahead):
+            if t is not None and t.id not in new_ids:
+                drain(t.id)
+
     @app.post("/api/v1/player/play")
     def play(req: PlayRequest) -> dict[str, Any]:
+        old_current = queue.current()
+        old_lookahead = queue.peek_next()
         if req.file_path:
             p = _validate_library_path(req.file_path, _state["library_path"])
             track = index.get_track_by_path(p)
@@ -1621,6 +1671,7 @@ def create_app(
         if current:
             engine.play(current.file_path)
         _notify_track_changed()
+        _drain_unlocked(old_current, old_lookahead)
         return {"ok": True}
 
     @app.post("/api/v1/player/pause")
@@ -1651,20 +1702,26 @@ def create_app(
 
     @app.post("/api/v1/player/next")
     def next_track() -> dict[str, Any]:
+        old_current = queue.current()
+        old_lookahead = queue.peek_next()
         track = queue.next()
         if track:
             engine.play(track.file_path)
         else:
             engine.stop()
         _notify_track_changed()
+        _drain_unlocked(old_current, old_lookahead)
         return {"ok": True}
 
     @app.post("/api/v1/player/prev")
     def prev_track() -> dict[str, Any]:
+        old_current = queue.current()
+        old_lookahead = queue.peek_next()
         track = queue.prev()
         if track:
             engine.play(track.file_path)
         _notify_track_changed()
+        _drain_unlocked(old_current, old_lookahead)
         return {"ok": True}
 
     @app.post("/api/v1/player/queue/clear")
@@ -1681,12 +1738,15 @@ def create_app(
 
     @app.post("/api/v1/player/queue/skip-to")
     def skip_to_position(req: SkipToRequest) -> dict[str, Any]:
+        old_current = queue.current()
+        old_lookahead = queue.peek_next()
         track = queue.skip_to(req.position)
         if track:
             engine.play(
                 track.file_path
             )  # play() resets lookahead; file-loaded re-primes it
         _notify_track_changed()
+        _drain_unlocked(old_current, old_lookahead)
         return {"ok": True}
 
     @app.post("/api/v1/player/queue/add")

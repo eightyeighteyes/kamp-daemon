@@ -1019,6 +1019,27 @@ def _cmd_daemon(
             la is not None and la.id == track_id
         )
 
+    # Async helper exposed on app.state so server-side endpoints (skip, next,
+    # play) can drain deferred ops for a track that was just unlocked by a
+    # manual queue advancement — without blocking the HTTP response.
+    def _drain_for_track_async(track_id: int) -> None:
+        from kamp_core.deferred_ops import drain_for_track as _dfp
+
+        threading.Thread(
+            target=_dfp,
+            args=(
+                track_id,
+                index,
+                lib_watcher,
+                app.state.notify_deferred_op_completed,
+                app.state.notify_library_changed,
+            ),
+            daemon=True,
+            name=f"drain-unlocked-{track_id}",
+        ).start()
+
+    app.state.drain_for_track_async = _drain_for_track_async
+
     # Execute any deferred ops that survived a crash or clean quit.  Skip tracks
     # that are already playing (session resumed after crash) — they drain at
     # track end instead.  Critical on Windows where open files cannot be renamed.

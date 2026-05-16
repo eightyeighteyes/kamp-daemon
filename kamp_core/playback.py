@@ -112,6 +112,15 @@ class PlaybackQueue:
                 if new_artist is not None:
                     t.artist = new_artist
 
+    def update_track_by_id(self, track_id: int, updated: "Track") -> None:
+        """Replace a queued track by id after a deferred op drains.
+
+        Keeps the queue display accurate without a full reload from the server.
+        """
+        for i, t in enumerate(self._tracks):
+            if t.id == track_id:
+                self._tracks[i] = updated
+
     def current(self) -> Track | None:
         if not self._tracks or self._pos < 0:
             return None
