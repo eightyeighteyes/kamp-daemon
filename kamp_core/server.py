@@ -846,6 +846,28 @@ def create_app(
                 )
 
         _broadcast({"type": "album.rename.progress", "done": total, "total": total})
+
+        # Remove empty directories left behind by the moves.
+        # Collect unique old album directories from every track that was actually moved
+        # (skipped and failed tracks may still have files there, so rmdir would fail
+        # harmlessly and we just stop climbing for that directory).
+        old_dirs: set[Path] = {
+            dest_map[t.id][0].parent
+            for t in tracks
+            if str(dest_map[t.id][0]) != str(dest_map[t.id][1])
+        }
+        # Process deepest directories first so parents are checked after children.
+        for d in sorted(old_dirs, key=lambda p: len(p.parts), reverse=True):
+            candidate = d
+            # Climb toward the library root, removing each level only if empty.
+            # Never remove the library root itself.
+            while candidate != lib_path and lib_path in candidate.parents:
+                try:
+                    candidate.rmdir()
+                except OSError:
+                    break  # not empty (or already gone) — stop climbing
+                candidate = candidate.parent
+
         _notify_library_changed()
         return AlbumTagsOut(moved=moved, skipped=skipped, failed=failed)
 

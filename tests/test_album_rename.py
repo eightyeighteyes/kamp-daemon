@@ -423,3 +423,67 @@ class TestPatchAlbumTagsEndpoint:
         )
         assert resp.status_code == 200
         assert len(moved_pairs) == 3
+
+    def test_empty_album_dir_removed_after_rename(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        pairs = _make_album(tmp_path, "Artist", "Old Album", "2024", 2)
+        client, _ = self._client_with_album(
+            tmp_path, [t for _, t in pairs], _mock_engine, _mock_queue
+        )
+        old_album_dir = tmp_path / "Artist" / "2024 - Old Album"
+        assert old_album_dir.is_dir()
+
+        resp = client.patch(
+            "/api/v1/albums/tags",
+            params={"album_artist": "Artist", "album": "Old Album"},
+            json={"album": "New Album"},
+        )
+        assert resp.status_code == 200
+        # Old album directory should be gone.
+        assert not old_album_dir.exists()
+        # Artist directory stays — it now contains the new album folder.
+        assert (tmp_path / "Artist").is_dir()
+
+    def test_empty_artist_dir_removed_after_artist_rename(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        pairs = _make_album(tmp_path, "Old Artist", "Album", "2024", 2)
+        client, _ = self._client_with_album(
+            tmp_path, [t for _, t in pairs], _mock_engine, _mock_queue
+        )
+        old_artist_dir = tmp_path / "Old Artist"
+        assert old_artist_dir.is_dir()
+
+        resp = client.patch(
+            "/api/v1/albums/tags",
+            params={"album_artist": "Old Artist", "album": "Album"},
+            json={"album_artist": "New Artist"},
+        )
+        assert resp.status_code == 200
+        # Both the old album dir and the now-empty artist dir should be gone.
+        assert not (old_artist_dir / "2024 - Album").exists()
+        assert not old_artist_dir.exists()
+
+    def test_non_empty_dir_not_removed(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """If a skipped file remains in the old dir, the dir is preserved."""
+        pairs = _make_album(tmp_path, "Artist", "Album", "2024", 2)
+        client, _ = self._client_with_album(
+            tmp_path, [t for _, t in pairs], _mock_engine, _mock_queue
+        )
+        old_album_dir = tmp_path / "Artist" / "2024 - Album"
+        # Place a collision at the destination of the first track.
+        dest_dir = tmp_path / "Artist" / "2024 - New Album"
+        dest_dir.mkdir(parents=True)
+        (dest_dir / "01 - Track 01.mp3").write_bytes(b"\xff\xfb" * 4)
+
+        resp = client.patch(
+            "/api/v1/albums/tags",
+            params={"album_artist": "Artist", "album": "Album"},
+            json={"album": "New Album", "skip_conflicts": True},
+        )
+        assert resp.status_code == 200
+        # Skipped file still lives in the old dir — dir must not be removed.
+        assert old_album_dir.is_dir()
