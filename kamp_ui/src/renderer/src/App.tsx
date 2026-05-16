@@ -217,6 +217,7 @@ export default function App(): React.JSX.Element {
         },
         () => {
           void loadLibrary().then(() => refreshOpenAlbum())
+          void loadQueue()
         },
         (done, total) => {
           setAlbumRenameProgress(total === done ? null : { done, total })

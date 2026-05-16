@@ -627,6 +627,8 @@ export const useStore = create<PlayerStore>((set, get) => ({
     // Clear progress, reload library so sidebar and album card reflect new names.
     set({ albumRenameProgress: null })
     await get().loadLibrary()
+    // Refresh the queue so any queued tracks show the updated artist/album name.
+    void get().loadQueue()
     // Re-select the open album under its new identity so the track list refreshes.
     const newArtist = opts.album_artist ?? albumArtist
     const newAlbum = opts.album ?? album
