@@ -401,7 +401,7 @@ class TestPatchAlbumTagsEndpoint:
         )
         assert resp.status_code == 503
 
-    def test_on_track_file_moved_called_per_track(
+    def test_on_album_tracks_moved_called_once_with_all_pairs(
         self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
     ) -> None:
         pairs = _make_album(tmp_path, "Artist", "Album", "2024", 3)
@@ -412,8 +412,8 @@ class TestPatchAlbumTagsEndpoint:
             index=db, engine=_mock_engine, queue=_mock_queue, library_path=tmp_path
         )
 
-        moved_pairs: list[tuple[Path, Path]] = []
-        app.state.on_track_file_moved = lambda old, new: moved_pairs.append((old, new))
+        batch_calls: list[list[tuple[Path, Path]]] = []
+        app.state.on_album_tracks_moved = lambda p: batch_calls.append(p)
 
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.patch(
@@ -422,7 +422,9 @@ class TestPatchAlbumTagsEndpoint:
             json={"album": "Renamed"},
         )
         assert resp.status_code == 200
-        assert len(moved_pairs) == 3
+        # Callback fires exactly once with all 3 pairs — not once-per-track
+        assert len(batch_calls) == 1
+        assert len(batch_calls[0]) == 3
 
     def test_empty_album_dir_removed_after_rename(
         self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock

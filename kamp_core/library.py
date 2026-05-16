@@ -336,7 +336,9 @@ class LibraryIndex:
         # sidecar files) with 600 permissions rather than the default 644.
         old_umask = os.umask(0o077)
         try:
-            conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+            conn = sqlite3.connect(
+                str(self._db_path), check_same_thread=False, timeout=30
+            )
         finally:
             os.umask(old_umask)
         conn.row_factory = sqlite3.Row

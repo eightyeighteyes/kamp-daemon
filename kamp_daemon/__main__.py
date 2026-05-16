@@ -980,7 +980,15 @@ def _cmd_daemon(
             lib_watcher.suppress_paths({old_path, new_path})
             lib_watcher.scan_now()
 
+    def _on_album_tracks_moved(pairs: "list[tuple[Path, Path]]") -> None:
+        """Batch variant for album rename: suppress all pairs, then one scan_now()."""
+        if lib_watcher is not None:
+            for old_p, new_p in pairs:
+                lib_watcher.suppress_paths({old_p, new_p})
+            lib_watcher.scan_now()
+
     app.state.on_track_file_moved = _on_track_file_moved
+    app.state.on_album_tracks_moved = _on_album_tracks_moved
 
     # --- Start uvicorn in a background thread ---
     # uvicorn.Server.serve() detects it is not on the main thread and skips

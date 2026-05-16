@@ -448,6 +448,9 @@ def create_app(
     # Wired by the daemon after create_app() to suppress watcher events and
     # trigger a direct scan following a tag-edit file move.
     app.state.on_track_file_moved = None
+    # Batch variant for album rename: suppress all moved pairs, then one scan.
+    # Signature: (pairs: list[tuple[Path, Path]]) -> None
+    app.state.on_album_tracks_moved = None
 
     # Wire play-state change callback directly — the engine fires it from its
     # background reader thread whenever mpv's pause property flips.
@@ -782,7 +785,11 @@ def create_app(
         skipped: list[str] = []
         failed: list[AlbumTagsTrackResult] = []
         total = len(tracks)
-        notify_track_moved = getattr(app.state, "on_track_file_moved", None)
+        notify_album_tracks_moved = getattr(app.state, "on_album_tracks_moved", None)
+        # Collect moves to notify the watcher after ALL writes are done.
+        # Calling scan_now() mid-loop would race with subsequent rename_album_track()
+        # write transactions — deferred notification eliminates the contention.
+        moved_path_pairs: list[tuple[Path, Path]] = []
 
         for i, track in enumerate(tracks):
             _broadcast({"type": "album.rename.progress", "done": i, "total": total})
@@ -822,11 +829,8 @@ def create_app(
                     old_path, new_path, new_album, new_album_artist, new_mtime
                 )
 
-                if notify_track_moved is not None and str(old_path) != str(new_path):
-                    try:
-                        notify_track_moved(old_path, new_path)
-                    except Exception:
-                        logger.exception("on_track_file_moved callback raised")
+                if str(old_path) != str(new_path):
+                    moved_path_pairs.append((old_path, new_path))
 
                 updated = index.get_track_by_id(track.id)
                 if updated is not None:
@@ -846,6 +850,14 @@ def create_app(
                 )
 
         _broadcast({"type": "album.rename.progress", "done": total, "total": total})
+
+        # All DB writes are done — notify the watcher with one batched call so
+        # suppressions are registered and exactly one scan_now() fires.
+        if notify_album_tracks_moved is not None and moved_path_pairs:
+            try:
+                notify_album_tracks_moved(moved_path_pairs)
+            except Exception:
+                logger.exception("on_album_tracks_moved callback raised")
 
         # Remove empty directories left behind by the moves.
         # Collect unique old album directories from every track that was actually moved
