@@ -574,7 +574,7 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
-        if old_path == new_path:
+        if str(old_path) == str(new_path):
             # Path unchanged — just update the title tag and DB.
             write_title_to_file(old_path, req.title)
             index.move_track(old_path, old_path, req.title, _t.time())
@@ -586,9 +586,11 @@ def create_app(
         # Detect case-only renames before the existence check: on case-insensitive
         # filesystems (HFS+, APFS, NTFS) new_path.exists() returns True for the
         # same inode, which would incorrectly trigger a 409 collision.
-        is_case_only = (
-            str(old_path).lower() == str(new_path).lower() and old_path != new_path
-        )
+        # Use str() for both comparisons — WindowsPath.__eq__ is case-insensitive,
+        # which would mis-classify a case-only rename as "same path" above.
+        is_case_only = str(old_path).lower() == str(new_path).lower() and str(
+            old_path
+        ) != str(new_path)
 
         if not is_case_only and new_path.exists():
             if not req.overwrite:
