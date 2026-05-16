@@ -142,7 +142,7 @@ export function AlbumMetaPanel({
         aria-hidden={!expanded}
       >
         <dl className="album-meta-rows">
-          {year && <MetaField label="YEAR" value={year} editMode={false} readOnly />}
+          {year && <MetaField label="YEAR" value={year} editMode={false} />}
           <MetaField
             label="GENRE"
             value={genre}
