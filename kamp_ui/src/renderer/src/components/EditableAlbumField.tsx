@@ -23,6 +23,10 @@ export function EditableAlbumField({
   const [saving, setSaving] = useState(false)
   const [shake, setShake] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Set to true by the Escape handler before blur() so commit() knows to skip saving.
+  // A ref (not state) is required because blur fires synchronously before React
+  // flushes the setDraft(value) state update.
+  const cancelRef = useRef(false)
 
   // Sync external value changes (after a save refreshes the album) back into local state.
   if (value !== prevValue) {
@@ -33,6 +37,10 @@ export function EditableAlbumField({
   if (!editMode) return renderStatic(value)
 
   const commit = async (): Promise<void> => {
+    if (cancelRef.current) {
+      cancelRef.current = false
+      return
+    }
     const trimmed = draft.trim()
     if (!trimmed) {
       // Empty string is invalid — revert and shake.
@@ -65,6 +73,7 @@ export function EditableAlbumField({
           inputRef.current?.blur()
         } else if (e.key === 'Escape') {
           e.stopPropagation()
+          cancelRef.current = true
           setDraft(value)
           inputRef.current?.blur()
         }

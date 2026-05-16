@@ -19,6 +19,7 @@ export function EditableTrackTitle({
   const [prevTitle, setPrevTitle] = useState(title)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const cancelRef = useRef(false)
 
   // Sync external title changes (e.g. after refreshOpenAlbum) back into local state.
   // Render-time update avoids the cascading-render issue of useEffect setState.
@@ -45,6 +46,10 @@ export function EditableTrackTitle({
   }
 
   const commit = async (): Promise<void> => {
+    if (cancelRef.current) {
+      cancelRef.current = false
+      return
+    }
     const trimmed = value.trim()
     if (!trimmed || trimmed === title || saving) return
     setSaving(true)
@@ -71,6 +76,7 @@ export function EditableTrackTitle({
           inputRef.current?.blur()
         } else if (e.key === 'Escape') {
           e.stopPropagation()
+          cancelRef.current = true
           setValue(title)
           inputRef.current?.blur()
         } else if (e.key === 'Tab') {
