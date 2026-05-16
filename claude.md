@@ -22,6 +22,9 @@
 - Document rationale in comments: succinctly explain *why* decisions are made
 - After completing a feature, before closing a pull request, retrospect about the development experience and update claude.md with lessons learned.
 
+## Coverage
+`fail_under` in `pyproject.toml` is set to **93%**. Keep actual coverage at or above **94%** — the gap exists to accommodate OS-specific branches (case-only renames, format-specific tag writes) that are legitimately untestable in CI. Do not let coverage slip below 94% in practice; do not chase the last few platform-only lines.
+
 # Agents
 - When designing a plan, query your available agents and interrogate all relevant agents for enhancements to your plan.
 

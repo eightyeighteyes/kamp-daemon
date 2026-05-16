@@ -54,10 +54,7 @@ export function TrackList(): React.JSX.Element | null {
   const patchTrackTitle = useStore((s) => s.patchTrackTitle)
   const patchAlbumTags = useStore((s) => s.patchAlbumTags)
   const albumRenameProgress = useStore((s) => s.albumRenameProgress)
-  const nextTrack = useStore((s) => s.player.next_track)
-  const lockedIds = new Set(
-    [currentTrack?.id, nextTrack?.id].filter((id): id is number => id != null)
-  )
+  const deferredOps = useStore((s) => s.deferredOps)
 
   const albumTitleRef = useRef<HTMLHeadingElement>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -302,7 +299,7 @@ export function TrackList(): React.JSX.Element | null {
                   trackId={track.id}
                   title={track.title}
                   editMode={albumEditMode}
-                  locked={lockedIds.has(track.id)}
+                  deferred={track.id in deferredOps}
                   onSave={async (trackId, newTitle) => {
                     const result = await patchTrackTitle(trackId, newTitle)
                     if (result?.collision) {

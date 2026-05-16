@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStore } from './store'
-import { connectStateStream } from './api/client'
+import { connectStateStream, getDeferredOps } from './api/client'
 import { ArtistPanel } from './components/ArtistPanel'
 import { BaseKampView } from './components/BaseKampView'
 import { ExtensionPanel } from './components/ExtensionPanel'
@@ -85,6 +85,7 @@ export default function App(): React.JSX.Element {
   const loadLibrary = useStore((s) => s.loadLibrary)
   const refreshOpenAlbum = useStore((s) => s.refreshOpenAlbum)
   const setAlbumRenameProgress = useStore((s) => s.setAlbumRenameProgress)
+  const clearDeferredOp = useStore((s) => s.clearDeferredOp)
   const loadUiState = useStore((s) => s.loadUiState)
   const loadConfig = useStore((s) => s.loadConfig)
   const applyServerState = useStore((s) => s.applyServerState)
@@ -214,6 +215,13 @@ export default function App(): React.JSX.Element {
           void loadUiState().then(() => loadLibrary())
           void loadQueue()
           void loadConfig()
+          // Reconcile pip state in case deferred_op.completed was missed
+          // while the WS was disconnected.
+          void getDeferredOps().then((ops) => {
+            const map: Record<number, number> = {}
+            for (const { track_id, op_id } of ops) map[track_id] = op_id
+            useStore.setState({ deferredOps: map })
+          })
         },
         () => {
           void loadLibrary().then(() => refreshOpenAlbum())
@@ -221,6 +229,10 @@ export default function App(): React.JSX.Element {
         },
         (done, total) => {
           setAlbumRenameProgress(total === done ? null : { done, total })
+        },
+        (trackId) => {
+          clearDeferredOp(trackId)
+          void refreshOpenAlbum()
         }
       )
     }

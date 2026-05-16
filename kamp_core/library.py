@@ -90,7 +90,7 @@ def _maybe_unprotect(text: str) -> str:
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 15
+_SCHEMA_VERSION = 16
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -176,6 +176,20 @@ CREATE TABLE IF NOT EXISTS album_favorites (
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT NOT NULL PRIMARY KEY,
     value TEXT NOT NULL
+);
+
+-- Deferred tag/rename operations queued while the target track is playing (KAMP-309).
+-- UNIQUE(track_id) enforces at-most-one pending op per track; a second edit while
+-- the first is still queued replaces the row via INSERT OR REPLACE so only the
+-- newest user intent survives to drain.
+CREATE TABLE IF NOT EXISTS deferred_ops (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_type      TEXT    NOT NULL,          -- 'track_retag' | 'album_retag'
+    track_id     INTEGER NOT NULL UNIQUE,
+    payload_json TEXT    NOT NULL,          -- pre-computed paths + new tag values
+    created_at   REAL    NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT
 );
 
 -- Enforce append-only invariant at the DB level so no code path can silently
@@ -308,6 +322,19 @@ class ScanResult:
     unchanged: int
     updated: int = 0
     new_tracks: list[Track] = field(default_factory=list)
+
+
+@dataclass
+class DeferredOp:
+    """A tag/rename operation queued while the target track was playing (KAMP-309)."""
+
+    id: int
+    op_type: str  # 'track_retag' | 'album_retag'
+    track_id: int
+    payload_json: str
+    created_at: float
+    attempts: int
+    last_error: str | None
 
 
 class LibraryIndex:
@@ -566,6 +593,23 @@ class LibraryIndex:
                 "CREATE INDEX IF NOT EXISTS tracks_album_idx ON tracks(album_artist, album)"
             )
             self._conn.execute("UPDATE schema_version SET version = 15")
+            self._conn.commit()
+            version = 15
+
+        if version < 16:
+            # v15 → v16: deferred_ops table for playing-track rename deferral (KAMP-309).
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS deferred_ops (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    op_type      TEXT    NOT NULL,
+                    track_id     INTEGER NOT NULL UNIQUE,
+                    payload_json TEXT    NOT NULL,
+                    created_at   REAL    NOT NULL,
+                    attempts     INTEGER NOT NULL DEFAULT 0,
+                    last_error   TEXT
+                )
+            """)
+            self._conn.execute("UPDATE schema_version SET version = 16")
             self._conn.commit()
 
     def _rebuild_fts(self) -> None:
@@ -1001,6 +1045,120 @@ class LibraryIndex:
                 ),
             )
         self._rebuild_fts()
+        self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Deferred ops (KAMP-309)
+    # ------------------------------------------------------------------
+
+    def queue_deferred_op(self, op_type: str, track_id: int, payload_json: str) -> int:
+        """Insert or replace a pending deferred operation for *track_id*.
+
+        UNIQUE(track_id) means a second edit while the first is still pending
+        replaces the earlier row so only the newest user intent survives to drain.
+        Returns the row id of the inserted/replaced row.
+        """
+        import time as _t
+
+        cur = self._conn.execute(
+            "INSERT OR REPLACE INTO deferred_ops"
+            " (op_type, track_id, payload_json, created_at) VALUES (?,?,?,?)",
+            (op_type, track_id, payload_json, _t.time()),
+        )
+        self._conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def pending_deferred_ops_for_track(self, track_id: int) -> list[DeferredOp]:
+        """Return pending ops for *track_id* in insertion order."""
+        rows = self._conn.execute(
+            "SELECT * FROM deferred_ops WHERE track_id=? ORDER BY id ASC",
+            (track_id,),
+        ).fetchall()
+        return [_row_to_deferred_op(r) for r in rows]
+
+    def all_pending_deferred_ops(self) -> list[DeferredOp]:
+        """Return all pending ops ordered by creation time.
+
+        ORDER BY created_at ASC is mandatory — it ensures chained edits for the
+        same track execute in the user's intended sequence and gives deterministic
+        behaviour for testing.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM deferred_ops ORDER BY created_at ASC, id ASC"
+        ).fetchall()
+        return [_row_to_deferred_op(r) for r in rows]
+
+    def complete_deferred_op(self, op_id: int) -> None:
+        """Delete a deferred op row after successful execution."""
+        self._conn.execute("DELETE FROM deferred_ops WHERE id=?", (op_id,))
+        self._conn.commit()
+
+    def fail_deferred_op(self, op_id: int, error: str) -> None:
+        """Bump attempt count and record *error* without deleting the row."""
+        self._conn.execute(
+            "UPDATE deferred_ops SET attempts=attempts+1, last_error=? WHERE id=?",
+            (error, op_id),
+        )
+        self._conn.commit()
+
+    def rewrite_deferred_op_old_path(
+        self, track_id: int, old_path_str: str, new_path_str: str
+    ) -> None:
+        """Update pending deferred_op payloads whose old_path matches *old_path_str*.
+
+        Called after a per-file move in an album rename so that any previously
+        queued op for the same track still points to the file's new location.
+        """
+        import json as _json
+
+        rows = self._conn.execute(
+            "SELECT id, payload_json FROM deferred_ops WHERE track_id=?",
+            (track_id,),
+        ).fetchall()
+        for row in rows:
+            payload = _json.loads(row["payload_json"])
+            if payload.get("old_path") == old_path_str:
+                payload["old_path"] = new_path_str
+                self._conn.execute(
+                    "UPDATE deferred_ops SET payload_json=? WHERE id=?",
+                    (_json.dumps(payload), row["id"]),
+                )
+        self._conn.commit()
+
+    def list_pending_deferred_ops_summary(self) -> list[dict[str, Any]]:
+        """Return minimal {op_id, track_id} dicts for frontend reconciliation."""
+        rows = self._conn.execute(
+            "SELECT id, track_id FROM deferred_ops ORDER BY id ASC"
+        ).fetchall()
+        return [{"op_id": r["id"], "track_id": r["track_id"]} for r in rows]
+
+    def update_track_after_album_drain(
+        self,
+        track_id: int,
+        new_path: Path,
+        album: str,
+        album_artist: str,
+        new_artist: str | None,
+        mtime: float,
+    ) -> None:
+        """Update a single track's path + album tags after a deferred album_retag drains."""
+        self._conn.execute(
+            "UPDATE tracks SET file_path=?, album=?, album_artist=?, file_mtime=?"
+            " WHERE id=?",
+            (str(new_path), album, album_artist, mtime, track_id),
+        )
+        if new_artist is not None:
+            self._conn.execute(
+                "UPDATE tracks SET artist=? WHERE id=?",
+                (new_artist, track_id),
+            )
+        # Rebuild FTS for the affected row.
+        self._conn.execute("DELETE FROM tracks_fts WHERE rowid=?", (track_id,))
+        self._conn.execute(
+            "INSERT INTO tracks_fts(rowid, title, artist, album_artist, album)"
+            " SELECT id, title, artist, album_artist, album FROM tracks WHERE id=?",
+            (track_id,),
+        )
         self._conn.commit()
 
     def remove_track(self, file_path: Path) -> None:
@@ -1518,6 +1676,18 @@ def _track_to_params(
         t.mb_recording_id,
         t.date_added,
         t.file_mtime,
+    )
+
+
+def _row_to_deferred_op(row: sqlite3.Row) -> DeferredOp:
+    return DeferredOp(
+        id=row["id"],
+        op_type=row["op_type"],
+        track_id=row["track_id"],
+        payload_json=row["payload_json"],
+        created_at=row["created_at"],
+        attempts=row["attempts"],
+        last_error=row["last_error"],
     )
 
 

@@ -719,3 +719,21 @@
   font-size: 14px;
   color: var(--text-dim);
 }
+
+.deferred-op-pip {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #7b82f5;
+  box-shadow: 0 0 4px 2px rgba(123, 130, 245, 0.4);
+  flex-shrink: 0;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.track-row-title--editable {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}

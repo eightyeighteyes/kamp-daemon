@@ -920,11 +920,45 @@ app.on('window-all-closed', () => {
 })
 
 // Kill the server and Now Playing helper when the app exits.
-// `will-quit` handles graceful quit; `process.on('exit')` is the synchronous
-// fallback that fires even if the event loop is torn down abruptly.
-app.on('will-quit', () => {
+// On POSIX, send SIGTERM so the daemon can flush deferred ops (5 s window),
+// then SIGKILL if it hasn't exited within 8 s.  On Windows there is no
+// catchable SIGTERM, so we fall through to the existing force-kill path.
+// `process.on('exit')` is the synchronous fallback for abrupt exits.
+app.on('will-quit', (event) => {
   stopNowPlayingHelper()
-  stopServer()
+
+  if (!serverProcess?.pid || process.platform === 'win32') {
+    stopServer()
+    return
+  }
+
+  // Prevent the app from quitting until the daemon exits or times out.
+  event.preventDefault()
+
+  const child = serverProcess
+  const pid = serverProcess.pid
+  serverProcess = null // prevent double-kill in process.on('exit')
+
+  const killTimer = setTimeout(() => {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {
+      /* already gone */
+    }
+    app.exit(0)
+  }, 8000)
+
+  child.on('exit', () => {
+    clearTimeout(killTimer)
+    app.exit(0)
+  })
+
+  try {
+    process.kill(-pid, 'SIGTERM')
+  } catch {
+    clearTimeout(killTimer)
+    app.exit(0)
+  }
 })
 process.on('exit', stopServer)
 

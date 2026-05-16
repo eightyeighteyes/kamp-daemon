@@ -6,6 +6,7 @@ export function NowPlayingView(): React.JSX.Element {
   const player = useStore((s) => s.player)
   const { current_track } = player
   const [artLoaded, setArtLoaded] = useState(false)
+  const deferredOps = useStore((s) => s.deferredOps)
   const albums = useStore((s) => s.library.albums)
   const selectAlbum = useStore((s) => s.selectAlbum)
   const selectArtist = useStore((s) => s.selectArtist)
@@ -51,7 +52,16 @@ export function NowPlayingView(): React.JSX.Element {
         />
       </div>
       <div className="now-playing-meta">
-        <div className="now-playing-title">{current_track.title}</div>
+        <div className="now-playing-title">
+          {current_track.title}
+          {current_track.id in deferredOps && (
+            <span
+              className="deferred-op-pip"
+              title="Will reorganize when playback ends"
+              aria-label="Pending rename"
+            />
+          )}
+        </div>
         <button className="now-playing-artist now-playing-link" onClick={goToArtist}>
           {current_track.artist}
         </button>
