@@ -357,7 +357,7 @@ class TestPatchTrackTagsEndpoint:
         assert resp.status_code == 404
         db.close()
 
-    def test_returns_403_for_currently_playing_track(
+    def test_returns_202_for_currently_playing_track(
         self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
     ) -> None:
         mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - Old.mp3"
@@ -378,14 +378,25 @@ class TestPatchTrackTagsEndpoint:
         )
         row = index.get_track_by_path(mp3)
         assert row is not None
-        # Simulate currently-playing.
         _mock_queue.current.return_value = row
 
         resp = client.patch(f"/api/v1/tracks/{row.id}/tags", json={"title": "New"})
-        assert resp.status_code == 403
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["deferred"] is True
+        assert "op_id" in data
+        # File NOT moved yet; deferred op row inserted.
+        assert mp3.exists()
+        ops = index.pending_deferred_ops_for_track(row.id)
+        assert len(ops) == 1
+        assert ops[0].op_type == "track_retag"
+        import json
+
+        payload = json.loads(ops[0].payload_json)
+        assert payload["title"] == "New"
         index.close()
 
-    def test_returns_403_for_lookahead_track(
+    def test_returns_202_for_lookahead_track(
         self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
     ) -> None:
         mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - Old.mp3"
@@ -406,12 +417,49 @@ class TestPatchTrackTagsEndpoint:
         )
         row = index.get_track_by_path(mp3)
         assert row is not None
-        # Simulate lookahead (N+1).
         _mock_queue.current.return_value = None
         _mock_queue.peek_next.return_value = row
 
         resp = client.patch(f"/api/v1/tracks/{row.id}/tags", json={"title": "New"})
-        assert resp.status_code == 403
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["deferred"] is True
+        ops = index.pending_deferred_ops_for_track(row.id)
+        assert len(ops) == 1
+        index.close()
+
+    def test_second_edit_while_locked_coalesces_row(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """A second PATCH while the track is locked replaces the first deferred op."""
+        mp3 = tmp_path / "Artist" / "2024 - Album" / "01 - Old.mp3"
+        mp3.parent.mkdir(parents=True)
+        _make_mp3(
+            mp3,
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track="1",
+            title="Old",
+        )
+        track = _sample_track(
+            mp3, title="Old", album_artist="Artist", album="Album", year="2024"
+        )
+        client, index = self._client_with_track(
+            tmp_path, track, _mock_engine, _mock_queue
+        )
+        row = index.get_track_by_path(mp3)
+        assert row is not None
+        _mock_queue.current.return_value = row
+
+        client.patch(f"/api/v1/tracks/{row.id}/tags", json={"title": "Draft"})
+        client.patch(f"/api/v1/tracks/{row.id}/tags", json={"title": "Final"})
+
+        ops = index.pending_deferred_ops_for_track(row.id)
+        assert len(ops) == 1
+        import json
+
+        assert json.loads(ops[0].payload_json)["title"] == "Final"
         index.close()
 
     def test_returns_409_on_collision_without_overwrite(
@@ -677,3 +725,206 @@ class TestPatchTrackTagsEndpoint:
         )
         assert resp.status_code == 200
         index.close()
+
+
+# ---------------------------------------------------------------------------
+# Album rename with locked tracks
+# ---------------------------------------------------------------------------
+
+
+def _make_album_for_tag_edit(
+    tmp_path: Path,
+    album_artist: str,
+    album: str,
+    year: str,
+    track_count: int,
+) -> list[tuple[Path, Track]]:
+    folder = tmp_path / album_artist / f"{year} - {album}"
+    folder.mkdir(parents=True)
+    result = []
+    for i in range(1, track_count + 1):
+        title = f"Track {i:02d}"
+        mp3 = folder / f"{i:02d} - {title}.mp3"
+        _make_mp3(
+            mp3,
+            album_artist=album_artist,
+            album=album,
+            year=year,
+            track=str(i),
+            title=title,
+        )
+        t = _sample_track(
+            mp3,
+            title=title,
+            album_artist=album_artist,
+            album=album,
+            year=year,
+            track_number=i,
+            mb_recording_id=f"rec-{i}",
+        )
+        result.append((mp3, t))
+    return result
+
+
+class TestAlbumRenameWithLockedTrack:
+    def _client_with_album(
+        self,
+        tmp_path: Path,
+        tracks: list[Track],
+        engine: MagicMock,
+        queue: MagicMock,
+    ) -> tuple[TestClient, LibraryIndex]:
+        db = LibraryIndex(tmp_path / "db.sqlite")
+        for track in tracks:
+            db.upsert_track(track)
+        app = create_app(index=db, engine=engine, queue=queue, library_path=tmp_path)
+        return TestClient(app, raise_server_exceptions=False), db
+
+    def test_album_rename_defers_locked_track(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """Locked track is deferred; unlocked tracks move immediately."""
+        pairs = _make_album_for_tag_edit(tmp_path, "Artist", "Old Album", "2024", 3)
+        track_objects = [t for _, t in pairs]
+        client, db = self._client_with_album(
+            tmp_path, track_objects, _mock_engine, _mock_queue
+        )
+        # Lock track 1 (index 0).
+        rows = db.tracks_for_album("Artist", "Old Album")
+        locked_row = next(r for r in rows if r.track_number == 1)
+        _mock_queue.current.return_value = locked_row
+
+        resp = client.patch(
+            "/api/v1/albums/tags",
+            params={"album_artist": "Artist", "album": "Old Album"},
+            json={"album": "New Album"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        # 2 unlocked tracks moved immediately.
+        assert len(body["moved"]) == 2
+        # 1 deferred.
+        assert len(body["deferred"]) == 1
+        assert body["deferred"][0]["track_id"] == locked_row.id
+        # Locked file stays at old path.
+        assert pairs[0][0].exists()
+        # Deferred op row created.
+        ops = db.pending_deferred_ops_for_track(locked_row.id)
+        assert len(ops) == 1
+        assert ops[0].op_type == "album_retag"
+        db.close()
+
+    def test_album_rename_in_place_defers_locked_track(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """In-place rename (same dir) defers locked track without moving files."""
+        # Use a template where the directory doesn't include album/artist so
+        # old_album_dir == new_album_dir even when album changes.
+        folder = tmp_path / "flat"
+        folder.mkdir()
+        pairs = []
+        for i in range(1, 3):
+            title = f"Track {i:02d}"
+            mp3 = folder / f"{i:02d} - {title}.mp3"
+            _make_mp3(
+                mp3,
+                album_artist="Artist",
+                album="Old Album",
+                year="2024",
+                track=str(i),
+                title=title,
+            )
+            t = _sample_track(
+                mp3,
+                title=title,
+                album_artist="Artist",
+                album="Old Album",
+                year="2024",
+                track_number=i,
+                mb_recording_id=f"rec-{i}",
+            )
+            pairs.append((mp3, t))
+
+        db = LibraryIndex(tmp_path / "db.sqlite")
+        for _, t in pairs:
+            db.upsert_track(t)
+        app = create_app(
+            index=db,
+            engine=_mock_engine,
+            queue=_mock_queue,
+            library_path=tmp_path,
+            config_values={"library.path_template": "flat/{track:02d} - {title}.{ext}"},
+        )
+        client = TestClient(app, raise_server_exceptions=False)
+
+        rows = db.tracks_for_album("Artist", "Old Album")
+        locked_row = next(r for r in rows if r.track_number == 1)
+        _mock_queue.current.return_value = locked_row
+
+        resp = client.patch(
+            "/api/v1/albums/tags",
+            params={"album_artist": "Artist", "album": "Old Album"},
+            json={"album": "New Album"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["deferred"]) == 1
+        assert body["deferred"][0]["track_id"] == locked_row.id
+        # Locked file stays put.
+        assert pairs[0][0].exists()
+        ops = db.pending_deferred_ops_for_track(locked_row.id)
+        assert len(ops) == 1
+        import json
+
+        payload = json.loads(ops[0].payload_json)
+        assert payload["new_album"] == "New Album"
+        db.close()
+
+    def test_album_rename_rewrites_deferred_op_paths(
+        self, tmp_path: Path, _mock_engine: MagicMock, _mock_queue: MagicMock
+    ) -> None:
+        """Existing track_retag deferred op path is updated after album rename moves the file."""
+        import json as _json
+
+        pairs = _make_album_for_tag_edit(tmp_path, "Artist", "Old Album", "2024", 2)
+        track_objects = [t for _, t in pairs]
+        client, db = self._client_with_album(
+            tmp_path, track_objects, _mock_engine, _mock_queue
+        )
+        rows = db.tracks_for_album("Artist", "Old Album")
+        # Queue a track_retag deferred op for track 2 (unlocked during album rename).
+        track2 = next(r for r in rows if r.track_number == 2)
+        old_path2 = str(track2.file_path)
+        new_path2 = str(track2.file_path.parent / "02 - New Title.mp3")
+        op_id = db.queue_deferred_op(
+            "track_retag",
+            track2.id,
+            _json.dumps(
+                {
+                    "old_path": old_path2,
+                    "new_path": new_path2,
+                    "title": "New Title",
+                    "is_case_only": False,
+                }
+            ),
+        )
+
+        # Lock track 1 only; track 2 will be moved by the album rename.
+        lock_row = next(r for r in rows if r.track_number == 1)
+        _mock_queue.current.return_value = lock_row
+
+        resp = client.patch(
+            "/api/v1/albums/tags",
+            params={"album_artist": "Artist", "album": "Old Album"},
+            json={"album": "New Album"},
+        )
+        assert resp.status_code == 200
+
+        # The deferred op for track 2 should have its old_path rewritten to the new location.
+        import json
+
+        ops = db.pending_deferred_ops_for_track(track2.id)
+        assert len(ops) == 1
+        payload = json.loads(ops[0].payload_json)
+        assert "New Album" in payload["old_path"]
+        db.close()

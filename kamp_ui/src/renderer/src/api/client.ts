@@ -325,16 +325,19 @@ export type TrackTagsCollision = {
   existing_track_id: number | null
 }
 
+export type TrackTagsDeferred = { deferred: true; op_id: number }
+
 export async function patchTrackTags(
   trackId: number,
   title: string,
   overwrite = false
-): Promise<Track | TrackTagsCollision> {
+): Promise<Track | TrackTagsCollision | TrackTagsDeferred> {
   const res = await fetch(`${BASE_URL}/api/v1/tracks/${trackId}/tags`, {
     method: 'PATCH',
     headers: _authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ title, overwrite })
   })
+  if (res.status === 202) return res.json() as Promise<TrackTagsDeferred>
   if (res.status === 409) {
     const detail = (await res.json()) as {
       detail: { target_path: string; existing_track_id: number | null }
@@ -368,6 +371,7 @@ export type AlbumTagsCollision = {
 
 export type AlbumTagsResult = {
   moved: Track[]
+  deferred: { track_id: number; op_id: number; old_path: string; new_path: string }[]
   skipped: string[]
   failed: { track_id: number; old_path: string; new_path: string; error: string | null }[]
 }
@@ -413,14 +417,32 @@ export type AlbumRenameProgressMessage = {
   done: number
   total: number
 }
-export type ServerMessage = StateMessage | LibraryChangedMessage | AlbumRenameProgressMessage
+export type DeferredOpCompletedMessage = {
+  type: 'deferred_op.completed'
+  op_id: number
+  track_id: number
+}
+export type ServerMessage =
+  | StateMessage
+  | LibraryChangedMessage
+  | AlbumRenameProgressMessage
+  | DeferredOpCompletedMessage
+
+export async function getDeferredOps(): Promise<{ op_id: number; track_id: number }[]> {
+  const res = await fetch(`${BASE_URL}/api/v1/deferred-ops`, {
+    headers: _authHeaders()
+  })
+  if (!res.ok) return []
+  return res.json() as Promise<{ op_id: number; track_id: number }[]>
+}
 
 export function connectStateStream(
   onState: (state: PlayerState) => void,
   onClose?: () => void,
   onOpen?: () => void,
   onLibraryChanged?: () => void,
-  onAlbumRenameProgress?: (done: number, total: number) => void
+  onAlbumRenameProgress?: (done: number, total: number) => void,
+  onDeferredOpCompleted?: (trackId: number, opId: number) => void
 ): () => void {
   const ws = new WebSocket(`${WS_BASE}/api/v1/ws`)
 
@@ -432,6 +454,8 @@ export function connectStateStream(
       if (msg.type === 'player.state') onState(msg)
       else if (msg.type === 'library.changed') onLibraryChanged?.()
       else if (msg.type === 'album.rename.progress') onAlbumRenameProgress?.(msg.done, msg.total)
+      else if (msg.type === 'deferred_op.completed')
+        onDeferredOpCompleted?.(msg.track_id, msg.op_id)
     } catch {
       // malformed message — ignore
     }

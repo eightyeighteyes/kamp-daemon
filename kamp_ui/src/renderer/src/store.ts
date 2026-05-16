@@ -138,6 +138,8 @@ type PlayerStore = {
     album: string,
     opts: { album?: string; album_artist?: string; overwrite?: boolean; skip_conflicts?: boolean }
   ) => Promise<AlbumTagsCollision | null>
+  deferredOps: Record<number, number> // track_id → op_id
+  clearDeferredOp: (trackId: number) => void
   setAlbumRenameProgress: (progress: { done: number; total: number } | null) => void
   refreshOpenAlbum: () => Promise<void>
   scanLibrary: () => Promise<void>
@@ -238,6 +240,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
   configValues: null,
   prefsOpen: false,
   prefsInitialTab: 'general',
+  deferredOps: {},
 
   setServerStatus: (status) => set({ serverStatus: status }),
 
@@ -614,10 +617,21 @@ export const useStore = create<PlayerStore>((set, get) => ({
   patchTrackTitle: async (trackId, title, overwrite = false) => {
     const result = await api.patchTrackTags(trackId, title, overwrite)
     if ('collision' in result) return result
+    if ('deferred' in result) {
+      set((s) => ({ deferredOps: { ...s.deferredOps, [trackId]: result.op_id } }))
+      return null
+    }
     await get().refreshOpenAlbum()
     void get().loadQueue()
     return null
   },
+
+  clearDeferredOp: (trackId) =>
+    set((s) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [trackId]: _removed, ...rest } = s.deferredOps
+      return { deferredOps: rest }
+    }),
 
   setAlbumRenameProgress: (progress) => set({ albumRenameProgress: progress }),
 
@@ -626,6 +640,13 @@ export const useStore = create<PlayerStore>((set, get) => ({
     if ('collision' in result) return result
     if (result.failed.length > 0) {
       console.error('[kamp] album rename: tag write failed for', result.failed)
+    }
+    if (result.deferred.length > 0) {
+      set((s) => {
+        const updated = { ...s.deferredOps }
+        for (const d of result.deferred) updated[d.track_id] = d.op_id
+        return { deferredOps: updated }
+      })
     }
     // Clear progress, reload library so sidebar and album card reflect new names.
     set({ albumRenameProgress: null })

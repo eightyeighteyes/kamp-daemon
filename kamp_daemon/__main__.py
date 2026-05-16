@@ -912,6 +912,28 @@ def _cmd_daemon(
 
     engine.on_track_end = _on_track_end_notify
 
+    # Outermost on_track_end wrapper: drain deferred ops for the just-finished
+    # track.  Capture queue.current() BEFORE the inner chain advances the queue.
+    _orig_on_track_end_drain = engine.on_track_end
+
+    def _on_track_end_drain(had_lookahead: bool) -> None:
+        finished = queue.current()
+        finished_id = finished.id if finished is not None else None
+        if _orig_on_track_end_drain is not None:
+            _orig_on_track_end_drain(had_lookahead)
+        if finished_id is not None:
+            from kamp_core.deferred_ops import drain_for_track
+
+            drain_for_track(
+                finished_id,
+                index,
+                lib_watcher,
+                app.state.notify_deferred_op_completed,
+                app.state.notify_library_changed,
+            )
+
+    engine.on_track_end = _on_track_end_drain
+
     # Prime the gapless lookahead for a restored session so the first automatic
     # advance is seamless.  All callbacks are wired by this point.
     if queue.current() is not None:
@@ -990,6 +1012,26 @@ def _cmd_daemon(
     app.state.on_track_file_moved = _on_track_file_moved
     app.state.on_album_tracks_moved = _on_album_tracks_moved
 
+    def _is_locked(track_id: int) -> bool:
+        c = queue.current()
+        la = queue.peek_next()
+        return (c is not None and c.id == track_id) or (
+            la is not None and la.id == track_id
+        )
+
+    # Execute any deferred ops that survived a crash or clean quit.  Skip tracks
+    # that are already playing (session resumed after crash) — they drain at
+    # track end instead.  Critical on Windows where open files cannot be renamed.
+    from kamp_core.deferred_ops import drain_all as _drain_all
+
+    _drain_all(
+        index,
+        lib_watcher,
+        app.state.notify_deferred_op_completed,
+        app.state.notify_library_changed,
+        is_locked=_is_locked,
+    )
+
     # --- Start uvicorn in a background thread ---
     # uvicorn.Server.serve() detects it is not on the main thread and skips
     # installing its own signal handlers, so there is no conflict with
@@ -1037,6 +1079,19 @@ def _cmd_daemon(
     # Signal uvicorn to drain in-flight requests and stop its event loop.
     uv_server.should_exit = True
     uv_thread.join(timeout=10)
+
+    # Flush remaining deferred ops before stopping.  5-second cap prevents an
+    # indefinite stall; any ops not drained survive in the DB for startup drain.
+    from kamp_core.deferred_ops import drain_all as _drain_all_shutdown
+
+    _drain_all_shutdown(
+        index,
+        lib_watcher,
+        app.state.notify_deferred_op_completed,
+        app.state.notify_library_changed,
+        timeout_secs=5.0,
+        is_locked=_is_locked,
+    )
 
     if lib_watcher is not None:
         lib_watcher.stop()

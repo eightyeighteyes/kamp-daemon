@@ -276,8 +276,17 @@ class AlbumTagsTrackResult(BaseModel):
     error: str | None = None
 
 
+class AlbumTagsDeferredResult(BaseModel):
+    track_id: int
+    op_id: int
+    old_path: str
+    new_path: str
+
+
 class AlbumTagsOut(BaseModel):
     moved: list[TrackOut]
+    # Tracks deferred because the file was playing when the PATCH arrived (KAMP-309).
+    deferred: list[AlbumTagsDeferredResult] = []
     # Paths of files left at their original location due to skip_conflicts.
     skipped: list[str]
     failed: list[AlbumTagsTrackResult]
@@ -469,6 +478,16 @@ def create_app(
     app.state.notify_play_state_changed = _notify_play_state_changed
     app.state.notify_bandcamp_sync_status = _notify_bandcamp_sync_status
     app.state.notify_pipeline_stage = _notify_pipeline_stage
+
+    def _notify_deferred_op_completed(track_id: int, op_id: int) -> None:
+        # Broadcast deferred_op.completed BEFORE library.changed (done in execute_op)
+        # so the frontend clears the pip before the library reload re-renders.
+        _broadcast(
+            {"type": "deferred_op.completed", "track_id": track_id, "op_id": op_id}
+        )
+
+    app.state.notify_deferred_op_completed = _notify_deferred_op_completed
+
     # Wired by the daemon after create_app() to suppress watcher events and
     # trigger a direct scan following a tag-edit file move.
     app.state.on_track_file_moved = None
@@ -573,17 +592,21 @@ def create_app(
         ]
 
     @app.patch("/api/v1/tracks/{track_id}/tags")
-    def patch_track_tags(track_id: int, req: "TrackTagsRequest") -> TrackOut:
+    def patch_track_tags(track_id: int, req: "TrackTagsRequest") -> Any:
         """Edit a track's title tag and rename the file on disk to match.
 
-        Returns the updated track on success.  Returns 403 if the track is
-        currently playing or queued as the gapless lookahead.  Returns 404 if
-        the track is not in the library.  Returns 409 with collision details if
-        the computed target path already exists on disk; send the request again
-        with overwrite=true to replace it.
+        Returns the updated track on success (200).  Returns 202 with
+        ``{"deferred": true, "op_id": N}`` if the track is currently playing or
+        queued as the gapless lookahead — the op runs after playback ends.
+        Returns 404 if the track is not in the library.  Returns 409 with
+        collision details if the computed target path already exists on disk;
+        send the request again with overwrite=true to replace it.
         """
+        import json as _json
         import shutil
         import time as _t
+
+        from fastapi.responses import JSONResponse
 
         from kamp_core.library import write_title_to_file
         from kamp_core.path_utils import make_path_vars, render_destination
@@ -591,14 +614,6 @@ def create_app(
         track = index.get_track_by_id(track_id)
         if track is None:
             raise HTTPException(status_code=404, detail="Track not found")
-
-        # Currently-playing and gapless-lookahead are locked in this slice.
-        current = queue.current()
-        lookahead = queue.peek_next()
-        if (current and current.id == track_id) or (
-            lookahead and lookahead.id == track_id
-        ):
-            raise HTTPException(status_code=403, detail="Pause to edit this track")
 
         lib_path: Path | None = _state["library_path"]
         if lib_path is None:
@@ -625,6 +640,32 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
+        # Detect case-only rename before the lock check so the payload is ready.
+        is_case_only = str(old_path).lower() == str(new_path).lower() and str(
+            old_path
+        ) != str(new_path)
+
+        # Defer if the track is currently playing or in the gapless-lookahead slot.
+        # On Windows, open files cannot be renamed; on macOS/Linux the inode stays
+        # valid but we defer everywhere for consistency (KAMP-309).
+        current = queue.current()
+        lookahead = queue.peek_next()
+        if (current and current.id == track_id) or (
+            lookahead and lookahead.id == track_id
+        ):
+            payload = _json.dumps(
+                {
+                    "old_path": str(old_path),
+                    "new_path": str(new_path),
+                    "title": req.title,
+                    "is_case_only": is_case_only,
+                }
+            )
+            op_id = index.queue_deferred_op("track_retag", track_id, payload)
+            return JSONResponse(
+                status_code=202, content={"deferred": True, "op_id": op_id}
+            )
+
         if str(old_path) == str(new_path):
             # Path unchanged — just update the title tag and DB.
             write_title_to_file(old_path, req.title)
@@ -634,14 +675,10 @@ def create_app(
             updated = index.get_track_by_id(track_id)
             return TrackOut.from_track(updated)  # type: ignore[arg-type]
 
-        # Detect case-only renames before the existence check: on case-insensitive
-        # filesystems (HFS+, APFS, NTFS) new_path.exists() returns True for the
-        # same inode, which would incorrectly trigger a 409 collision.
-        # Use str() for both comparisons — WindowsPath.__eq__ is case-insensitive,
-        # which would mis-classify a case-only rename as "same path" above.
-        is_case_only = str(old_path).lower() == str(new_path).lower() and str(
-            old_path
-        ) != str(new_path)
+        # is_case_only was computed before the lock check so it is available
+        # for both the deferred-op payload and the immediate rename path.
+        # On case-insensitive filesystems (HFS+, APFS, NTFS) new_path.exists()
+        # returns True for the same inode, which would incorrectly trigger a 409.
 
         if not is_case_only and new_path.exists():
             if not req.overwrite:
@@ -686,6 +723,11 @@ def create_app(
         _notify_library_changed()
         updated = index.get_track_by_id(track_id)
         return TrackOut.from_track(updated)  # type: ignore[arg-type]
+
+    @app.get("/api/v1/deferred-ops")
+    def get_deferred_ops() -> list[dict[str, Any]]:
+        """Return pending deferred ops for frontend reconciliation on WS reconnect."""
+        return index.list_pending_deferred_ops_summary()
 
     @app.post("/api/v1/tracks/favorite")
     def set_track_favorite(req: FavoriteRequest) -> dict[str, Any]:
@@ -777,10 +819,22 @@ def create_app(
 
         total = len(tracks)
         moved: list[TrackOut] = []
+        deferred: list[AlbumTagsDeferredResult] = []
         skipped: list[str] = []
         failed: list[AlbumTagsTrackResult] = []
         notify_album_tracks_moved = getattr(app.state, "on_album_tracks_moved", None)
         moved_path_pairs: list[tuple[Path, Path]] = []
+
+        # Check whether any track in the album is locked (currently playing or in
+        # the gapless-lookahead slot).  When any track is locked the atomic
+        # directory rename is skipped in favour of per-file moves so the locked
+        # track's file is never touched until its deferred op drains (KAMP-309).
+        def _is_track_locked(tid: int) -> bool:
+            c = queue.current()
+            la = queue.peek_next()
+            return (c is not None and c.id == tid) or (la is not None and la.id == tid)
+
+        any_locked = any(_is_track_locked(t.id) for t in tracks)
 
         if old_album_dir == new_album_dir:
             # Tags changed but the path template produces the same directory.
@@ -793,6 +847,30 @@ def create_app(
                 # When the per-track artist matches the old album_artist, update it
                 # too — keeps TPE1/artist in sync with TPE2/album_artist.
                 new_artist = new_album_artist if track.artist == album_artist else None
+                if _is_track_locked(track.id):
+                    op_id = index.queue_deferred_op(
+                        "album_retag",
+                        track.id,
+                        _json.dumps(
+                            {
+                                "old_path": str(old_path),
+                                "new_path": str(new_path),
+                                "new_album": new_album,
+                                "new_album_artist": new_album_artist,
+                                "new_artist": new_artist,
+                                "is_case_only": False,
+                            }
+                        ),
+                    )
+                    deferred.append(
+                        AlbumTagsDeferredResult(
+                            track_id=track.id,
+                            op_id=op_id,
+                            old_path=str(old_path),
+                            new_path=str(new_path),
+                        )
+                    )
+                    continue
                 try:
                     write_album_tags_to_file(
                         old_path, new_album, new_album_artist, artist=new_artist
@@ -831,103 +909,190 @@ def create_app(
             # Happy path: target directory does not exist — atomic directory rename.
             _broadcast({"type": "album.rename.progress", "done": 0, "total": total})
 
-            old_artist_dir = old_album_dir.parent
-            new_artist_dir = new_album_dir.parent
-
-            # When only the artist component changes and the old artist directory
-            # contains nothing else, rename at the artist level in one syscall.
-            # This matches the user's expectation: "Artist A/" → "Artist B/" directly,
-            # rather than mkdir("Artist B"), rename album dir, rmdir("Artist A").
-            try:
-                exclusive = not any(
-                    e.name not in _OS_METADATA_NAMES and e.name != old_album_dir.name
-                    for e in old_artist_dir.iterdir()
-                )
-            except OSError:  # pragma: no cover
-                exclusive = False
-
-            rename_at_artist_level = (
-                old_album_dir.name == new_album_dir.name  # only artist dir changed
-                and old_artist_dir != new_artist_dir
-                and not new_artist_dir.exists()
-                and old_artist_dir != lib_path
-                and lib_path in old_artist_dir.parents
-                and exclusive
-            )
-
-            if rename_at_artist_level:
-                src, dst = old_artist_dir, new_artist_dir
-            else:
+            if any_locked:
+                # Cannot do atomic rename while any track is playing.  Fall back to
+                # per-file moves so locked files stay in place until deferred ops drain.
                 new_album_dir.parent.mkdir(parents=True, exist_ok=True)
-                src, dst = old_album_dir, new_album_dir
-
-            is_case_only = str(src).lower() == str(dst).lower() and str(src) != str(dst)
-            if (
-                is_case_only
-            ):  # pragma: no cover — macOS HFS+ routes this to collision path
-                tmp = src.with_name(f"kamp_tmp_{src.name}")
-                os.rename(str(src), str(tmp))
-                os.rename(str(tmp), str(dst))
-            else:
-                os.rename(str(src), str(dst))
-
-            # Files are now under new_album_dir; write tags and bulk-update DB.
-            # The directory rename already succeeded, so every file is at its new
-            # path regardless of whether tag-writing succeeds.  Always include the
-            # pair in db_pairs (DB must reflect the new path) and update the queue,
-            # but report tag-write failures in failed[] rather than moved[].
-            new_mtime = _t.time()
-            db_pairs = []
-            for i, (track, (old_path, _)) in enumerate(zip(tracks, track_dest)):
-                _broadcast({"type": "album.rename.progress", "done": i, "total": total})
-                new_path = new_album_dir / old_path.relative_to(old_album_dir)
-                new_artist = new_album_artist if track.artist == album_artist else None
-                tag_write_ok = True
-                try:
-                    write_album_tags_to_file(
-                        new_path, new_album, new_album_artist, artist=new_artist
+                new_album_dir.mkdir(exist_ok=True)
+                new_mtime = _t.time()
+                db_pairs = []
+                for i, (track, (old_path, new_path)) in enumerate(
+                    zip(tracks, track_dest)
+                ):
+                    _broadcast(
+                        {"type": "album.rename.progress", "done": i, "total": total}
                     )
-                except Exception as exc:
-                    logger.exception("tag write failed for %s", new_path)
-                    tag_write_ok = False
-                    failed.append(
-                        AlbumTagsTrackResult(
-                            track_id=track.id,
-                            old_path=str(old_path),
-                            new_path=str(new_path),
-                            error=str(exc),
+                    new_artist = (
+                        new_album_artist if track.artist == album_artist else None
+                    )
+                    if _is_track_locked(track.id):
+                        op_id = index.queue_deferred_op(
+                            "album_retag",
+                            track.id,
+                            _json.dumps(
+                                {
+                                    "old_path": str(old_path),
+                                    "new_path": str(new_path),
+                                    "new_album": new_album,
+                                    "new_album_artist": new_album_artist,
+                                    "new_artist": new_artist,
+                                    "is_case_only": False,
+                                }
+                            ),
                         )
+                        deferred.append(
+                            AlbumTagsDeferredResult(
+                                track_id=track.id,
+                                op_id=op_id,
+                                old_path=str(old_path),
+                                new_path=str(new_path),
+                            )
+                        )
+                        continue
+                    try:
+                        write_album_tags_to_file(
+                            old_path, new_album, new_album_artist, artist=new_artist
+                        )
+                        new_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.move(str(old_path), str(new_path))
+                        index.rewrite_deferred_op_old_path(
+                            track.id, str(old_path), str(new_path)
+                        )
+                        db_pairs.append((old_path, new_path))
+                        moved_path_pairs.append((old_path, new_path))
+                        queue.update_track_album_tags(
+                            old_path,
+                            new_path,
+                            new_album,
+                            new_album_artist,
+                            new_artist=new_artist,
+                        )
+                        updated = index.get_track_by_id(track.id)
+                        if updated is not None:
+                            moved.append(TrackOut.from_track(updated))
+                    except Exception as exc:
+                        logger.exception("album per-file move failed for %s", old_path)
+                        failed.append(
+                            AlbumTagsTrackResult(
+                                track_id=track.id,
+                                old_path=str(old_path),
+                                new_path=str(new_path),
+                                error=str(exc),
+                            )
+                        )
+                if db_pairs:
+                    index.rename_album_tracks_bulk(
+                        db_pairs,
+                        new_album,
+                        new_album_artist,
+                        new_mtime,
+                        old_album_artist=album_artist,
                     )
-                db_pairs.append((old_path, new_path))
-                moved_path_pairs.append((old_path, new_path))
-                queue.update_track_album_tags(
-                    old_path,
-                    new_path,
+            else:
+                old_artist_dir = old_album_dir.parent
+                new_artist_dir = new_album_dir.parent
+
+                # When only the artist component changes and the old artist directory
+                # contains nothing else, rename at the artist level in one syscall.
+                # This matches the user's expectation: "Artist A/" → "Artist B/" directly,
+                # rather than mkdir("Artist B"), rename album dir, rmdir("Artist A").
+                try:
+                    exclusive = not any(
+                        e.name not in _OS_METADATA_NAMES
+                        and e.name != old_album_dir.name
+                        for e in old_artist_dir.iterdir()
+                    )
+                except OSError:  # pragma: no cover
+                    exclusive = False
+
+                rename_at_artist_level = (
+                    old_album_dir.name == new_album_dir.name  # only artist dir changed
+                    and old_artist_dir != new_artist_dir
+                    and not new_artist_dir.exists()
+                    and old_artist_dir != lib_path
+                    and lib_path in old_artist_dir.parents
+                    and exclusive
+                )
+
+                if rename_at_artist_level:
+                    src, dst = old_artist_dir, new_artist_dir
+                else:
+                    new_album_dir.parent.mkdir(parents=True, exist_ok=True)
+                    src, dst = old_album_dir, new_album_dir
+
+                is_case_only = str(src).lower() == str(dst).lower() and str(src) != str(
+                    dst
+                )
+                if (
+                    is_case_only
+                ):  # pragma: no cover — macOS HFS+ routes this to collision path
+                    tmp = src.with_name(f"kamp_tmp_{src.name}")
+                    os.rename(str(src), str(tmp))
+                    os.rename(str(tmp), str(dst))
+                else:
+                    os.rename(str(src), str(dst))
+
+                # Files are now under new_album_dir; write tags and bulk-update DB.
+                # The directory rename already succeeded, so every file is at its new
+                # path regardless of whether tag-writing succeeds.  Always include the
+                # pair in db_pairs (DB must reflect the new path) and update the queue,
+                # but report tag-write failures in failed[] rather than moved[].
+                new_mtime = _t.time()
+                db_pairs = []
+                for i, (track, (old_path, _)) in enumerate(zip(tracks, track_dest)):
+                    _broadcast(
+                        {"type": "album.rename.progress", "done": i, "total": total}
+                    )
+                    new_path = new_album_dir / old_path.relative_to(old_album_dir)
+                    new_artist = (
+                        new_album_artist if track.artist == album_artist else None
+                    )
+                    tag_write_ok = True
+                    try:
+                        write_album_tags_to_file(
+                            new_path, new_album, new_album_artist, artist=new_artist
+                        )
+                    except Exception as exc:
+                        logger.exception("tag write failed for %s", new_path)
+                        tag_write_ok = False
+                        failed.append(
+                            AlbumTagsTrackResult(
+                                track_id=track.id,
+                                old_path=str(old_path),
+                                new_path=str(new_path),
+                                error=str(exc),
+                            )
+                        )
+                    db_pairs.append((old_path, new_path))
+                    moved_path_pairs.append((old_path, new_path))
+                    queue.update_track_album_tags(
+                        old_path,
+                        new_path,
+                        new_album,
+                        new_album_artist,
+                        new_artist=new_artist,
+                    )
+                    if tag_write_ok:
+                        updated = index.get_track_by_id(track.id)
+                        if updated is not None:
+                            moved.append(TrackOut.from_track(updated))
+
+                index.rename_album_tracks_bulk(
+                    db_pairs,
                     new_album,
                     new_album_artist,
-                    new_artist=new_artist,
+                    new_mtime,
+                    old_album_artist=album_artist,
                 )
-                if tag_write_ok:
-                    updated = index.get_track_by_id(track.id)
-                    if updated is not None:
-                        moved.append(TrackOut.from_track(updated))
 
-            index.rename_album_tracks_bulk(
-                db_pairs,
-                new_album,
-                new_album_artist,
-                new_mtime,
-                old_album_artist=album_artist,
-            )
-
-            # Album-level rename: clean up old artist dir if now empty.
-            # (Artist-level rename already removed it by renaming the dir itself.)
-            if not rename_at_artist_level:
-                _scrub_os_metadata(old_artist_dir)
-                try:
-                    old_artist_dir.rmdir()
-                except OSError:
-                    pass
+                # Album-level rename: clean up old artist dir if now empty.
+                # (Artist-level rename already removed it by renaming the dir itself.)
+                if not rename_at_artist_level:
+                    _scrub_os_metadata(old_artist_dir)
+                    try:
+                        old_artist_dir.rmdir()
+                    except OSError:
+                        pass
 
         else:
             # Target directory already exists — collision.
@@ -949,6 +1114,30 @@ def create_app(
                     skipped.append(str(old_path))
                     continue
                 new_artist = new_album_artist if track.artist == album_artist else None
+                if _is_track_locked(track.id):
+                    op_id = index.queue_deferred_op(
+                        "album_retag",
+                        track.id,
+                        _json.dumps(
+                            {
+                                "old_path": str(old_path),
+                                "new_path": str(new_path),
+                                "new_album": new_album,
+                                "new_album_artist": new_album_artist,
+                                "new_artist": new_artist,
+                                "is_case_only": False,
+                            }
+                        ),
+                    )
+                    deferred.append(
+                        AlbumTagsDeferredResult(
+                            track_id=track.id,
+                            op_id=op_id,
+                            old_path=str(old_path),
+                            new_path=str(new_path),
+                        )
+                    )
+                    continue
                 try:
                     write_album_tags_to_file(
                         old_path, new_album, new_album_artist, artist=new_artist
@@ -958,6 +1147,9 @@ def create_app(
                             index.remove_track(new_path)
                         new_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.move(str(old_path), str(new_path))
+                        index.rewrite_deferred_op_old_path(
+                            track.id, str(old_path), str(new_path)
+                        )
                     db_pairs.append((old_path, new_path))
                     moved_path_pairs.append((old_path, new_path))
                     queue.update_track_album_tags(
@@ -1010,7 +1202,9 @@ def create_app(
                 logger.exception("on_album_tracks_moved callback raised")
 
         _notify_library_changed()
-        return AlbumTagsOut(moved=moved, skipped=skipped, failed=failed)
+        return AlbumTagsOut(
+            moved=moved, deferred=deferred, skipped=skipped, failed=failed
+        )
 
     @app.get("/api/v1/album-art")
     def get_album_art(
