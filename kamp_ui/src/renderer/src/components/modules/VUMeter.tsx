@@ -6,7 +6,7 @@
  *
  * Layout / zone coloring: KAMP-321 (CSS)
  * Imperative draw + decay: KAMP-322 (this file)
- * Peak hold:               KAMP-323 (extends VUMeterHandle.draw)
+ * Peak hold:               KAMP-323 (this file)
  */
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { useStereoRack } from './StereoRackContext'
@@ -25,6 +25,12 @@ const DB_RANGE = 60 // 0 - (-60)
 // 18 dB/sec linear decay rate (per spec).
 const DECAY_DB_PER_SEC = 18
 
+// Pixel step per segment: 3px width + 2px gap.
+const SEGMENT_STEP_PX = 5
+
+// Hold duration before the peak indicator begins fading (ms).
+const PEAK_HOLD_MS = 1500
+
 // Pre-built index array — stable reference avoids re-creating on every render.
 const SEGMENT_INDICES = Array.from({ length: NUM_SEGMENTS }, (_, i) => i)
 
@@ -37,7 +43,7 @@ export type VUMeterHandle = {
   /**
    * Called every rAF frame by VUMeterPair's registered draw callback.
    * levelDb: current loudness reading (LUFS ≈ dBFS), -Infinity when idle.
-   * peakDb:  reserved for KAMP-323 peak hold; accepted but unused here.
+   * peakDb:  unused — peak hold is computed locally from levelDb.
    * timestamp: DOMHighResTimeStamp from requestAnimationFrame.
    */
   draw: (levelDb: number, peakDb: number, timestamp: number) => void
@@ -52,7 +58,7 @@ type VUMeterProps = {
 // ---------------------------------------------------------------------------
 
 export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter({ channel }, ref) {
-  const { isPlaying } = useStereoRack()
+  const { isPlaying, isPaused } = useStereoRack()
   const isIdle = !isPlaying
 
   // Refs to DOM segment elements for direct class manipulation.
@@ -61,6 +67,33 @@ export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter(
   // Per-frame mutable state — never in React state.
   const displayLevelRef = useRef<number>(-Infinity)
   const lastTimestampRef = useRef<number>(0)
+
+  // Peak hold state — segment index (1-based, 0 = idle) and when it was last set.
+  const peakSegmentRef = useRef<number>(0)
+  const peakTimestampRef = useRef<number>(0)
+  const peakElRef = useRef<HTMLDivElement | null>(null)
+
+  // Track pause state in a ref so draw() can read it without a React subscription.
+  // On pause, zero peakTimestampRef so the fade fires on the very next draw frame.
+  const isPausedRef = useRef<boolean>(false)
+  useEffect(() => {
+    isPausedRef.current = isPaused
+    if (isPaused) peakTimestampRef.current = 0
+  }, [isPaused])
+
+  // Wire transitionend so the peak hold element is hidden after the 600ms fade.
+  useEffect(() => {
+    const el = peakElRef.current
+    if (!el) return
+    const onEnd = (e: TransitionEvent): void => {
+      if (e.propertyName !== 'opacity') return
+      if (!el.classList.contains('fading')) return
+      el.classList.remove('fading')
+      peakSegmentRef.current = 0
+    }
+    el.addEventListener('transitionend', onEnd)
+    return () => el.removeEventListener('transitionend', onEnd)
+  }, [])
 
   useImperativeHandle(ref, () => ({
     draw(levelDb, _peakDb, timestamp) {
@@ -95,6 +128,34 @@ export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter(
           el.classList.remove('active')
         }
       }
+
+      // --- Peak hold ---
+      const peakEl = peakElRef.current
+      if (peakEl) {
+        if (!isPausedRef.current && count > 0 && count >= peakSegmentRef.current) {
+          // New or equal peak: snap to position with no transition.
+          // Remove .fading first so the opacity jump is instant.
+          peakEl.classList.remove('fading')
+          peakEl.style.opacity = '1'
+          const offset = `${(count - 1) * SEGMENT_STEP_PX}px`
+          if (channel === 'L') {
+            peakEl.style.left = offset
+            peakEl.style.right = ''
+          } else {
+            peakEl.style.right = offset
+            peakEl.style.left = ''
+          }
+          peakSegmentRef.current = count
+          peakTimestampRef.current = timestamp
+        } else if (peakSegmentRef.current > 0) {
+          // Bar has fallen below peak — start fade once hold duration elapses.
+          const elapsed = timestamp - peakTimestampRef.current
+          if (elapsed >= PEAK_HOLD_MS && !peakEl.classList.contains('fading')) {
+            peakEl.classList.add('fading')
+            peakEl.style.opacity = '0'
+          }
+        }
+      }
     }
   }))
 
@@ -110,8 +171,7 @@ export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter(
             }}
           />
         ))}
-        {/* Peak hold floats over the bar; driven imperatively in KAMP-323 */}
-        <div className="vu-peak-hold" />
+        <div className="vu-peak-hold" ref={peakElRef} />
       </div>
       <span className="vu-label">{channel}</span>
     </div>
