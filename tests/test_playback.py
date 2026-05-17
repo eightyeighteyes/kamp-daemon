@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import time
@@ -1367,3 +1368,147 @@ class TestMpvPlaybackEngine:
         engine, _ = _make_engine()
         engine._handle_event({"event": "property-change", "name": "pause", "data": 1})
         assert engine.state.playing is False
+
+    # ------------------------------------------------------------------
+    # KAMP-319: ebur128 audio level polling
+    # ------------------------------------------------------------------
+
+    def test_start_mpv_astats_ametadata_filter_chain(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """mpv must be launched with the astats+ametadata filter graph."""
+        from kamp_core.playback import _LEVEL_FILTER_GRAPH
+
+        monkeypatch.setattr("kamp_core.playback.sys.platform", "darwin")
+        fake_proc = MagicMock()
+        fake_proc.stdout = io.BytesIO(b"")
+        with (
+            patch(
+                "kamp_core.playback.subprocess.Popen", return_value=fake_proc
+            ) as mock_popen,
+            patch("kamp_core.playback._WindowsJobObject"),
+            patch("kamp_core.playback._make_ipc_transport", return_value=MagicMock()),
+            patch("kamp_core.playback.threading.Thread"),
+        ):
+            MpvPlaybackEngine()
+        popen_args, _ = mock_popen.call_args
+        cmd = popen_args[0]
+        expected_af = (
+            f"--af=lavfi=graph=%{len(_LEVEL_FILTER_GRAPH)}%{_LEVEL_FILTER_GRAPH}"
+        )
+        assert expected_af in cmd
+
+    def test_start_mpv_msg_level_ffmpeg_verbose(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """mpv must be launched with --msg-level=ffmpeg=v to surface ametadata output."""
+        monkeypatch.setattr("kamp_core.playback.sys.platform", "darwin")
+        fake_proc = MagicMock()
+        fake_proc.stdout = io.BytesIO(b"")
+        with (
+            patch(
+                "kamp_core.playback.subprocess.Popen", return_value=fake_proc
+            ) as mock_popen,
+            patch("kamp_core.playback._WindowsJobObject"),
+            patch("kamp_core.playback._make_ipc_transport", return_value=MagicMock()),
+            patch("kamp_core.playback.threading.Thread"),
+        ):
+            MpvPlaybackEngine()
+        popen_args, _ = mock_popen.call_args
+        cmd = popen_args[0]
+        assert "--msg-level=ffmpeg=v" in cmd
+
+    def test_start_mpv_stdout_is_piped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """mpv stdout must be PIPE so _stdout_reader_loop can read ametadata output."""
+        import subprocess as _sp
+
+        monkeypatch.setattr("kamp_core.playback.sys.platform", "darwin")
+        fake_proc = MagicMock()
+        fake_proc.stdout = io.BytesIO(b"")
+        with (
+            patch(
+                "kamp_core.playback.subprocess.Popen", return_value=fake_proc
+            ) as mock_popen,
+            patch("kamp_core.playback._WindowsJobObject"),
+            patch("kamp_core.playback._make_ipc_transport", return_value=MagicMock()),
+            patch("kamp_core.playback.threading.Thread"),
+        ):
+            MpvPlaybackEngine()
+        _, popen_kwargs = mock_popen.call_args
+        assert popen_kwargs.get("stdout") == _sp.PIPE
+
+    def test_stdout_reader_fires_stereo_on_audio_level(self) -> None:
+        """_stdout_reader_loop emits (left_db, right_db) from astats per-channel output."""
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda l, r: received.append((l, r))
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=-18.5\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.2.RMS_level=-19.1\n"
+            b"[ffmpeg] Parsed_ametadata_0: frame:1    pts:2205    pts_time:0.05\n"
+        )
+        engine._stdout_reader_loop(io.BytesIO(lines))
+        assert len(received) == 1
+        assert received[0][0] == pytest.approx(-18.5)  # left
+        assert received[0][1] == pytest.approx(-19.1)  # right
+
+    def test_stdout_reader_mirrors_channel_1_for_mono(self) -> None:
+        """Mono files (channel 1 only) must mirror left to right."""
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda l, r: received.append((l, r))
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=-22.0\n"
+            b"[ffmpeg] Parsed_ametadata_0: frame:1    pts:2205    pts_time:0.05\n"
+        )
+        engine._stdout_reader_loop(io.BytesIO(lines))
+        assert received == [(-22.0, -22.0)]
+
+    def test_stdout_reader_ignores_non_rms_keys(self) -> None:
+        """Non-RMS_level astats keys and unrelated lines must not fire on_audio_level."""
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda l, r: received.append((l, r))
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.Peak_level=-14.0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.Overall.RMS_level=-20.0\n"
+        )
+        engine._stdout_reader_loop(io.BytesIO(lines))
+        assert received == []
+
+    def test_stdout_reader_handles_malformed_float(self) -> None:
+        """A non-numeric RMS_level value clamps to -120.0."""
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda l, r: received.append((l, r))
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=nan_bad\n"
+            b"[ffmpeg] Parsed_ametadata_0: frame:1    pts:2205    pts_time:0.05\n"
+        )
+        engine._stdout_reader_loop(io.BytesIO(lines))
+        assert received == [(-120.0, -120.0)]
+
+    def test_stdout_reader_no_error_when_callback_is_none(self) -> None:
+        """_stdout_reader_loop must not raise when on_audio_level is None."""
+        engine, _ = _make_engine()
+        assert engine.on_audio_level is None
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=-18.5\n"
+            b"[ffmpeg] Parsed_ametadata_0: frame:1    pts:2205    pts_time:0.05\n"
+        )
+        engine._stdout_reader_loop(io.BytesIO(lines))  # should not raise
+
+    def test_no_level_poll_branch_in_handle_event(self) -> None:
+        """Events with request_id=9999 (old poll id) must not trigger on_audio_level."""
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
+        engine._handle_event(
+            {"request_id": 9999, "error": "success", "data": {"lavfi.r128.M": "-18.5"}}
+        )
+        assert received == []

@@ -11,6 +11,7 @@ import ctypes
 import json
 import logging
 import random
+import re
 import secrets
 import shutil
 import socket
@@ -795,6 +796,19 @@ _OBSERVED: list[tuple[int, str]] = [
     (3, "pause"),
 ]
 
+# Per-channel RMS at ~20 Hz (2205-sample frames at 44.1 kHz).
+# measure_overall=none and measure_perchannel=RMS_level keep stdout minimal.
+_LEVEL_FILTER_GRAPH = (
+    "asetnsamples=n=2205:p=0"
+    ",astats=metadata=1:reset=1:measure_perchannel=RMS_level:measure_overall=none"
+    ",ametadata=print"
+)
+
+# Matches ametadata=print key=value lines on mpv stdout (--msg-level=ffmpeg=v).
+_AMETADATA_RE = re.compile(r"\[ffmpeg\] Parsed_ametadata_\d+: ([\w.]+)=(.+)")
+# Matches ametadata frame-header lines (frame:N pts:M pts_time:T).
+_FRAME_HDR_RE = re.compile(r"\[ffmpeg\] Parsed_ametadata_\d+: frame:\d+")
+
 
 class MpvPlaybackEngine:
     """Controls mpv via its JSON IPC channel.
@@ -832,6 +846,8 @@ class MpvPlaybackEngine:
         self.on_track_end: Callable[[bool], None] | None = None
         self.on_file_loaded: Callable[[], None] | None = None
         self.on_play_state_changed: Callable[[], None] | None = None
+        # Called with (left_db, right_db); for mono, both values are identical.
+        self.on_audio_level: Callable[[float, float], None] | None = None
         self._mpv_bin = mpv_bin
         self._proc: subprocess.Popen[bytes] | None = None
         # Win32 Job Object that the spawned mpv is assigned to so it dies
@@ -840,6 +856,7 @@ class MpvPlaybackEngine:
         self._job: _WindowsJobObject | None = None
         self._ipc: _IPCTransport = _make_ipc_transport()
         self._reader_thread: threading.Thread | None = None
+        self._stdout_reader_thread: threading.Thread | None = None
         # See class docstring for the locking contract. Plain Lock (not RLock):
         # no callback ever runs under this lock, so reentry is impossible and
         # an RLock would only mask accidental re-acquisitions.
@@ -888,8 +905,16 @@ class MpvPlaybackEngine:
                 # subprocess via MPRemoteCommandCenter (registered by the process
                 # that owns MPNowPlayingInfoCenter, which is now the helper).
                 "--input-media-keys=no",
+                # Surface ametadata=print output (AV_LOG_VERBOSE) on stdout so
+                # _stdout_reader_loop can parse per-channel RMS at ~20 Hz
+                # without polling the IPC socket.
+                "--msg-level=ffmpeg=v",
+                # %N% is mpv's percent-encoding for the graph value; N is the
+                # byte length computed from _LEVEL_FILTER_GRAPH so it stays
+                # accurate if the filter string ever changes.
+                f"--af=lavfi=graph=%{len(_LEVEL_FILTER_GRAPH)}%{_LEVEL_FILTER_GRAPH}",
             ],
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             # Capture stderr so we can surface it if mpv fails to start.
             stderr=subprocess.PIPE,
             creationflags=creationflags,
@@ -920,11 +945,66 @@ class MpvPlaybackEngine:
             target=self._read_loop, daemon=True, name="mpv-reader"
         )
         self._reader_thread.start()
+        assert self._proc.stdout is not None
+        self._stdout_reader_thread = threading.Thread(
+            target=self._stdout_reader_loop,
+            args=(self._proc.stdout,),
+            daemon=True,
+            name="mpv-stdout-reader",
+        )
+        self._stdout_reader_thread.start()
 
     def _observe_properties(self) -> None:  # pragma: no cover
         """Ask mpv to stream property changes for state tracking."""
         for obs_id, prop in _OBSERVED:
             self._send_command("observe_property", obs_id, prop)
+
+    def _stdout_reader_loop(self, stream: Any) -> None:
+        """Background thread: parse ametadata=print output from mpv's stdout.
+
+        mpv surfaces AV_LOG_VERBOSE messages on stdout when launched with
+        --msg-level=ffmpeg=v. The astats filter emits per-channel RMS at ~20 Hz
+        (2205-sample frames). Each audio frame produces a header line followed
+        by one RMS_level line per channel:
+
+            [ffmpeg] Parsed_ametadata_0: frame:3    pts:6615  pts_time:0.15
+            [ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=-18.5
+            [ffmpeg] Parsed_ametadata_0: lavfi.astats.2.RMS_level=-19.1
+
+        Channels are accumulated until the next frame header, then emitted as
+        (left_db, right_db). Mono files produce only channel 1; we mirror it to
+        both outputs. Pausing silences the filter graph — no lines appear during
+        pause and no special handling is needed.
+        """
+        channels: dict[int, float] = {}
+
+        def _emit() -> None:
+            if not channels or self.on_audio_level is None:
+                return
+            left = channels.get(1, -120.0)
+            right = channels.get(2, left)  # mirror channel 1 for mono
+            self.on_audio_level(left, right)
+
+        for raw_line in stream:
+            line = raw_line.decode(errors="replace").strip()
+            if _FRAME_HDR_RE.match(line):
+                _emit()
+                channels = {}
+            else:
+                m = _AMETADATA_RE.match(line)
+                if m:
+                    key, raw_val = m.group(1), m.group(2)
+                    if key.startswith("lavfi.astats.") and key.endswith(".RMS_level"):
+                        parts = key.split(".")
+                        try:
+                            ch = int(parts[2])
+                        except (ValueError, IndexError):
+                            continue
+                        try:
+                            channels[ch] = max(float(raw_val), -120.0)
+                        except ValueError:
+                            channels[ch] = -120.0
+        _emit()  # flush final frame
 
     # ------------------------------------------------------------------
     # Public interface

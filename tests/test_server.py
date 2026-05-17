@@ -1107,6 +1107,29 @@ class TestPlayerWebSocket:
         assert mock_engine.on_play_state_changed is not None
         assert callable(mock_engine.on_play_state_changed)
 
+    def test_websocket_engine_on_audio_level_wired(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """create_app wires engine.on_audio_level to the broadcast notifier."""
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        assert mock_engine.on_audio_level is not None
+        assert callable(mock_engine.on_audio_level)
+
+    def test_audio_level_broadcast(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """engine.on_audio_level fires a WebSocket audio.level message."""
+        mock_engine.state = PlaybackState()
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        with c.websocket_connect("/api/v1/ws") as ws:
+            ws.receive_json()  # consume initial player.state
+            mock_engine.on_audio_level(-18.5, -19.1)
+            msg = ws.receive_json()
+        assert msg["type"] == "audio.level"
+        assert msg["left_db"] == pytest.approx(-18.5)
+        assert msg["right_db"] == pytest.approx(-19.1)
+
     def test_play_endpoint_fires_track_changed(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
     ) -> None:
