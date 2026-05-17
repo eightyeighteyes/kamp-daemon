@@ -11,6 +11,7 @@ import ctypes
 import json
 import logging
 import random
+import re
 import secrets
 import shutil
 import socket
@@ -795,10 +796,18 @@ _OBSERVED: list[tuple[int, str]] = [
     (3, "pause"),
 ]
 
-# request_id reserved for af-metadata polling responses; never used by observe_property.
-_LEVEL_POLL_REQUEST_ID: int = 9999
-# Poll interval for af-metadata (50 ms = 20 Hz).
-_LEVEL_POLL_INTERVAL: float = 0.05
+# Per-channel RMS at ~20 Hz (2205-sample frames at 44.1 kHz).
+# measure_overall=none and measure_perchannel=RMS_level keep stdout minimal.
+_LEVEL_FILTER_GRAPH = (
+    "asetnsamples=n=2205:p=0"
+    ",astats=metadata=1:reset=1:measure_perchannel=RMS_level:measure_overall=none"
+    ",ametadata=print"
+)
+
+# Matches ametadata=print key=value lines on mpv stdout (--msg-level=ffmpeg=v).
+_AMETADATA_RE = re.compile(r"\[ffmpeg\] Parsed_ametadata_\d+: ([\w.]+)=(.+)")
+# Matches ametadata frame-header lines (frame:N pts:M pts_time:T).
+_FRAME_HDR_RE = re.compile(r"\[ffmpeg\] Parsed_ametadata_\d+: frame:\d+")
 
 
 class MpvPlaybackEngine:
@@ -837,6 +846,7 @@ class MpvPlaybackEngine:
         self.on_track_end: Callable[[bool], None] | None = None
         self.on_file_loaded: Callable[[], None] | None = None
         self.on_play_state_changed: Callable[[], None] | None = None
+        # Called with (left_db, right_db); for mono, both values are identical.
         self.on_audio_level: Callable[[float, float], None] | None = None
         self._mpv_bin = mpv_bin
         self._proc: subprocess.Popen[bytes] | None = None
@@ -846,11 +856,7 @@ class MpvPlaybackEngine:
         self._job: _WindowsJobObject | None = None
         self._ipc: _IPCTransport = _make_ipc_transport()
         self._reader_thread: threading.Thread | None = None
-        self._level_poll_thread: threading.Thread | None = None
-        # Set while a track is playing; cleared on pause/idle so the poll loop idles.
-        self._level_poll_active = threading.Event()
-        # Set on shutdown so the poll loop wakes and exits cleanly.
-        self._stop_event = threading.Event()
+        self._stdout_reader_thread: threading.Thread | None = None
         # See class docstring for the locking contract. Plain Lock (not RLock):
         # no callback ever runs under this lock, so reentry is impossible and
         # an RLock would only mask accidental re-acquisitions.
@@ -899,15 +905,16 @@ class MpvPlaybackEngine:
                 # subprocess via MPRemoteCommandCenter (registered by the process
                 # that owns MPNowPlayingInfoCenter, which is now the helper).
                 "--input-media-keys=no",
-                # ebur128 filter exposes lavfi.r128.M (momentary LUFS) via
-                # af-metadata; polled at 20 Hz by _level_poll_loop to emit
-                # audio.level WebSocket events to the Stereo Rack module.
-                # %18% is mpv's percent-encoding for a value containing '=':
-                # without it, mpv's option parser treats 'ebur128' as a
-                # lavfi sub-option name and rejects it.
-                "--af=lavfi=graph=%18%ebur128=metadata=1",
+                # Surface ametadata=print output (AV_LOG_VERBOSE) on stdout so
+                # _stdout_reader_loop can parse per-channel RMS at ~20 Hz
+                # without polling the IPC socket.
+                "--msg-level=ffmpeg=v",
+                # %N% is mpv's percent-encoding for the graph value; N is the
+                # byte length computed from _LEVEL_FILTER_GRAPH so it stays
+                # accurate if the filter string ever changes.
+                f"--af=lavfi=graph=%{len(_LEVEL_FILTER_GRAPH)}%{_LEVEL_FILTER_GRAPH}",
             ],
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             # Capture stderr so we can surface it if mpv fails to start.
             stderr=subprocess.PIPE,
             creationflags=creationflags,
@@ -938,45 +945,66 @@ class MpvPlaybackEngine:
             target=self._read_loop, daemon=True, name="mpv-reader"
         )
         self._reader_thread.start()
-        self._level_poll_thread = threading.Thread(
-            target=self._level_poll_loop, daemon=True, name="mpv-level-poll"
+        assert self._proc.stdout is not None
+        self._stdout_reader_thread = threading.Thread(
+            target=self._stdout_reader_loop,
+            args=(self._proc.stdout,),
+            daemon=True,
+            name="mpv-stdout-reader",
         )
-        self._level_poll_thread.start()
+        self._stdout_reader_thread.start()
 
     def _observe_properties(self) -> None:  # pragma: no cover
         """Ask mpv to stream property changes for state tracking."""
         for obs_id, prop in _OBSERVED:
             self._send_command("observe_property", obs_id, prop)
 
-    def _level_poll_loop(self) -> None:  # pragma: no cover
-        """Background thread: poll af-metadata at 20 Hz while playing.
+    def _stdout_reader_loop(self, stream: Any) -> None:
+        """Background thread: parse ametadata=print output from mpv's stdout.
 
-        Sends get_property with _LEVEL_POLL_REQUEST_ID so _handle_event can
-        identify the response and fire on_audio_level without affecting the
-        observe_property request IDs used for state tracking.
+        mpv surfaces AV_LOG_VERBOSE messages on stdout when launched with
+        --msg-level=ffmpeg=v. The astats filter emits per-channel RMS at ~20 Hz
+        (2205-sample frames). Each audio frame produces a header line followed
+        by one RMS_level line per channel:
+
+            [ffmpeg] Parsed_ametadata_0: frame:3    pts:6615  pts_time:0.15
+            [ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=-18.5
+            [ffmpeg] Parsed_ametadata_0: lavfi.astats.2.RMS_level=-19.1
+
+        Channels are accumulated until the next frame header, then emitted as
+        (left_db, right_db). Mono files produce only channel 1; we mirror it to
+        both outputs. Pausing silences the filter graph — no lines appear during
+        pause and no special handling is needed.
         """
-        poll_msg = (
-            json.dumps(
-                {
-                    "command": ["get_property", "af-metadata"],
-                    "request_id": _LEVEL_POLL_REQUEST_ID,
-                }
-            )
-            + "\n"
-        ).encode()
-        while True:
-            if self._stop_event.is_set():
+        channels: dict[int, float] = {}
+
+        def _emit() -> None:
+            if not channels or self.on_audio_level is None:
                 return
-            if not self._level_poll_active.is_set():
-                # Paused or idle: wait up to 100 ms so shutdown wakes us quickly.
-                self._stop_event.wait(timeout=0.1)
-                continue
-            try:
-                self._ipc.sendall(poll_msg)
-            except OSError:
-                return
-            # Sleep for the poll interval, but wake immediately on shutdown.
-            self._stop_event.wait(timeout=_LEVEL_POLL_INTERVAL)
+            left = channels.get(1, -120.0)
+            right = channels.get(2, left)  # mirror channel 1 for mono
+            self.on_audio_level(left, right)
+
+        for raw_line in stream:
+            line = raw_line.decode(errors="replace").strip()
+            if _FRAME_HDR_RE.match(line):
+                _emit()
+                channels = {}
+            else:
+                m = _AMETADATA_RE.match(line)
+                if m:
+                    key, raw_val = m.group(1), m.group(2)
+                    if key.startswith("lavfi.astats.") and key.endswith(".RMS_level"):
+                        parts = key.split(".")
+                        try:
+                            ch = int(parts[2])
+                        except (ValueError, IndexError):
+                            continue
+                        try:
+                            channels[ch] = max(float(raw_val), -120.0)
+                        except ValueError:
+                            channels[ch] = -120.0
+        _emit()  # flush final frame
 
     # ------------------------------------------------------------------
     # Public interface
@@ -1117,10 +1145,6 @@ class MpvPlaybackEngine:
         self._send_command("set_property", "volume", self.state.volume)
 
     def shutdown(self) -> None:
-        # Signal the poll loop first so it exits its wait and doesn't attempt
-        # a send on the already-closed transport.
-        self._stop_event.set()
-        self._level_poll_active.set()  # unblock if waiting while paused
         if self._proc is not None:
             self._proc.terminate()
             self._proc = None
@@ -1199,10 +1223,6 @@ class MpvPlaybackEngine:
                 new_playing = not data
                 changed = new_playing != self.state.playing
                 self.state.playing = new_playing
-                if new_playing:
-                    self._level_poll_active.set()
-                else:
-                    self._level_poll_active.clear()
                 if changed and self.on_play_state_changed is not None:
                     self.on_play_state_changed()
 
@@ -1258,16 +1278,3 @@ class MpvPlaybackEngine:
                 logger.info(
                     "eof: on_track_end returned (had_lookahead=%s)", had_lookahead
                 )
-
-        elif event.get("request_id") == _LEVEL_POLL_REQUEST_ID:
-            # af-metadata poll response. Parse lavfi.r128.M (momentary LUFS)
-            # and fire on_audio_level; treat missing/null/error as silence.
-            level_db = -120.0
-            data = event.get("data")
-            if isinstance(data, dict):
-                try:
-                    level_db = float(data.get("lavfi.r128.M", -120.0))
-                except (ValueError, TypeError):
-                    pass
-            if self.on_audio_level is not None:
-                self.on_audio_level(level_db, level_db)

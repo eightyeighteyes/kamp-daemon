@@ -485,13 +485,13 @@ def create_app(
         """
         _broadcast({"type": "pipeline.stage", "stage": stage})
 
-    def _notify_audio_level(level_db: float, peak_db: float) -> None:
-        """Broadcast real-time audio level to all connected WebSocket clients.
+    def _notify_audio_level(left_db: float, right_db: float) -> None:
+        """Broadcast real-time per-channel audio levels to WebSocket clients.
 
-        Called from the engine's poll thread at ~20 Hz while a track is playing.
+        Called from the engine's stdout reader thread at ~20 Hz.
         _broadcast is thread-safe (call_soon_threadsafe).
         """
-        _broadcast({"type": "audio.level", "level_db": level_db, "peak_db": peak_db})
+        _broadcast({"type": "audio.level", "left_db": left_db, "right_db": right_db})
 
     # Expose notifiers on app.state so the daemon can wire them into engine
     # callbacks (e.g. on_track_end, on_play_state_changed).

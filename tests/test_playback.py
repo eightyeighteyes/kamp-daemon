@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import time
@@ -1372,13 +1373,19 @@ class TestMpvPlaybackEngine:
     # KAMP-319: ebur128 audio level polling
     # ------------------------------------------------------------------
 
-    def test_start_mpv_includes_ebur128_audio_filter(
+    def test_start_mpv_astats_ametadata_filter_chain(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """mpv must be launched with the ebur128 filter so af-metadata carries LUFS."""
+        """mpv must be launched with the astats+ametadata filter graph."""
+        from kamp_core.playback import _LEVEL_FILTER_GRAPH
+
         monkeypatch.setattr("kamp_core.playback.sys.platform", "darwin")
+        fake_proc = MagicMock()
+        fake_proc.stdout = io.BytesIO(b"")
         with (
-            patch("kamp_core.playback.subprocess.Popen") as mock_popen,
+            patch(
+                "kamp_core.playback.subprocess.Popen", return_value=fake_proc
+            ) as mock_popen,
             patch("kamp_core.playback._WindowsJobObject"),
             patch("kamp_core.playback._make_ipc_transport", return_value=MagicMock()),
             patch("kamp_core.playback.threading.Thread"),
@@ -1386,89 +1393,122 @@ class TestMpvPlaybackEngine:
             MpvPlaybackEngine()
         popen_args, _ = mock_popen.call_args
         cmd = popen_args[0]
-        assert "--af=lavfi=graph=%18%ebur128=metadata=1" in cmd
+        expected_af = (
+            f"--af=lavfi=graph=%{len(_LEVEL_FILTER_GRAPH)}%{_LEVEL_FILTER_GRAPH}"
+        )
+        assert expected_af in cmd
 
-    def test_on_audio_level_fires_with_parsed_lufs(self) -> None:
-        """A valid af-metadata response emits (level_db, peak_db) via on_audio_level."""
-        from kamp_core.playback import _LEVEL_POLL_REQUEST_ID
+    def test_start_mpv_msg_level_ffmpeg_verbose(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """mpv must be launched with --msg-level=ffmpeg=v to surface ametadata output."""
+        monkeypatch.setattr("kamp_core.playback.sys.platform", "darwin")
+        fake_proc = MagicMock()
+        fake_proc.stdout = io.BytesIO(b"")
+        with (
+            patch(
+                "kamp_core.playback.subprocess.Popen", return_value=fake_proc
+            ) as mock_popen,
+            patch("kamp_core.playback._WindowsJobObject"),
+            patch("kamp_core.playback._make_ipc_transport", return_value=MagicMock()),
+            patch("kamp_core.playback.threading.Thread"),
+        ):
+            MpvPlaybackEngine()
+        popen_args, _ = mock_popen.call_args
+        cmd = popen_args[0]
+        assert "--msg-level=ffmpeg=v" in cmd
 
+    def test_start_mpv_stdout_is_piped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """mpv stdout must be PIPE so _stdout_reader_loop can read ametadata output."""
+        import subprocess as _sp
+
+        monkeypatch.setattr("kamp_core.playback.sys.platform", "darwin")
+        fake_proc = MagicMock()
+        fake_proc.stdout = io.BytesIO(b"")
+        with (
+            patch(
+                "kamp_core.playback.subprocess.Popen", return_value=fake_proc
+            ) as mock_popen,
+            patch("kamp_core.playback._WindowsJobObject"),
+            patch("kamp_core.playback._make_ipc_transport", return_value=MagicMock()),
+            patch("kamp_core.playback.threading.Thread"),
+        ):
+            MpvPlaybackEngine()
+        _, popen_kwargs = mock_popen.call_args
+        assert popen_kwargs.get("stdout") == _sp.PIPE
+
+    def test_stdout_reader_fires_stereo_on_audio_level(self) -> None:
+        """_stdout_reader_loop emits (left_db, right_db) from astats per-channel output."""
         engine, _ = _make_engine()
         received: list[tuple[float, float]] = []
-        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
-        engine._handle_event(
-            {
-                "request_id": _LEVEL_POLL_REQUEST_ID,
-                "error": "success",
-                "data": {"lavfi.r128.M": "-18.5"},
-            }
+        engine.on_audio_level = lambda l, r: received.append((l, r))
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=-18.5\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.2.RMS_level=-19.1\n"
+            b"[ffmpeg] Parsed_ametadata_0: frame:1    pts:2205    pts_time:0.05\n"
         )
+        engine._stdout_reader_loop(io.BytesIO(lines))
         assert len(received) == 1
-        assert received[0][0] == pytest.approx(-18.5)
-        assert received[0][1] == pytest.approx(-18.5)
+        assert received[0][0] == pytest.approx(-18.5)  # left
+        assert received[0][1] == pytest.approx(-19.1)  # right
 
-    def test_on_audio_level_defaults_to_silence_on_null_data(self) -> None:
-        """Null af-metadata data (idle / no filter active) should emit -120 dBFS."""
-        from kamp_core.playback import _LEVEL_POLL_REQUEST_ID
-
+    def test_stdout_reader_mirrors_channel_1_for_mono(self) -> None:
+        """Mono files (channel 1 only) must mirror left to right."""
         engine, _ = _make_engine()
         received: list[tuple[float, float]] = []
-        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
-        engine._handle_event(
-            {"request_id": _LEVEL_POLL_REQUEST_ID, "error": "success", "data": None}
+        engine.on_audio_level = lambda l, r: received.append((l, r))
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=-22.0\n"
+            b"[ffmpeg] Parsed_ametadata_0: frame:1    pts:2205    pts_time:0.05\n"
         )
-        assert received == [(-120.0, -120.0)]
+        engine._stdout_reader_loop(io.BytesIO(lines))
+        assert received == [(-22.0, -22.0)]
 
-    def test_on_audio_level_defaults_to_silence_on_error_response(self) -> None:
-        """Property-unavailable responses should emit silence, not raise."""
-        from kamp_core.playback import _LEVEL_POLL_REQUEST_ID
-
+    def test_stdout_reader_ignores_non_rms_keys(self) -> None:
+        """Non-RMS_level astats keys and unrelated lines must not fire on_audio_level."""
         engine, _ = _make_engine()
         received: list[tuple[float, float]] = []
-        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
-        engine._handle_event(
-            {"request_id": _LEVEL_POLL_REQUEST_ID, "error": "property unavailable"}
+        engine.on_audio_level = lambda l, r: received.append((l, r))
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.Peak_level=-14.0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.Overall.RMS_level=-20.0\n"
         )
-        assert received == [(-120.0, -120.0)]
-
-    def test_on_audio_level_not_fired_for_other_request_ids(self) -> None:
-        """Responses for unrelated commands must not trigger on_audio_level."""
-        engine, _ = _make_engine()
-        received: list[tuple[float, float]] = []
-        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
-        engine._handle_event(
-            {"request_id": 1, "error": "success", "data": {"lavfi.r128.M": "-18.5"}}
-        )
+        engine._stdout_reader_loop(io.BytesIO(lines))
         assert received == []
 
-    def test_on_audio_level_not_fired_when_callback_is_none(self) -> None:
-        """No AttributeError when on_audio_level is None (default)."""
-        from kamp_core.playback import _LEVEL_POLL_REQUEST_ID
+    def test_stdout_reader_handles_malformed_float(self) -> None:
+        """A non-numeric RMS_level value clamps to -120.0."""
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda l, r: received.append((l, r))
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=nan_bad\n"
+            b"[ffmpeg] Parsed_ametadata_0: frame:1    pts:2205    pts_time:0.05\n"
+        )
+        engine._stdout_reader_loop(io.BytesIO(lines))
+        assert received == [(-120.0, -120.0)]
 
+    def test_stdout_reader_no_error_when_callback_is_none(self) -> None:
+        """_stdout_reader_loop must not raise when on_audio_level is None."""
         engine, _ = _make_engine()
         assert engine.on_audio_level is None
-        engine._handle_event(
-            {
-                "request_id": _LEVEL_POLL_REQUEST_ID,
-                "error": "success",
-                "data": {"lavfi.r128.M": "-18.5"},
-            }
-        )  # should not raise
+        lines = (
+            b"[ffmpeg] Parsed_ametadata_0: frame:0    pts:0       pts_time:0\n"
+            b"[ffmpeg] Parsed_ametadata_0: lavfi.astats.1.RMS_level=-18.5\n"
+            b"[ffmpeg] Parsed_ametadata_0: frame:1    pts:2205    pts_time:0.05\n"
+        )
+        engine._stdout_reader_loop(io.BytesIO(lines))  # should not raise
 
-    def test_level_poll_active_set_when_unpaused(self) -> None:
-        """play state change to True must activate the level poll loop."""
+    def test_no_level_poll_branch_in_handle_event(self) -> None:
+        """Events with request_id=9999 (old poll id) must not trigger on_audio_level."""
         engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
         engine._handle_event(
-            {"event": "property-change", "name": "pause", "data": False}
+            {"request_id": 9999, "error": "success", "data": {"lavfi.r128.M": "-18.5"}}
         )
-        assert engine._level_poll_active.is_set()
-
-    def test_level_poll_active_cleared_when_paused(self) -> None:
-        """play state change to False must pause the level poll loop."""
-        engine, _ = _make_engine()
-        engine._handle_event(
-            {"event": "property-change", "name": "pause", "data": False}
-        )
-        engine._handle_event(
-            {"event": "property-change", "name": "pause", "data": True}
-        )
-        assert not engine._level_poll_active.is_set()
+        assert received == []
