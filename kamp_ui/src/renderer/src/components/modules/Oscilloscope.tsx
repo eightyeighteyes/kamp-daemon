@@ -23,8 +23,8 @@ const DB_RANGE = 60
 const PAUSE_DECAY_MS = 800
 const PAUSE_DECAY_TARGET = -120
 
-// Target scroll rate in pixels per second (matches nominal 60fps → 1px/frame).
-const SCROLL_PX_PER_SEC = 60
+// Target scroll rate in pixels per second.
+const SCROLL_PX_PER_SEC = 120
 
 // Oscillation cycles per pixel scrolled — 1 full cycle every 60px.
 const CYCLES_PER_PX = 1 / 60
