@@ -485,6 +485,14 @@ def create_app(
         """
         _broadcast({"type": "pipeline.stage", "stage": stage})
 
+    def _notify_audio_level(level_db: float, peak_db: float) -> None:
+        """Broadcast real-time audio level to all connected WebSocket clients.
+
+        Called from the engine's poll thread at ~20 Hz while a track is playing.
+        _broadcast is thread-safe (call_soon_threadsafe).
+        """
+        _broadcast({"type": "audio.level", "level_db": level_db, "peak_db": peak_db})
+
     # Expose notifiers on app.state so the daemon can wire them into engine
     # callbacks (e.g. on_track_end, on_play_state_changed).
     app.state.notify_library_changed = _notify_library_changed
@@ -518,6 +526,7 @@ def create_app(
     # Wire play-state change callback directly — the engine fires it from its
     # background reader thread whenever mpv's pause property flips.
     engine.on_play_state_changed = _notify_play_state_changed
+    engine.on_audio_level = _notify_audio_level
 
     # Auth middleware must be defined before add_middleware(CORSMiddleware) so
     # CORS ends up as the outermost wrapper (handles OPTIONS preflight first).

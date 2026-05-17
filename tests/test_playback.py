@@ -1367,3 +1367,108 @@ class TestMpvPlaybackEngine:
         engine, _ = _make_engine()
         engine._handle_event({"event": "property-change", "name": "pause", "data": 1})
         assert engine.state.playing is False
+
+    # ------------------------------------------------------------------
+    # KAMP-319: ebur128 audio level polling
+    # ------------------------------------------------------------------
+
+    def test_start_mpv_includes_ebur128_audio_filter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """mpv must be launched with the ebur128 filter so af-metadata carries LUFS."""
+        monkeypatch.setattr("kamp_core.playback.sys.platform", "darwin")
+        with (
+            patch("kamp_core.playback.subprocess.Popen") as mock_popen,
+            patch("kamp_core.playback._WindowsJobObject"),
+            patch("kamp_core.playback._make_ipc_transport", return_value=MagicMock()),
+            patch("kamp_core.playback.threading.Thread"),
+        ):
+            MpvPlaybackEngine()
+        popen_args, _ = mock_popen.call_args
+        cmd = popen_args[0]
+        assert "--af=lavfi=ebur128=metadata=1" in cmd
+
+    def test_on_audio_level_fires_with_parsed_lufs(self) -> None:
+        """A valid af-metadata response emits (level_db, peak_db) via on_audio_level."""
+        from kamp_core.playback import _LEVEL_POLL_REQUEST_ID
+
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
+        engine._handle_event(
+            {
+                "request_id": _LEVEL_POLL_REQUEST_ID,
+                "error": "success",
+                "data": {"lavfi.r128.M": "-18.5"},
+            }
+        )
+        assert len(received) == 1
+        assert received[0][0] == pytest.approx(-18.5)
+        assert received[0][1] == pytest.approx(-18.5)
+
+    def test_on_audio_level_defaults_to_silence_on_null_data(self) -> None:
+        """Null af-metadata data (idle / no filter active) should emit -120 dBFS."""
+        from kamp_core.playback import _LEVEL_POLL_REQUEST_ID
+
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
+        engine._handle_event(
+            {"request_id": _LEVEL_POLL_REQUEST_ID, "error": "success", "data": None}
+        )
+        assert received == [(-120.0, -120.0)]
+
+    def test_on_audio_level_defaults_to_silence_on_error_response(self) -> None:
+        """Property-unavailable responses should emit silence, not raise."""
+        from kamp_core.playback import _LEVEL_POLL_REQUEST_ID
+
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
+        engine._handle_event(
+            {"request_id": _LEVEL_POLL_REQUEST_ID, "error": "property unavailable"}
+        )
+        assert received == [(-120.0, -120.0)]
+
+    def test_on_audio_level_not_fired_for_other_request_ids(self) -> None:
+        """Responses for unrelated commands must not trigger on_audio_level."""
+        engine, _ = _make_engine()
+        received: list[tuple[float, float]] = []
+        engine.on_audio_level = lambda lvl, pk: received.append((lvl, pk))
+        engine._handle_event(
+            {"request_id": 1, "error": "success", "data": {"lavfi.r128.M": "-18.5"}}
+        )
+        assert received == []
+
+    def test_on_audio_level_not_fired_when_callback_is_none(self) -> None:
+        """No AttributeError when on_audio_level is None (default)."""
+        from kamp_core.playback import _LEVEL_POLL_REQUEST_ID
+
+        engine, _ = _make_engine()
+        assert engine.on_audio_level is None
+        engine._handle_event(
+            {
+                "request_id": _LEVEL_POLL_REQUEST_ID,
+                "error": "success",
+                "data": {"lavfi.r128.M": "-18.5"},
+            }
+        )  # should not raise
+
+    def test_level_poll_active_set_when_unpaused(self) -> None:
+        """play state change to True must activate the level poll loop."""
+        engine, _ = _make_engine()
+        engine._handle_event(
+            {"event": "property-change", "name": "pause", "data": False}
+        )
+        assert engine._level_poll_active.is_set()
+
+    def test_level_poll_active_cleared_when_paused(self) -> None:
+        """play state change to False must pause the level poll loop."""
+        engine, _ = _make_engine()
+        engine._handle_event(
+            {"event": "property-change", "name": "pause", "data": False}
+        )
+        engine._handle_event(
+            {"event": "property-change", "name": "pause", "data": True}
+        )
+        assert not engine._level_poll_active.is_set()
