@@ -138,3 +138,77 @@
 .vu-meter.is-idle .vu-segment {
   opacity: 0.4;
 }
+
+/* ============================================================
+   Track Display
+   ============================================================ */
+
+.track-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 1;
+  transition: opacity 300ms ease;
+}
+
+.track-display.is-idle {
+  opacity: 0.5;
+}
+
+/* Left cluster — clipped; scroll added in KAMP-326 */
+.track-left {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.track-artist {
+  color: rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+}
+
+.track-sep {
+  color: rgba(255, 255, 255, 0.40);
+  flex-shrink: 0;
+}
+
+.track-title {
+  color: rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+}
+
+/* Right cluster */
+.track-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-left: 12px;
+}
+
+.track-time {
+  color: rgba(255, 255, 255, 0.40);
+}
+
+.track-timesep {
+  color: rgba(255, 255, 255, 0.20);
+}
+
+.track-year {
+  color: rgba(255, 255, 255, 0.40);
+}
+
+.track-format {
+  color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
