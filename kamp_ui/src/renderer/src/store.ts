@@ -39,6 +39,9 @@ type PlayerStore = {
   scanError: string | null
   scanProgress: ScanProgress | null
 
+  levelDb: number | null
+  peakDb: number | null
+
   configuredLibraryPath: string | null
   activeView: 'library' | 'now-playing' | 'home'
   moduleOrder: string[]
@@ -66,6 +69,7 @@ type PlayerStore = {
   queue: QueueState | null
 
   // Actions
+  setAudioLevel: (levelDb: number, peakDb: number) => void
   setServerStatus: (status: 'connected' | 'reconnecting' | 'disconnected') => void
   toggleQueuePanel: () => void
   toggleArtistPanel: () => void
@@ -188,6 +192,8 @@ export const useStore = create<PlayerStore>((set, get) => ({
   lastScanResult: null,
   scanError: null,
   scanProgress: null,
+  levelDb: null,
+  peakDb: null,
   configuredLibraryPath: null,
   activeView: 'library',
   moduleOrder: (() => {
@@ -249,6 +255,8 @@ export const useStore = create<PlayerStore>((set, get) => ({
   prefsOpen: false,
   prefsInitialTab: 'general',
   deferredOps: {},
+
+  setAudioLevel: (levelDb, peakDb) => set({ levelDb, peakDb }),
 
   setServerStatus: (status) => set({ serverStatus: status }),
 

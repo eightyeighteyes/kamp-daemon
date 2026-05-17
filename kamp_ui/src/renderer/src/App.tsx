@@ -90,6 +90,7 @@ export default function App(): React.JSX.Element {
   const loadConfig = useStore((s) => s.loadConfig)
   const applyServerState = useStore((s) => s.applyServerState)
   const setServerStatus = useStore((s) => s.setServerStatus)
+  const setAudioLevel = useStore((s) => s.setAudioLevel)
   const serverStatus = useStore((s) => s.serverStatus)
   const configuredLibraryPath = useStore((s) => s.configuredLibraryPath)
   const activeView = useStore((s) => s.activeView)
@@ -233,7 +234,8 @@ export default function App(): React.JSX.Element {
         (trackId) => {
           clearDeferredOp(trackId)
           void refreshOpenAlbum()
-        }
+        },
+        setAudioLevel
       )
     }
 
