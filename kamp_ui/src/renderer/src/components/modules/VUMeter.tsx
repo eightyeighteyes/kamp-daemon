@@ -58,7 +58,7 @@ type VUMeterProps = {
 // ---------------------------------------------------------------------------
 
 export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter({ channel }, ref) {
-  const { isPlaying } = useStereoRack()
+  const { isPlaying, isPaused } = useStereoRack()
   const isIdle = !isPlaying
 
   // Refs to DOM segment elements for direct class manipulation.
@@ -72,6 +72,16 @@ export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter(
   const peakSegmentRef = useRef<number>(0)
   const peakTimestampRef = useRef<number>(0)
   const peakElRef = useRef<HTMLDivElement | null>(null)
+
+  // Hide peak hold immediately when playback pauses.
+  useEffect(() => {
+    if (!isPaused) return
+    const el = peakElRef.current
+    if (!el) return
+    el.classList.remove('fading')
+    el.style.opacity = '0'
+    peakSegmentRef.current = 0
+  }, [isPaused])
 
   // Wire transitionend so the peak hold element is hidden after the 600ms fade.
   useEffect(() => {
