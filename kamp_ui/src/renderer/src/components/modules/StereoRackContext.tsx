@@ -21,7 +21,7 @@ export type WhimsyFlags = {
 }
 
 /** Called by the rAF loop each frame — child components register one of these. */
-export type DrawFn = (levelDb: number, peakDb: number) => void
+export type DrawFn = (levelDb: number, peakDb: number, timestamp: number) => void
 
 export type StereoRackContextValue = {
   isPlaying: boolean

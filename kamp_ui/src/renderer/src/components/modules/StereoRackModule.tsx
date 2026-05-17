@@ -42,11 +42,11 @@ export function StereoRackModule({ displayStyle: _ds }: ModuleProps): React.JSX.
   const rafIdRef = useRef<number>(0)
 
   useEffect(() => {
-    const frame = (): void => {
+    const frame = (timestamp: number): void => {
       const { levelDb, peakDb } = useStore.getState()
       const level = levelDb ?? -Infinity
       const peak = peakDb ?? -Infinity
-      drawsRef.current.forEach((draw) => draw(level, peak))
+      drawsRef.current.forEach((draw) => draw(level, peak, timestamp))
       rafIdRef.current = requestAnimationFrame(frame)
     }
 
