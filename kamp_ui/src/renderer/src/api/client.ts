@@ -437,11 +437,17 @@ export type DeferredOpCompletedMessage = {
   op_id: number
   track_id: number
 }
+export type AudioLevelMessage = {
+  type: 'audio.level'
+  level_db: number
+  peak_db: number
+}
 export type ServerMessage =
   | StateMessage
   | LibraryChangedMessage
   | AlbumRenameProgressMessage
   | DeferredOpCompletedMessage
+  | AudioLevelMessage
 
 export async function getDeferredOps(): Promise<{ op_id: number; track_id: number }[]> {
   const res = await fetch(`${BASE_URL}/api/v1/deferred-ops`, {
@@ -457,7 +463,8 @@ export function connectStateStream(
   onOpen?: () => void,
   onLibraryChanged?: () => void,
   onAlbumRenameProgress?: (done: number, total: number) => void,
-  onDeferredOpCompleted?: (trackId: number, opId: number) => void
+  onDeferredOpCompleted?: (trackId: number, opId: number) => void,
+  onAudioLevel?: (levelDb: number, peakDb: number) => void
 ): () => void {
   const ws = new WebSocket(`${WS_BASE}/api/v1/ws`)
 
@@ -471,6 +478,7 @@ export function connectStateStream(
       else if (msg.type === 'album.rename.progress') onAlbumRenameProgress?.(msg.done, msg.total)
       else if (msg.type === 'deferred_op.completed')
         onDeferredOpCompleted?.(msg.track_id, msg.op_id)
+      else if (msg.type === 'audio.level') onAudioLevel?.(msg.level_db, msg.peak_db)
     } catch {
       // malformed message — ignore
     }
