@@ -73,14 +73,12 @@ export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter(
   const peakTimestampRef = useRef<number>(0)
   const peakElRef = useRef<HTMLDivElement | null>(null)
 
-  // Hide peak hold immediately when playback pauses.
+  // Track pause state in a ref so draw() can read it without a React subscription.
+  // On pause, zero peakTimestampRef so the fade fires on the very next draw frame.
+  const isPausedRef = useRef<boolean>(false)
   useEffect(() => {
-    if (!isPaused) return
-    const el = peakElRef.current
-    if (!el) return
-    el.classList.remove('fading')
-    el.style.opacity = '0'
-    peakSegmentRef.current = 0
+    isPausedRef.current = isPaused
+    if (isPaused) peakTimestampRef.current = 0
   }, [isPaused])
 
   // Wire transitionend so the peak hold element is hidden after the 600ms fade.
@@ -134,7 +132,7 @@ export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter(
       // --- Peak hold ---
       const peakEl = peakElRef.current
       if (peakEl) {
-        if (count > 0 && count >= peakSegmentRef.current) {
+        if (!isPausedRef.current && count > 0 && count >= peakSegmentRef.current) {
           // New or equal peak: snap to position with no transition.
           // Remove .fading first so the opacity jump is instant.
           peakEl.classList.remove('fading')
