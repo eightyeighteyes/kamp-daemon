@@ -217,8 +217,9 @@ export function Oscilloscope(): React.JSX.Element {
       const rmsAmp = Math.pow(rmsNorm, AMP_GAMMA) * maxAmp
 
       // Peak follower: instant attack, per-frame decay.
-      // peakDb captures transients (e.g. snare hits) that 50ms RMS windows dilute.
-      const peakDb = useStore.getState().peakDb ?? levelDb
+      // During pause, mpv stops emitting so the store's peakDb stays stale —
+      // use the decaying levelDb instead so the envelope falls with the pause decay.
+      const peakDb = isPausedRef.current ? levelDb : (useStore.getState().peakDb ?? levelDb)
       const peakNorm = Math.max(0, Math.min(1, (peakDb - DB_FLOOR) / (DB_CEIL - DB_FLOOR)))
       const rawPeakAmp = Math.pow(peakNorm, AMP_GAMMA) * maxAmp
       const envAmp = Math.max(peakEnvRef.current * PEAK_DECAY, rawPeakAmp)
