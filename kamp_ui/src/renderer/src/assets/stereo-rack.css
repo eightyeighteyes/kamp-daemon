@@ -56,35 +56,42 @@
 
 /* ------------------------------------------------------------------
    Zone colors — inactive (dim) state
-   :nth-child counts all children; .vu-peak-hold sits at position 25
-   so these ranges (1–24) are unaffected.
+   Zones are anchored to the hot end via nth-last-child so they
+   scale correctly when segment count changes dynamically.
+   .vu-peak-hold is the last child (nth-last-child(1)), so the last
+   segment is nth-last-child(2) and offsets below account for that.
+   Zone layout (8% of count each for orange zones, 1 red tip):
+     nth-last-child(2)          → red     (1 segment)
+     nth-last-child(3–4)        → orange-red (2 segments)
+     nth-last-child(5–9)        → orange  (5 segments)
+     nth-last-child(10+)        → accent  (all remaining)
    ------------------------------------------------------------------ */
-.vu-segment:nth-child(-n+16) {
+.vu-segment {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
-.vu-segment:nth-child(n+17):nth-child(-n+21) {
+.vu-segment:nth-last-child(-n+9):nth-last-child(n+5) {
   background: rgba(245, 166, 35, 0.10);
 }
-.vu-segment:nth-child(n+22):nth-child(-n+23) {
+.vu-segment:nth-last-child(-n+4):nth-last-child(n+3) {
   background: rgba(232, 96, 44, 0.10);
 }
-.vu-segment:nth-child(24) {
+.vu-segment:nth-last-child(2) {
   background: rgba(232, 64, 64, 0.10);
 }
 
 /* ------------------------------------------------------------------
    Zone colors — active state (class toggled imperatively by draw fn)
    ------------------------------------------------------------------ */
-.vu-segment.active:nth-child(-n+16) {
+.vu-segment.active {
   background: color-mix(in srgb, var(--accent) 70%, transparent);
 }
-.vu-segment.active:nth-child(n+17):nth-child(-n+21) {
+.vu-segment.active:nth-last-child(-n+9):nth-last-child(n+5) {
   background: #f5a623;
 }
-.vu-segment.active:nth-child(n+22):nth-child(-n+23) {
+.vu-segment.active:nth-last-child(-n+4):nth-last-child(n+3) {
   background: #e8602c;
 }
-.vu-segment.active:nth-child(24) {
+.vu-segment.active:nth-last-child(2) {
   background: #e84040;
 }
 
@@ -264,46 +271,21 @@
    ============================================================ */
 
 @container (max-width: 800px) {
+  /* Oscilloscope collapses; meters stack L above R, each spanning full width.
+     Segment count is recalculated by VUMeter's ResizeObserver — no segment
+     layout overrides needed here. */
   .oscilloscope {
     display: none;
   }
 
-  /* Stack L above R */
   .stereo-rack-top {
     flex-direction: column;
-    height: auto;
     gap: 4px;
+    /* height: 104px inherited — split evenly between two meters */
   }
 
-  /* Each meter spans full width; label sits to the right of the bar */
   .vu-meter {
     width: 100%;
-    height: 28px;
-    flex-direction: row;
-    justify-content: flex-start;
-    align-items: stretch;
-    gap: 4px;
-  }
-
-  /* Bar fills remaining width, segments fill bottom-to-top */
-  .vu-bar {
-    flex-direction: column-reverse;
-    gap: 0;
-  }
-
-  /* Override R meter's row-reverse so both channels use column-reverse */
-  .vu-meter--r .vu-bar {
-    flex-direction: column-reverse;
-  }
-
-  /* Segments become thin horizontal slices distributed over bar height */
-  .vu-segment {
-    flex: 1 0 0;
-    border-radius: 0;
-  }
-
-  /* Peak hold offset arithmetic is horizontal-only; hide in compact mode */
-  .vu-peak-hold {
-    display: none;
+    flex: 1;
   }
 }
