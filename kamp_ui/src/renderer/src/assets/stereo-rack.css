@@ -263,7 +263,7 @@
    each filling bottom-to-top via flex-direction: column-reverse.
    ============================================================ */
 
-@container (max-width: 400px) {
+@container (max-width: 800px) {
   .oscilloscope {
     display: none;
   }
