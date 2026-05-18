@@ -51,6 +51,7 @@ function TrackLeft({ artist, title, whimsyActive = false }: TrackLeftProps): Rea
   const scrollRef = useRef<HTMLSpanElement | null>(null)
   const measureRef = useRef<HTMLSpanElement | null>(null)
   const ellipsisRef = useRef<HTMLSpanElement | null>(null)
+  const copyBRef = useRef<HTMLSpanElement | null>(null)
 
   const phaseRef = useRef<ScrollPhase>('idle')
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -69,6 +70,7 @@ function TrackLeft({ artist, title, whimsyActive = false }: TrackLeftProps): Rea
       el.style.transform = 'translateX(0)'
     }
     if (ellipsisRef.current) ellipsisRef.current.textContent = ''
+    if (copyBRef.current) copyBRef.current.style.display = 'none'
   }, [])
 
   const start = useCallback((): void => {
@@ -79,8 +81,12 @@ function TrackLeft({ artist, title, whimsyActive = false }: TrackLeftProps): Rea
 
     const containerW = container.getBoundingClientRect().width
     const textW = measure.getBoundingClientRect().width
-    if (textW <= containerW) return // fits — no scroll needed
+    if (textW <= containerW) {
+      if (copyBRef.current) copyBRef.current.style.display = 'none'
+      return // fits — no scroll needed
+    }
 
+    if (copyBRef.current) copyBRef.current.style.display = 'inline-flex'
     textWidthRef.current = textW
     overflowPxRef.current = textW - containerW
 
@@ -196,7 +202,7 @@ function TrackLeft({ artist, title, whimsyActive = false }: TrackLeftProps): Rea
       <span className="track-scroll-inner" ref={scrollRef}>
         <span className="track-copy">{primaryContent}</span>
         <span className="track-gap" />
-        <span className="track-copy" aria-hidden="true">
+        <span className="track-copy" aria-hidden="true" ref={copyBRef} style={{ display: 'none' }}>
           {copyContent}
         </span>
       </span>
