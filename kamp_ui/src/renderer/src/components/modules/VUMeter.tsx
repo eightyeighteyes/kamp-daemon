@@ -111,6 +111,14 @@ export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter(
       if (count !== numSegmentsRef.current) {
         numSegmentsRef.current = count
         setNumSegments(count)
+        // Stale peak hold position is meaningless after a resize — clear it.
+        peakSegmentRef.current = 0
+        peakTimestampRef.current = 0
+        const peakEl = peakElRef.current
+        if (peakEl) {
+          peakEl.classList.remove('fading')
+          peakEl.style.opacity = '0'
+        }
       }
     })
     ro.observe(bar)
