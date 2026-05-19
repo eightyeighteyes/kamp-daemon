@@ -1833,8 +1833,14 @@ def create_app(
         track = index.get_track_by_path(p)
         if track is None:
             raise HTTPException(status_code=404, detail="Track not found")
+        was_stopped = queue.current() is None
         queue.add_to_queue(track)
-        engine.preload_next(queue.peek_next())
+        current = queue.current()
+        if was_stopped and current is not None:
+            engine.play(current.file_path)
+            _notify_track_changed()
+        else:
+            engine.preload_next(queue.peek_next())
         return {"ok": True}
 
     @app.post("/api/v1/player/queue/play-next")
@@ -1843,8 +1849,14 @@ def create_app(
         track = index.get_track_by_path(p)
         if track is None:
             raise HTTPException(status_code=404, detail="Track not found")
+        was_stopped = queue.current() is None
         queue.play_next(track)
-        engine.preload_next(queue.peek_next())
+        current = queue.current()
+        if was_stopped and current is not None:
+            engine.play(current.file_path)
+            _notify_track_changed()
+        else:
+            engine.preload_next(queue.peek_next())
         return {"ok": True}
 
     @app.post("/api/v1/player/queue/insert")
@@ -1867,8 +1879,14 @@ def create_app(
             tracks = index.tracks_for_album(req.album_artist, req.album)
         if not tracks:
             raise HTTPException(status_code=404, detail="Album not found")
+        was_stopped = queue.current() is None
         queue.add_album_to_queue(tracks)
-        engine.preload_next(queue.peek_next())
+        current = queue.current()
+        if was_stopped and current is not None:
+            engine.play(current.file_path)
+            _notify_track_changed()
+        else:
+            engine.preload_next(queue.peek_next())
         return {"ok": True}
 
     @app.post("/api/v1/player/queue/play-album-next")
@@ -1881,8 +1899,14 @@ def create_app(
             tracks = index.tracks_for_album(req.album_artist, req.album)
         if not tracks:
             raise HTTPException(status_code=404, detail="Album not found")
+        was_stopped = queue.current() is None
         queue.play_album_next(tracks)
-        engine.preload_next(queue.peek_next())
+        current = queue.current()
+        if was_stopped and current is not None:
+            engine.play(current.file_path)
+            _notify_track_changed()
+        else:
+            engine.preload_next(queue.peek_next())
         return {"ok": True}
 
     @app.post("/api/v1/player/queue/insert-album")
