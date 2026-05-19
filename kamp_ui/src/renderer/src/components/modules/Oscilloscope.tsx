@@ -296,14 +296,14 @@ export function Oscilloscope(): React.JSX.Element {
       }
 
       // --- Pause drift ---
-      // After the pause decay settles, breathe the trace with a slow 0.3 Hz
+      // After the pause decay settles, breathe the trace with a slow 0.1 Hz
       // sinusoidal vertical offset — barely perceptible, more felt than seen.
       // Clears instantly when playback resumes.
       let driftY = 0
       if (isPausedRef.current && pauseStartTsRef.current >= 0) {
         const pauseElapsed = timestamp - pauseStartTsRef.current
         if (pauseElapsed >= PAUSE_DECAY_MS) {
-          driftY = Math.sin(timestamp * 0.001 * 0.3 * 2 * Math.PI) * 2
+          driftY = Math.sin(timestamp * 0.001 * 0.1 * 2 * Math.PI) * 1.8
         }
       }
 
