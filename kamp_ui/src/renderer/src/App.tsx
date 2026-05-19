@@ -487,6 +487,7 @@ export default function App(): React.JSX.Element {
 
   // Activate a main-slot panel tab.
   const activateMain = (panel: UnifiedPanel): void => {
+    void setSearchQuery('')
     if (panel.kind === 'builtin' && panel.id === 'kamp.base-kamp') {
       void setActiveView('home')
       setActiveExtPanel(null)
