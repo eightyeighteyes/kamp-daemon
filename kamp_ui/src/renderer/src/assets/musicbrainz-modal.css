@@ -22,7 +22,12 @@
 
 .mb-modal {
   width: min(680px, 92vw);
+  height: 80vh;
   max-height: 80vh;
+  /* Grid lets the body row take whatever space the actual header/footer leave,
+     without a hardcoded magic number that breaks when header height changes. */
+  display: grid;
+  grid-template-rows: auto 1fr auto;
 }
 
 /* Header */
@@ -42,6 +47,13 @@
   margin: 0;
 }
 
+.mb-modal__header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .mb-modal__release-type {
   font-size: 11px;
   font-weight: 500;
@@ -51,11 +63,49 @@
   padding: 2px 8px;
 }
 
-/* Body — scrollable. Max-height reserves space for header (~57px) + footer (~57px).
-   flex: 1 1 auto would need an explicit parent height; max-height is simpler here. */
+/* Candidate navigation */
+.mb-modal__nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mb-modal__nav-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  width: 24px;
+  padding: 2px 0;
+  text-align: center;
+  border-radius: 4px;
+  transition: color 0.1s, background 0.1s;
+  flex-shrink: 0;
+}
+
+.mb-modal__nav-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.mb-modal__nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.mb-modal__nav-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  width: 44px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 .mb-modal__body {
   overflow-y: auto;
-  max-height: calc(80vh - 114px);
+  min-height: 0; /* grid 1fr rows shrink to scroll rather than overflow */
   padding: 0 20px;
 }
 
