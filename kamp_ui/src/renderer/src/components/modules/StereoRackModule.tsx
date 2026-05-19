@@ -53,7 +53,10 @@ export function StereoRackConfig(): React.JSX.Element {
     <div className="module-config-row">
       <label className="module-config-field">
         <span>Track display</span>
-        <select value={trackSize} onChange={(e) => setTrackSize(e.target.value as TrackDisplaySize)}>
+        <select
+          value={trackSize}
+          onChange={(e) => setTrackSize(e.target.value as TrackDisplaySize)}
+        >
           <option value="teeny">Teeny</option>
           <option value="less-teeny">Less teeny</option>
           <option value="large-print">Large print</option>

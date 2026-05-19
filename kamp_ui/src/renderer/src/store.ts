@@ -254,8 +254,10 @@ export const useStore = create<PlayerStore>((set, get) => ({
     return saved ? parseInt(saved) : 10
   })(),
   baseKampEditMode: localStorage.getItem('kamp:base-kamp-edit-mode') === 'true',
-  stereoRackTrackSize: (localStorage.getItem('stereo-rack:track-size') as TrackDisplaySize) ?? 'teeny',
-  stereoRackPlasmaMode: (localStorage.getItem('stereo-rack:plasma-mode') as PlasmaMode) ?? 'sometimes',
+  stereoRackTrackSize:
+    (localStorage.getItem('stereo-rack:track-size') as TrackDisplaySize) ?? 'teeny',
+  stereoRackPlasmaMode:
+    (localStorage.getItem('stereo-rack:plasma-mode') as PlasmaMode) ?? 'sometimes',
   stereoRackTraceStyle: (localStorage.getItem('stereo-rack:trace-style') as TraceStyle) ?? 'glowy',
   albumEditMode: false,
   albumMetaExpanded: localStorage.getItem('kamp:meta-expanded') === 'true',

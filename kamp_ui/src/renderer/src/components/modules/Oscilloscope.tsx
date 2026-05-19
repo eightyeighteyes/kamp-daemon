@@ -70,14 +70,14 @@ const TRACE_ALPHA = 0.88
 
 type TraceParams = { glowWidth: number; glowAlpha: number }
 const STYLE_PARAMS: Record<string, TraceParams> = {
-  clean:  { glowWidth: 0,  glowAlpha: 0    },  // no bloom
-  glowy:  { glowWidth: 4,  glowAlpha: 0.15 },  // default — wide dim bloom
-  trippy: { glowWidth: 12, glowAlpha: 0.08 },  // very wide dim bloom + echoes
+  clean: { glowWidth: 0, glowAlpha: 0 }, // no bloom
+  glowy: { glowWidth: 4, glowAlpha: 0.15 }, // default — wide dim bloom
+  trippy: { glowWidth: 12, glowAlpha: 0.08 } // very wide dim bloom + echoes
 }
 
 // Trippy echo ring buffer — snapshots of y-positions saved every N frames.
-const TRIPPY_SNAPSHOT_FRAMES = 8  // one snapshot per 8 frames ≈ 8fps at 60fps
-const TRIPPY_MAX_SNAPSHOTS = 8    // ~1s of history at 8fps
+const TRIPPY_SNAPSHOT_FRAMES = 8 // one snapshot per 8 frames ≈ 8fps at 60fps
+const TRIPPY_MAX_SNAPSHOTS = 8 // ~1s of history at 8fps
 
 // Peak follower decay per frame at 60fps.
 // 0.92^60 ≈ 0.007 — visible rhythmic pulse: 73% at 100ms, ~20% at 500ms.
@@ -366,7 +366,7 @@ export function Oscilloscope(): React.JSX.Element {
         ctx.lineJoin = 'round'
         for (let e = 0; e < echoSnapshotsRef.current.length; e++) {
           const age = Math.min(1, (timestamp - echoTimestampsRef.current[e]) / 1000)
-          const echoAlpha = (1 - age) * 0.10
+          const echoAlpha = (1 - age) * 0.1
           if (echoAlpha < 0.01) continue
           const snap = echoSnapshotsRef.current[e]
           ctx.strokeStyle = `rgba(${r},${g},${b},${echoAlpha})`
