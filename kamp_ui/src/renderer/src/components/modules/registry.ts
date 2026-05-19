@@ -2,7 +2,7 @@ import type React from 'react'
 import { NewArrivalsModule, NewArrivalsConfig } from './NewArrivalsModule'
 import { LastPlayedModule, LastPlayedConfig } from './LastPlayedModule'
 import { TopAlbumsModule, TopAlbumsConfig } from './TopAlbumsModule'
-import { StereoRackModule } from './StereoRackModule'
+import { StereoRackModule, StereoRackConfig } from './StereoRackModule'
 
 export type DisplayStyle = 'shelf' | 'grid' | 'list'
 
@@ -41,6 +41,7 @@ export const MODULE_REGISTRY: ModuleRegistration[] = [
     // the "add module" list rather than the active Home view on first launch.
     id: 'kamp.stereo-rack',
     title: 'Stereo Rack',
-    component: StereoRackModule
+    component: StereoRackModule,
+    configComponent: StereoRackConfig
   }
 ]
