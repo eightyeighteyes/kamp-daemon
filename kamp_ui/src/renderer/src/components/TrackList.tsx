@@ -264,7 +264,7 @@ export function TrackList(): React.JSX.Element | null {
             <span
               className="mb-pill__progress"
               aria-hidden="true"
-              style={{ animationDuration: `${tracks.length * 1.2}s` }}
+              style={{ animationDuration: `${tracks.length * 1.5}s` }}
             />
           )}
         </button>

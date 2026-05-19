@@ -183,6 +183,7 @@ export function MusicBrainzModal({
             return (
               <div key={field} className="mb-cmp-row">
                 <span className="mb-cmp-row__label">{FIELD_LABELS[field]}</span>
+                <Toggle side={sel.album[field]} onChange={(v) => setAlbumField(field, v)} />
                 <div className="mb-cmp-row__values">
                   <span
                     className={`mb-cmp-row__local${chosen === 'mb' && isDiff ? ' mb-cmp-row__local--overridden' : ''}`}
@@ -195,7 +196,6 @@ export function MusicBrainzModal({
                     {mbVal || <em style={{ opacity: 0.4 }}>empty</em>}
                   </span>
                 </div>
-                <Toggle side={sel.album[field]} onChange={(v) => setAlbumField(field, v)} />
               </div>
             )
           })}
@@ -213,11 +213,10 @@ export function MusicBrainzModal({
                     {local.disc_number > 1 ? `${local.disc_number}-` : ''}
                     {local.track_number}
                   </span>
-                  <div className="mb-cmp-row__values">
+                  <div className="mb-cmp-row__values" style={{ gridColumn: '2 / -1' }}>
                     <span className="mb-cmp-row__local">{local.title}</span>
                     <span className="mb-cmp-row__mb--no-match">no MB match</span>
                   </div>
-                  {/* No toggle — nothing to apply */}
                 </div>
               )
             }
@@ -230,6 +229,7 @@ export function MusicBrainzModal({
                   {local.disc_number > 1 ? `${local.disc_number}-` : ''}
                   {local.track_number}
                 </span>
+                <Toggle side={chosen} onChange={(v) => setTrackField(key, v)} />
                 <div className="mb-cmp-row__values">
                   <span
                     className={`mb-cmp-row__local${chosen === 'mb' && isDiff ? ' mb-cmp-row__local--overridden' : ''}`}
@@ -242,7 +242,6 @@ export function MusicBrainzModal({
                     {mb.title}
                   </span>
                 </div>
-                <Toggle side={chosen} onChange={(v) => setTrackField(key, v)} />
               </div>
             )
           })}

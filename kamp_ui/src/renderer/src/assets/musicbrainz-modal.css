@@ -76,7 +76,7 @@
 /* Comparison row */
 .mb-cmp-row {
   display: grid;
-  grid-template-columns: 72px 1fr auto;
+  grid-template-columns: 72px auto 1fr;
   align-items: start;
   gap: 0 12px;
   padding: 7px 0;
