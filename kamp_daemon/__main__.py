@@ -678,8 +678,11 @@ def _cmd_daemon(
             # will fire shortly and preload_next will queue the new next track.
         else:
             engine.stop()
-            # Queue exhausted — clear saved state so restart starts fresh
-            # rather than restoring the last track a few seconds from the end.
+            # Queue exhausted — reset in-memory queue so subsequent add/play-next
+            # operations start fresh rather than appending to stale old tracks.
+            queue.clear()
+            # Clear saved state so restart starts fresh rather than restoring
+            # the last track a few seconds from the end.
             index.clear_player_state()
             index.clear_queue_state()
 

@@ -969,6 +969,42 @@ class TestQueueMutationEndpoints:
         assert resp.status_code == 200
         mock_engine.play.assert_not_called()
 
+    def test_add_to_queue_starts_playback_when_stopped(
+        self,
+        client: TestClient,
+        mock_index: MagicMock,
+        mock_queue: MagicMock,
+        mock_engine: MagicMock,
+    ) -> None:
+        t = _track(1)
+        mock_index.get_track_by_path.return_value = t
+        # Three calls: was_stopped check, current after mutation, _state_snapshot in notify
+        mock_queue.current.side_effect = [None, t, t]
+        resp = client.post(
+            "/api/v1/player/queue/add", json={"file_path": str(t.file_path)}
+        )
+        assert resp.status_code == 200
+        mock_engine.play.assert_called_once_with(t.file_path)
+        mock_engine.preload_next.assert_not_called()
+
+    def test_play_next_starts_playback_when_stopped(
+        self,
+        client: TestClient,
+        mock_index: MagicMock,
+        mock_queue: MagicMock,
+        mock_engine: MagicMock,
+    ) -> None:
+        t = _track(2)
+        mock_index.get_track_by_path.return_value = t
+        # Three calls: was_stopped check, current after mutation, _state_snapshot in notify
+        mock_queue.current.side_effect = [None, t, t]
+        resp = client.post(
+            "/api/v1/player/queue/play-next", json={"file_path": str(t.file_path)}
+        )
+        assert resp.status_code == 200
+        mock_engine.play.assert_called_once_with(t.file_path)
+        mock_engine.preload_next.assert_not_called()
+
 
 class TestAlbumQueueEndpoints:
     def test_add_album_to_queue_calls_queue_method(
@@ -1036,6 +1072,44 @@ class TestAlbumQueueEndpoints:
             json={"album_artist": "X", "album": "Y", "index": 0},
         )
         assert resp.status_code == 404
+
+    def test_add_album_starts_playback_when_stopped(
+        self,
+        client: TestClient,
+        mock_index: MagicMock,
+        mock_queue: MagicMock,
+        mock_engine: MagicMock,
+    ) -> None:
+        ts = [_track(i) for i in range(3)]
+        mock_index.tracks_for_album.return_value = ts
+        # Three calls: was_stopped check, current after mutation, _state_snapshot in notify
+        mock_queue.current.side_effect = [None, ts[0], ts[0]]
+        resp = client.post(
+            "/api/v1/player/queue/add-album",
+            json={"album_artist": "Artist", "album": "Album"},
+        )
+        assert resp.status_code == 200
+        mock_engine.play.assert_called_once_with(ts[0].file_path)
+        mock_engine.preload_next.assert_not_called()
+
+    def test_play_album_next_starts_playback_when_stopped(
+        self,
+        client: TestClient,
+        mock_index: MagicMock,
+        mock_queue: MagicMock,
+        mock_engine: MagicMock,
+    ) -> None:
+        ts = [_track(i) for i in range(3)]
+        mock_index.tracks_for_album.return_value = ts
+        # Three calls: was_stopped check, current after mutation, _state_snapshot in notify
+        mock_queue.current.side_effect = [None, ts[0], ts[0]]
+        resp = client.post(
+            "/api/v1/player/queue/play-album-next",
+            json={"album_artist": "Artist", "album": "Album"},
+        )
+        assert resp.status_code == 200
+        mock_engine.play.assert_called_once_with(ts[0].file_path)
+        mock_engine.preload_next.assert_not_called()
 
 
 class TestPlayerWebSocket:
