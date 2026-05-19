@@ -423,6 +423,7 @@ type TrackRightProps = {
   year: string
   format: string
   isDeadAir?: boolean
+  isPaused?: boolean
 }
 
 function TrackRight({
@@ -430,8 +431,27 @@ function TrackRight({
   duration,
   year,
   format,
-  isDeadAir = false
+  isDeadAir = false,
+  isPaused = false
 }: TrackRightProps): React.JSX.Element {
+  const pauseCursorRef = useRef<HTMLSpanElement | null>(null)
+
+  // Half-rate cursor blink while paused: toggles a | after the frozen position
+  // every 1000ms, written directly to the DOM — no React state involved.
+  useEffect(() => {
+    const el = pauseCursorRef.current
+    if (!el) return
+    if (!isPaused) {
+      el.textContent = ''
+      return
+    }
+    el.textContent = '|'
+    const id = setInterval(() => {
+      el.textContent = el.textContent === '|' ? '' : '|'
+    }, 1000)
+    return () => clearInterval(id)
+  }, [isPaused])
+
   if (isDeadAir) {
     return (
       <span className="track-right">
@@ -444,7 +464,10 @@ function TrackRight({
 
   return (
     <span className="track-right">
-      <span className="track-time">{formatTime(position)}</span>
+      <span className="track-time">
+        {formatTime(position)}
+        <span ref={pauseCursorRef} className="track-pause-cursor" />
+      </span>
       <span className="track-timesep">/</span>
       <span className="track-time">{formatTime(duration)}</span>
       {year && <span className="track-year">{year}</span>}
@@ -458,7 +481,7 @@ function TrackRight({
 // ---------------------------------------------------------------------------
 
 export function TrackDisplay(): React.JSX.Element {
-  const { isPlaying, trackMeta, whimsyFlags, isDeadAir } = useStereoRack()
+  const { isPlaying, isPaused, trackMeta, whimsyFlags, isDeadAir } = useStereoRack()
   const position = useStore((s) => s.player.position)
 
   // Show content when a track is loaded or dead air is active (dead air renders
@@ -482,6 +505,7 @@ export function TrackDisplay(): React.JSX.Element {
             year={trackMeta?.year ?? ''}
             format={trackMeta?.format ?? ''}
             isDeadAir={isDeadAir}
+            isPaused={isPaused}
           />
         </>
       )}

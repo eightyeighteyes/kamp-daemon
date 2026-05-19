@@ -266,6 +266,14 @@
   color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
+/* Pause cursor: fixed-width so the | toggle doesn't shift sibling layout. */
+.track-pause-cursor {
+  display: inline-block;
+  width: 0.5ch;
+  color: rgba(255, 255, 255, 0.40);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ============================================================
    Compact variant — container query (≤400px)
    Oscilloscope collapses; VU meters stack L above R,

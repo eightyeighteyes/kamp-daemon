@@ -191,6 +191,33 @@ export function Oscilloscope(): React.JSX.Element {
       const buf = bufferRef.current
       const smooth = smoothBufRef.current!
 
+      // --- Dead air: thermal noise polyline, bypass ring buffer entirely ---
+      if (deadAirRef.current) {
+        ctx.clearRect(0, 0, w, h)
+        ctx.save()
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+        ctx.lineWidth = 1
+        ctx.setLineDash([4, 6])
+        ctx.beginPath()
+        ctx.moveTo(0, h / 2)
+        ctx.lineTo(w, h / 2)
+        ctx.stroke()
+        ctx.restore()
+        ctx.save()
+        ctx.strokeStyle = accentRef.current
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([])
+        ctx.beginPath()
+        for (let x = 0; x <= w; x++) {
+          const py = h / 2 + (Math.random() - 0.5) * 2
+          if (x === 0) ctx.moveTo(x, py)
+          else ctx.lineTo(x, py)
+        }
+        ctx.stroke()
+        ctx.restore()
+        return
+      }
+
       // --- Cold boot sine override ---
       const cbStart = coldBootRef.current.startTs
       const inColdBoot = cbStart !== null && cbStart >= 0 && timestamp - cbStart < COLD_BOOT_VU_MS
@@ -268,6 +295,18 @@ export function Oscilloscope(): React.JSX.Element {
         }
       }
 
+      // --- Pause drift ---
+      // After the pause decay settles, breathe the trace with a slow 0.3 Hz
+      // sinusoidal vertical offset — barely perceptible, more felt than seen.
+      // Clears instantly when playback resumes.
+      let driftY = 0
+      if (isPausedRef.current && pauseStartTsRef.current >= 0) {
+        const pauseElapsed = timestamp - pauseStartTsRef.current
+        if (pauseElapsed >= PAUSE_DECAY_MS) {
+          driftY = Math.sin(timestamp * 0.001 * 0.3 * 2 * Math.PI) * 2
+        }
+      }
+
       // --- Draw ---
       ctx.clearRect(0, 0, w, h)
 
@@ -288,7 +327,7 @@ export function Oscilloscope(): React.JSX.Element {
       // keeps the trace visible at silence rather than collapsing to a dot.
       const displayAmp = Math.max(envAmp, NOISE_FLOOR_AMP)
       const { r, g, b } = accentRgbRef.current
-      const midY = h / 2
+      const midY = h / 2 + driftY
       ctx.save()
       ctx.setLineDash([])
       ctx.lineJoin = 'round'
