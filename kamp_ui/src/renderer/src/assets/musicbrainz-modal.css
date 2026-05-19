@@ -77,9 +77,12 @@
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
-  padding: 2px 5px;
+  width: 24px;
+  padding: 2px 0;
+  text-align: center;
   border-radius: 4px;
   transition: color 0.1s, background 0.1s;
+  flex-shrink: 0;
 }
 
 .mb-modal__nav-btn:hover:not(:disabled) {
@@ -88,15 +91,16 @@
 }
 
 .mb-modal__nav-btn:disabled {
-  opacity: 0.25;
+  opacity: 0.35;
   cursor: default;
 }
 
 .mb-modal__nav-count {
   font-size: 11px;
   color: var(--text-dim);
-  min-width: 28px;
+  width: 44px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .mb-modal__body {
