@@ -325,6 +325,16 @@
   }
 }
 
+/* ============================================================
+   Base Kamp integration — suppress the module body min-height
+   (.base-kamp-module-body has min-height: 285px for shelf modules;
+   the stereo rack is much shorter and needs no floor.)
+   ============================================================ */
+
+.base-kamp-module-body:has(.stereo-rack-module) {
+  min-height: 0;
+}
+
 /* always: when container is narrow enough that meters would show ≤10 segments
    (oscilloscope 240px + 2×8px gap + 2×100px meters = 456px), hide meters
    and let the plasma fill the full width. */
