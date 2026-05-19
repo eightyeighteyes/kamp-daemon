@@ -196,7 +196,7 @@ class TestTagDirectory:
         assert str(tags["TALB"]) == "Great Album"
         assert str(tags["TPE1"]) == "Cool Artist"
         assert str(tags["TDRC"]) == "2020"
-        assert str(tags["TXXX:MusicBrainz Release Id"]) == "abc-123"
+        assert str(tags["TXXX:MusicBrainz Album Id"]) == "abc-123"
         # Extended tags
         assert str(tags["TSOP"]) == "Artist, Cool"
         assert str(tags["TXXX:MusicBrainz Artist Id"]) == "artist-mbid-1"
@@ -663,7 +663,7 @@ class TestTagDirectoryM4a:
         assert initial_tags["\xa9ART"] == ["Cool Artist"]
         assert initial_tags["\xa9alb"] == ["Great Album"]
         assert initial_tags["\xa9day"] == ["2020"]
-        assert "----:com.apple.iTunes:MusicBrainz Release Id" in initial_tags
+        assert "----:com.apple.iTunes:MusicBrainz Album Id" in initial_tags
         mock_mp4.save.assert_called()
 
 
@@ -1890,7 +1890,7 @@ class TestWriteTagsFromTrackMetadata:
         assert str(tags["TPE1"]) == "Artist"
         assert str(tags["TALB"]) == "Album"
         assert str(tags["TRCK"]) == "1/5"
-        assert "TXXX:MusicBrainz Release Id" in tags
+        assert "TXXX:MusicBrainz Album Id" in tags
         assert "TXXX:MusicBrainz Recording Id" in tags
 
     def test_writes_mp3_no_year(self, tmp_path: Path) -> None:
@@ -1999,7 +1999,7 @@ class TestWriteTagsFromTrackMetadata:
         write_tags_from_track_metadata(mp3, track, total_tracks=1)
 
         tags = id3.ID3(str(mp3))
-        assert "TXXX:MusicBrainz Release Id" not in tags
+        assert "TXXX:MusicBrainz Album Id" not in tags
         assert "TXXX:MusicBrainz Recording Id" not in tags
 
     def test_writes_mp3_multi_disc(self, tmp_path: Path) -> None:
