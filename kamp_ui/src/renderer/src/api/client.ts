@@ -415,10 +415,75 @@ export type AlbumMetaResult = {
 export const patchAlbumMeta = (
   albumArtist: string,
   album: string,
-  opts: { genre?: string; label?: string; year?: string }
+  opts: { genre?: string; label?: string; year?: string; mb_release_id?: string }
 ): Promise<AlbumMetaResult> => {
   const params = new URLSearchParams({ album_artist: albumArtist, album })
   return patch(`/api/v1/albums/meta?${params}`, opts)
+}
+
+// ---------------------------------------------------------------------------
+// MusicBrainz lookup (KAMP-230)
+// ---------------------------------------------------------------------------
+
+export type MusicBrainzTrack = {
+  track_number: number
+  disc_number: number
+  title: string
+  recording_mbid: string
+}
+
+export type MusicBrainzRelease = {
+  mbid: string
+  release_group_mbid: string
+  title: string
+  album_artist: string
+  year: string
+  label: string
+  release_type: string
+  tracks: MusicBrainzTrack[]
+}
+
+export async function fetchMusicBrainzCandidates(
+  albumArtist: string,
+  album: string,
+  signal: AbortSignal
+): Promise<MusicBrainzRelease[]> {
+  const params = new URLSearchParams({ album_artist: albumArtist, album })
+  const res = await fetch(`${BASE_URL}/api/v1/albums/musicbrainz?${params}`, {
+    headers: _authHeaders(),
+    signal
+  })
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`
+    try {
+      const json = (await res.json()) as { detail?: string }
+      if (json.detail && typeof json.detail === 'string') message = json.detail
+    } catch {
+      // ignore
+    }
+    throw new Error(message)
+  }
+  const data = (await res.json()) as { candidates: MusicBrainzRelease[] }
+  return data.candidates
+}
+
+export async function patchTrackMeta(trackId: number, mbRecordingId: string): Promise<Track> {
+  const res = await fetch(`${BASE_URL}/api/v1/tracks/${trackId}/meta`, {
+    method: 'PATCH',
+    headers: _authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ mb_recording_id: mbRecordingId })
+  })
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`
+    try {
+      const json = (await res.json()) as { detail?: string }
+      if (json.detail && typeof json.detail === 'string') message = json.detail
+    } catch {
+      // ignore
+    }
+    throw new Error(message)
+  }
+  return res.json() as Promise<Track>
 }
 
 // ---------------------------------------------------------------------------

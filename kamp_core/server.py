@@ -263,6 +263,10 @@ class TrackTagsRequest(BaseModel):
     overwrite: bool = False
 
 
+class TrackMetaRequest(BaseModel):
+    mb_recording_id: str
+
+
 class AlbumTagsRequest(BaseModel):
     album: str | None = None
     album_artist: str | None = None
@@ -300,10 +304,34 @@ class AlbumMetaRequest(BaseModel):
     genre: str | None = None
     label: str | None = None
     year: str | None = None
+    mb_release_id: str | None = None
 
 
 class AlbumMetaOut(BaseModel):
     tracks: list[TrackOut]
+
+
+class MusicBrainzTrackOut(BaseModel):
+    track_number: int
+    disc_number: int
+    title: str
+    recording_mbid: str
+
+
+class MusicBrainzReleaseOut(BaseModel):
+    mbid: str
+    release_group_mbid: str
+    title: str
+    album_artist: str
+    year: str
+    label: str
+    release_type: str
+    tracks: list[MusicBrainzTrackOut]
+
+
+class MusicBrainzLookupOut(BaseModel):
+    # Ranked best-first. KAMP-230 always uses candidates[0]; KAMP-231 adds a picker.
+    candidates: list[MusicBrainzReleaseOut]
 
 
 class BandcampProxyFetchResult(BaseModel):
@@ -401,6 +429,7 @@ def create_app(
     on_bandcamp_sync_all_trigger: Callable[[], None] | None = None,
     dev_mode: bool = False,
     auth_token: str | None = None,
+    mb_lookup_fn: Callable[..., Any] | None = None,
 ) -> FastAPI:
     """Return a configured FastAPI application.
 
@@ -761,6 +790,36 @@ def create_app(
 
         _notify_library_changed()
         updated = index.get_track_by_id(track_id)
+        return TrackOut.from_track(updated)  # type: ignore[arg-type]
+
+    @app.patch("/api/v1/tracks/{track_id}/meta")
+    def patch_track_meta(track_id: int, req: "TrackMetaRequest") -> "TrackOut":
+        """Write a MusicBrainz recording ID to a track without renaming the file.
+
+        Tag-only operation — no file move occurs.  Returns 404 if the track is
+        not in the library.
+        """
+        from kamp_core.library import write_track_mbid_to_file
+
+        track = index.get_track_by_id(track_id)
+        if track is None:
+            raise HTTPException(status_code=404, detail="Track not found")
+
+        try:
+            write_track_mbid_to_file(
+                track.file_path, mb_recording_id=req.mb_recording_id
+            )
+        except Exception as exc:
+            logger.exception(
+                "MBID tag write failed for track %d (%s)", track.id, track.file_path
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to write MBID to {track.file_path}: {exc}",
+            ) from exc
+
+        updated = index.update_track_mb_recording_id(track_id, req.mb_recording_id)
+        _notify_library_changed()
         return TrackOut.from_track(updated)  # type: ignore[arg-type]
 
     @app.get("/api/v1/deferred-ops")
@@ -1290,7 +1349,12 @@ def create_app(
         if not tracks:
             raise HTTPException(status_code=404, detail="Album not found")
 
-        if req.genre is None and req.label is None and req.year is None:
+        if (
+            req.genre is None
+            and req.label is None
+            and req.year is None
+            and req.mb_release_id is None
+        ):
             raise HTTPException(status_code=400, detail="No changes requested")
 
         for track in tracks:
@@ -1300,6 +1364,7 @@ def create_app(
                     genre=req.genre,
                     label=req.label,
                     year=req.year,
+                    mb_release_id=req.mb_release_id,
                 )
             except Exception as exc:
                 logger.exception(
@@ -1316,9 +1381,68 @@ def create_app(
             genre=req.genre,
             label=req.label,
             year=req.year,
+            mb_release_id=req.mb_release_id,
         )
         _notify_library_changed()
         return AlbumMetaOut(tracks=[TrackOut.from_track(t) for t in updated])
+
+    @app.get("/api/v1/albums/musicbrainz", response_model=MusicBrainzLookupOut)
+    async def get_album_musicbrainz(
+        album_artist: str, album: str
+    ) -> MusicBrainzLookupOut:
+        """Fetch ranked MusicBrainz release candidates for an album.
+
+        Uses the same tier-1 (per-track recording votes) + tier-2 (album-level
+        search) strategy as the import pipeline.  Returns up to 5 candidates
+        sorted best-first.  The frontend uses candidates[0] for KAMP-230;
+        KAMP-231 will add a picker that steps through the full list.
+
+        Returns 404 if no tracks are found or if MusicBrainz has no match.
+        Returns 503 if mb_lookup_fn was not wired up at server construction.
+        """
+        if mb_lookup_fn is None:
+            raise HTTPException(
+                status_code=503, detail="MusicBrainz lookup not available"
+            )
+
+        tracks = index.tracks_for_album(album_artist, album)
+        if not tracks:
+            raise HTTPException(status_code=404, detail="Album not found")
+
+        tuples = [(t.artist, t.title, t.album) for t in tracks]
+        try:
+            from kamp_daemon.tagger import TaggingError
+
+            releases = await asyncio.get_event_loop().run_in_executor(
+                None, mb_lookup_fn, tuples
+            )
+        except Exception as exc:
+            # TaggingError and network failures both surface as 404 with the
+            # human-readable message so the frontend can show "No match found".
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        def _to_release_out(r: Any) -> MusicBrainzReleaseOut:
+            sorted_tracks = sorted(r.tracks.values(), key=lambda t: (t.disc, t.number))
+            return MusicBrainzReleaseOut(
+                mbid=r.mbid,
+                release_group_mbid=r.release_group_mbid,
+                title=r.title,
+                album_artist=r.album_artist,
+                year=r.year,
+                label=r.label,
+                release_type=r.release_type,
+                tracks=[
+                    MusicBrainzTrackOut(
+                        track_number=t.number,
+                        disc_number=t.disc,
+                        title=t.title,
+                        recording_mbid=t.recording_mbid,
+                    )
+                    for t in sorted_tracks
+                ],
+            )
+
+        return MusicBrainzLookupOut(candidates=[_to_release_out(r) for r in releases])
 
     @app.get("/api/v1/album-art")
     def get_album_art(

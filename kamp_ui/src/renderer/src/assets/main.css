@@ -20,3 +20,4 @@
 @import './modules.css';       /* overrides .album-card; must follow album-card.css */
 @import './stereo-rack.css';
 @import './animations.css';
+@import './musicbrainz-modal.css';

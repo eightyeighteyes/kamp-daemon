@@ -176,6 +176,65 @@
   }
 }
 
+/* MusicBrainz pill — stacked directly below the Edit/Done pill */
+.mb-pill {
+  top: 46px; /* Edit pill is top:12px + ~27px height + 7px gap */
+  overflow: hidden; /* clips progress bar at rounded corners */
+}
+
+.mb-pill--loading {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.mb-pill--error {
+  color: var(--error);
+  border-color: var(--error);
+  opacity: 0.8;
+}
+
+/* Daisy-chain blinking dots */
+.mb-pill__dots {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: 1px;
+}
+
+.mb-pill__dots span {
+  animation: mb-dot-blink 1.2s ease-in-out infinite;
+  opacity: 0;
+}
+
+.mb-pill__dots span:nth-child(1) { animation-delay: 0s; }
+.mb-pill__dots span:nth-child(2) { animation-delay: 0.2s; }
+.mb-pill__dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes mb-dot-blink {
+  0%, 80%, 100% { opacity: 0; }
+  40%            { opacity: 1; }
+}
+
+/* Progress bar — fills from left to ~90% over the estimated lookup duration */
+.mb-pill__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  width: 0;
+  animation: mb-progress-fill linear forwards;
+}
+
+@keyframes mb-progress-fill {
+  from { width: 0; }
+  to   { width: 90%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mb-pill__dots span { animation: none; opacity: 1; }
+  .mb-pill__progress  { animation: none; width: 30%; }
+}
+
 
 /* Visually hidden, readable by screen readers */
 .sr-only {

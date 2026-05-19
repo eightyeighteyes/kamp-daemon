@@ -888,6 +888,93 @@ def lookup_release_from_tracks(
     return _search_release(artist, album)
 
 
+_MAX_MB_CANDIDATES = 5
+
+
+def lookup_releases_from_tracks(
+    tracks: list[tuple[str, str, str]],
+) -> list[ReleaseInfo]:
+    """Return up to _MAX_MB_CANDIDATES MusicBrainz releases ranked best-first.
+
+    Uses the same tier-1 (per-track recording votes) + tier-2 (album-level
+    search) strategy as lookup_release_from_tracks, but returns all parseable
+    candidates instead of stopping at the first.  Designed for the comparison
+    UI where the user selects from multiple possible matches.
+
+    Args:
+        tracks: Sequence of (artist, title, album) strings, one per track.
+
+    Returns:
+        Non-empty list of ReleaseInfo sorted best-first.
+
+    Raises:
+        TaggingError: If no release can be found at all.
+    """
+    if not tracks:
+        raise TaggingError("No tracks provided for MusicBrainz lookup")
+
+    # Tier 1: per-track recording votes — collect top-N voted MBIDs
+    votes: Counter[str] = Counter()
+    for artist, title, album in tracks:
+        if not title:
+            continue
+        result = _mb_call(
+            musicbrainzngs.search_recordings,
+            recording=title,
+            artist=artist,
+            release=album,
+            limit=3,
+        )
+        recordings = result.get("recording-list", [])
+        if not recordings:
+            continue
+        top = recordings[0]
+        for rel in top.get("release-list", []):
+            rel_id = rel.get("id", "")
+            if rel_id:
+                votes[rel_id] += 1
+
+    seen_mbids: set[str] = set()
+    releases: list[ReleaseInfo] = []
+
+    if votes:
+        logger.debug(
+            "lookup_releases_from_tracks: top votes=%s",
+            dict(votes.most_common(_MAX_MB_CANDIDATES)),
+        )
+        for mbid, _ in votes.most_common(_MAX_MB_CANDIDATES):
+            if len(releases) >= _MAX_MB_CANDIDATES:
+                break
+            try:
+                detail = _mb_call(
+                    musicbrainzngs.get_release_by_id,
+                    mbid,
+                    includes=["artists", "recordings", "release-groups", "labels"],
+                )
+                releases.append(_parse_release(detail["release"]))
+                seen_mbids.add(mbid)
+            except (ValueError, KeyError, TaggingError):
+                continue
+
+    # Supplement with tier-2 (album-level) search when tier-1 left us short
+    if len(releases) < _MAX_MB_CANDIDATES:
+        artist, _, album = tracks[0]
+        for r in _search_releases(artist, album):
+            if r.mbid not in seen_mbids:
+                releases.append(r)
+                seen_mbids.add(r.mbid)
+                if len(releases) >= _MAX_MB_CANDIDATES:
+                    break
+
+    if not releases:
+        artist, _, album = tracks[0]
+        raise TaggingError(
+            f"No MusicBrainz results for artist={artist!r} album={album!r}"
+        )
+
+    return releases
+
+
 def _mb_call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """Call a musicbrainzngs function, retrying on transient errors with exponential backoff."""
     delay = 1.0
@@ -912,18 +999,36 @@ def _mb_call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
 
 
 def _search_release(artist: str, album: str) -> ReleaseInfo:
+    """Return the single best-matching release. Delegates to _search_releases."""
+    results = _search_releases(artist, album)
+    if results:
+        return results[0]
+    raise TaggingError(
+        f"No parseable MusicBrainz release for artist={artist!r} album={album!r}"
+    )
+
+
+def _search_releases(artist: str, album: str) -> list[ReleaseInfo]:
+    """Return up to _MAX_MB_CANDIDATES parseable releases for artist + album.
+
+    Performs one search_releases call (retrying with cleaned name when the
+    first attempt returns nothing), then fetches full details for each
+    candidate in preference order (highest score, earliest date).  Returns an
+    empty list rather than raising so callers can decide how to handle zero
+    results.
+    """
     logger.debug("MusicBrainz search: artist=%r release=%r", artist, album)
     result = _mb_call(
         musicbrainzngs.search_releases,
         artist=artist,
         release=album,
-        limit=5,
+        limit=_MAX_MB_CANDIDATES,
     )
 
-    releases: list[dict[str, Any]] = result.get("release-list", [])
-    logger.debug("MusicBrainz returned %d result(s)", len(releases))
+    raw_releases: list[dict[str, Any]] = result.get("release-list", [])
+    logger.debug("MusicBrainz returned %d result(s)", len(raw_releases))
 
-    if not releases:
+    if not raw_releases:
         # Retry once with any iTunes edition suffix stripped from the album name
         # (e.g. "Abbey Road (Super Deluxe Edition)" → "Abbey Road").
         cleaned = _EDITION_RE.sub("", album).strip()
@@ -935,14 +1040,12 @@ def _search_release(artist: str, album: str) -> ReleaseInfo:
                 musicbrainzngs.search_releases,
                 artist=artist,
                 release=cleaned,
-                limit=5,
+                limit=_MAX_MB_CANDIDATES,
             )
-            releases = result.get("release-list", [])
+            raw_releases = result.get("release-list", [])
 
-    if not releases:
-        raise TaggingError(
-            f"No MusicBrainz results for artist={artist!r} album={album!r}"
-        )
+    if not raw_releases:
+        return []
 
     # Sort candidates: highest score first; break ties by earliest release date so
     # original/digital releases (e.g. 2020-03-27) beat later vinyl reissues (2021-04-30).
@@ -951,14 +1054,14 @@ def _search_release(artist: str, album: str) -> ReleaseInfo:
         date = r.get("date", "") or "9999"
         return (-score, date)
 
-    candidates = sorted(releases, key=_sort_key)
+    sorted_raw = sorted(raw_releases, key=_sort_key)
 
-    # search_releases returns minimal data (no full date, no track listings).
-    # Fetch the full release to get accurate year and track info.  Try each
-    # candidate in preference order; skip releases whose metadata cannot be
-    # parsed (e.g. vinyl with non-numeric track numbers like "A1").
-    last_err: Exception = TaggingError("no candidates")
-    for candidate in candidates:
+    # Fetch full release details (search_releases returns minimal data).
+    # Skip releases whose metadata cannot be parsed (e.g. vinyl "A1" track nums).
+    releases: list[ReleaseInfo] = []
+    for candidate in sorted_raw:
+        if len(releases) >= _MAX_MB_CANDIDATES:
+            break
         candidate_mbid: str = candidate["id"]
         logger.debug("Fetching full release details for %s", candidate_mbid)
         detail = _mb_call(
@@ -967,15 +1070,12 @@ def _search_release(artist: str, album: str) -> ReleaseInfo:
             includes=["artists", "recordings", "release-groups", "labels"],
         )
         try:
-            return _parse_release(detail["release"])
+            releases.append(_parse_release(detail["release"]))
         except (ValueError, KeyError) as exc:
             logger.debug("Skipping release %s: %s", candidate_mbid, exc)
-            last_err = exc
             continue
 
-    raise TaggingError(
-        f"No parseable MusicBrainz release for artist={artist!r} album={album!r}: {last_err}"
-    )
+    return releases
 
 
 def _parse_release(raw: dict[str, Any]) -> ReleaseInfo:

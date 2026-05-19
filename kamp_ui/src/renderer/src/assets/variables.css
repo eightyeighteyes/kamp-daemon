@@ -9,6 +9,10 @@
   --accent: #7c86e1;
   --accent-dim: #252b5c;
   --error: #e06c75;
+  --mb-warning: #e8a838;
+  --mb-warning-bg: rgba(232, 168, 56, 0.10);
+  --mb-safe: #4ec9a0;
+  --mb-safe-bg: rgba(78, 201, 160, 0.08);
   --text-on-accent: #000;
   --transport-h: 88px;
   --panel-w: 200px;
