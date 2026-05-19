@@ -137,8 +137,13 @@ export const VUMeter = forwardRef<VUMeterHandle, VUMeterProps>(function VUMeter(
 
       const prev = displayLevelRef.current
       const decayed = prev - DECAY_DB_PER_SEC * delta
-      // Snap up instantly when signal rises; decay linearly when it falls.
-      displayLevelRef.current = levelDb > decayed ? levelDb : Math.max(levelDb, decayed)
+      if (isPausedRef.current) {
+        // Decay freely — don't clamp at the stale store level while paused.
+        displayLevelRef.current = decayed
+      } else {
+        // Snap up instantly when signal rises; decay linearly when it falls.
+        displayLevelRef.current = levelDb > decayed ? levelDb : Math.max(levelDb, decayed)
+      }
 
       // --- Map dB → segment count ---
       const count = Math.max(

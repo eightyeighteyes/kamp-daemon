@@ -423,6 +423,7 @@ type TrackRightProps = {
   year: string
   format: string
   isDeadAir?: boolean
+  isPaused?: boolean
 }
 
 function TrackRight({
@@ -430,8 +431,38 @@ function TrackRight({
   duration,
   year,
   format,
-  isDeadAir = false
+  isDeadAir = false,
+  isPaused = false
 }: TrackRightProps): React.JSX.Element {
+  const elapsedColonRef = useRef<HTMLSpanElement | null>(null)
+  const totalColonRef = useRef<HTMLSpanElement | null>(null)
+  const slashRef = useRef<HTMLSpanElement | null>(null)
+
+  // Half-rate separator blink while paused: fades the two time colons and the
+  // elapsed/total slash every 1000ms, written directly to the DOM.
+  useEffect(() => {
+    const els = [elapsedColonRef.current, totalColonRef.current, slashRef.current]
+    if (!isPaused) {
+      els.forEach((el) => {
+        if (el) el.style.opacity = ''
+      })
+      return
+    }
+    let visible = true
+    const id = setInterval(() => {
+      visible = !visible
+      els.forEach((el) => {
+        if (el) el.style.opacity = visible ? '' : '0'
+      })
+    }, 1000)
+    return () => {
+      clearInterval(id)
+      els.forEach((el) => {
+        if (el) el.style.opacity = ''
+      })
+    }
+  }, [isPaused])
+
   if (isDeadAir) {
     return (
       <span className="track-right">
@@ -442,11 +473,24 @@ function TrackRight({
     )
   }
 
+  const [eMm, eSs] = formatTime(position).split(':')
+  const [tMm, tSs] = formatTime(duration).split(':')
+
   return (
     <span className="track-right">
-      <span className="track-time">{formatTime(position)}</span>
-      <span className="track-timesep">/</span>
-      <span className="track-time">{formatTime(duration)}</span>
+      <span className="track-time">
+        {eMm}
+        <span ref={elapsedColonRef}>:</span>
+        {eSs}
+      </span>
+      <span className="track-timesep" ref={slashRef}>
+        /
+      </span>
+      <span className="track-time">
+        {tMm}
+        <span ref={totalColonRef}>:</span>
+        {tSs}
+      </span>
       {year && <span className="track-year">{year}</span>}
       {format && <span className="track-format">{format}</span>}
     </span>
@@ -458,7 +502,7 @@ function TrackRight({
 // ---------------------------------------------------------------------------
 
 export function TrackDisplay(): React.JSX.Element {
-  const { isPlaying, trackMeta, whimsyFlags, isDeadAir } = useStereoRack()
+  const { isPlaying, isPaused, trackMeta, whimsyFlags, isDeadAir } = useStereoRack()
   const position = useStore((s) => s.player.position)
 
   // Show content when a track is loaded or dead air is active (dead air renders
@@ -482,6 +526,7 @@ export function TrackDisplay(): React.JSX.Element {
             year={trackMeta?.year ?? ''}
             format={trackMeta?.format ?? ''}
             isDeadAir={isDeadAir}
+            isPaused={isPaused}
           />
         </>
       )}
