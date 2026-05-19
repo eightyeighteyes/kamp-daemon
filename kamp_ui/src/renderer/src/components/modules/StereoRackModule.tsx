@@ -17,6 +17,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
+import type { TrackDisplaySize, PlasmaMode, TraceStyle } from '../../store'
 import type { ModuleProps } from './registry'
 import {
   StereoRackContext,
@@ -40,6 +41,47 @@ const DB_RANGE = 60
 // Dead air activates after this many milliseconds of continuous pause.
 const DEAD_AIR_IDLE_MS = 60_000
 
+export function StereoRackConfig(): React.JSX.Element {
+  const trackSize = useStore((s) => s.stereoRackTrackSize)
+  const plasmaMode = useStore((s) => s.stereoRackPlasmaMode)
+  const traceStyle = useStore((s) => s.stereoRackTraceStyle)
+  const setTrackSize = useStore((s) => s.setStereoRackTrackSize)
+  const setPlasmaMode = useStore((s) => s.setStereoRackPlasmaMode)
+  const setTraceStyle = useStore((s) => s.setStereoRackTraceStyle)
+
+  return (
+    <div className="module-config-row">
+      <label className="module-config-field">
+        <span>Track display</span>
+        <select
+          value={trackSize}
+          onChange={(e) => setTrackSize(e.target.value as TrackDisplaySize)}
+        >
+          <option value="teeny">teeny</option>
+          <option value="less-teeny">less teeny</option>
+          <option value="large-print">large print</option>
+        </select>
+      </label>
+      <label className="module-config-field">
+        <span>Plasma</span>
+        <select value={plasmaMode} onChange={(e) => setPlasmaMode(e.target.value as PlasmaMode)}>
+          <option value="sometimes">sometimes</option>
+          <option value="always">always</option>
+          <option value="never">never</option>
+        </select>
+      </label>
+      <label className="module-config-field">
+        <span>Trace style</span>
+        <select value={traceStyle} onChange={(e) => setTraceStyle(e.target.value as TraceStyle)}>
+          <option value="glowy">glowy</option>
+          <option value="clean">clean</option>
+          <option value="trippy">trippy</option>
+        </select>
+      </label>
+    </div>
+  )
+}
+
 // displayStyle is required by ModuleProps but unused — StereoRack has a fixed layout.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function StereoRackModule({ displayStyle: _ds }: ModuleProps): React.JSX.Element {
@@ -56,6 +98,16 @@ export function StereoRackModule({ displayStyle: _ds }: ModuleProps): React.JSX.
   }, [])
 
   const rafIdRef = useRef<number>(0)
+
+  const stereoRackTrackSize = useStore((s) => s.stereoRackTrackSize)
+  const stereoRackPlasmaMode = useStore((s) => s.stereoRackPlasmaMode)
+
+  const trackFontSize =
+    stereoRackTrackSize === 'large-print'
+      ? '24px'
+      : stereoRackTrackSize === 'less-teeny'
+        ? '14px'
+        : '11px'
 
   // Discrete playback state — changes are infrequent so React state is fine here.
   const player = useStore((s) => s.player)
@@ -226,8 +278,11 @@ export function StereoRackModule({ displayStyle: _ds }: ModuleProps): React.JSX.
 
   return (
     <StereoRackContext.Provider value={contextValue}>
-      <div className="stereo-rack-module">
-        <div className="stereo-rack-top">
+      <div
+        className="stereo-rack-module"
+        style={{ '--sr-track-font-size': trackFontSize } as React.CSSProperties}
+      >
+        <div className="stereo-rack-top" data-plasma={stereoRackPlasmaMode}>
           <VUMeterPair>
             <Oscilloscope />
           </VUMeterPair>

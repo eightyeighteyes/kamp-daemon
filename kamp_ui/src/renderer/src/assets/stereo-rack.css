@@ -157,11 +157,11 @@
   align-items: center;
   justify-content: space-between;
   min-height: 28px;
-  padding: 0 10px;
+  padding: 0.4em 10px;
   background: rgba(255, 255, 255, 0.03);
   border-radius: 4px;
   font-family: ui-monospace, 'SF Mono', monospace;
-  font-size: 11px;
+  font-size: var(--sr-track-font-size, 11px);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   opacity: 1;
@@ -208,6 +208,12 @@
   flex-shrink: 0;
 }
 
+/* transport.css sets font-size: 11px on .track-artist globally. Use a more
+   specific selector to ensure the stereo rack preference variable wins. */
+.stereo-rack-module .track-artist {
+  font-size: var(--sr-track-font-size, 11px);
+}
+
 .track-sep {
   color: rgba(255, 255, 255, 0.40);
   flex-shrink: 0;
@@ -245,7 +251,7 @@
 .track-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.7em;
   flex-shrink: 0;
   padding-left: 12px;
 }
@@ -289,5 +295,46 @@
   .vu-meter {
     width: 100%;
     flex: 1;
+  }
+}
+
+/* ============================================================
+   Plasma mode — oscilloscope visibility preferences
+   data-plasma is on .stereo-rack-top (descendant of the container).
+   ============================================================ */
+
+/* never: hide oscilloscope regardless of container width */
+[data-plasma="never"] .oscilloscope {
+  display: none;
+}
+
+/* always: keep oscilloscope even in compact mode — override column layout */
+@container (max-width: 800px) {
+  [data-plasma="always"] .oscilloscope {
+    display: block;
+  }
+
+  [data-plasma="always"] {
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  [data-plasma="always"] .vu-meter {
+    flex: 1;
+    width: auto;
+  }
+}
+
+/* always: when container is narrow enough that meters would show ≤10 segments
+   (oscilloscope 240px + 2×8px gap + 2×100px meters = 456px), hide meters
+   and let the plasma fill the full width. */
+@container (max-width: 456px) {
+  [data-plasma="always"] .vu-meter {
+    display: none;
+  }
+
+  [data-plasma="always"] .oscilloscope {
+    flex: 1;
+    width: 0;
   }
 }

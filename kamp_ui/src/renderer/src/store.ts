@@ -21,6 +21,10 @@ import type {
 } from './api/client'
 import type { DisplayStyle } from './components/modules/registry'
 
+export type TrackDisplaySize = 'teeny' | 'less-teeny' | 'large-print'
+export type PlasmaMode = 'always' | 'sometimes' | 'never'
+export type TraceStyle = 'clean' | 'glowy' | 'trippy'
+
 type LibraryState = {
   albums: Album[]
   artists: string[]
@@ -59,6 +63,9 @@ type PlayerStore = {
   dismissedHighlightKeys: Set<string>
   topAlbumsCount: number
   baseKampEditMode: boolean
+  stereoRackTrackSize: TrackDisplaySize
+  stereoRackPlasmaMode: PlasmaMode
+  stereoRackTraceStyle: TraceStyle
   albumEditMode: boolean
   albumMetaExpanded: boolean
   albumRenameProgress: { done: number; total: number } | null
@@ -92,6 +99,9 @@ type PlayerStore = {
   dismissHighlight: (album: Album) => void
   setTopAlbumsCount: (n: number) => void
   toggleBaseKampEditMode: () => void
+  setStereoRackTrackSize: (v: TrackDisplaySize) => void
+  setStereoRackPlasmaMode: (v: PlasmaMode) => void
+  setStereoRackTraceStyle: (v: TraceStyle) => void
   setAlbumEditMode: (mode: boolean) => void
   setAlbumMetaExpanded: (expanded: boolean) => void
   patchAlbumMeta: (
@@ -244,6 +254,11 @@ export const useStore = create<PlayerStore>((set, get) => ({
     return saved ? parseInt(saved) : 10
   })(),
   baseKampEditMode: localStorage.getItem('kamp:base-kamp-edit-mode') === 'true',
+  stereoRackTrackSize:
+    (localStorage.getItem('stereo-rack:track-size') as TrackDisplaySize) ?? 'teeny',
+  stereoRackPlasmaMode:
+    (localStorage.getItem('stereo-rack:plasma-mode') as PlasmaMode) ?? 'sometimes',
+  stereoRackTraceStyle: (localStorage.getItem('stereo-rack:trace-style') as TraceStyle) ?? 'glowy',
   albumEditMode: false,
   albumMetaExpanded: localStorage.getItem('kamp:meta-expanded') === 'true',
   albumRenameProgress: null,
@@ -414,6 +429,21 @@ export const useStore = create<PlayerStore>((set, get) => ({
     const next = !get().baseKampEditMode
     localStorage.setItem('kamp:base-kamp-edit-mode', String(next))
     set({ baseKampEditMode: next })
+  },
+
+  setStereoRackTrackSize: (v) => {
+    localStorage.setItem('stereo-rack:track-size', v)
+    set({ stereoRackTrackSize: v })
+  },
+
+  setStereoRackPlasmaMode: (v) => {
+    localStorage.setItem('stereo-rack:plasma-mode', v)
+    set({ stereoRackPlasmaMode: v })
+  },
+
+  setStereoRackTraceStyle: (v) => {
+    localStorage.setItem('stereo-rack:trace-style', v)
+    set({ stereoRackTraceStyle: v })
   },
 
   setAlbumEditMode: (mode) => {

@@ -64,10 +64,20 @@ const SMOOTH_THRESHOLD = 3.0
 const SMOOTH_PASSES = 2
 
 // Phosphor glow: two strokes on the same path.
-const GLOW_LINE_WIDTH = 4
-const GLOW_ALPHA = 0.15
+// Parameters differ by trace style — the hot path reads these at draw time.
 const TRACE_LINE_WIDTH = 1.5
 const TRACE_ALPHA = 0.88
+
+type TraceParams = { glowWidth: number; glowAlpha: number }
+const STYLE_PARAMS: Record<string, TraceParams> = {
+  clean: { glowWidth: 0, glowAlpha: 0 }, // no bloom
+  glowy: { glowWidth: 4, glowAlpha: 0.15 }, // default — wide dim bloom
+  trippy: { glowWidth: 12, glowAlpha: 0.08 } // very wide dim bloom + echoes
+}
+
+// Trippy echo ring buffer — snapshots of y-positions saved every N frames.
+const TRIPPY_SNAPSHOT_FRAMES = 4 // one snapshot per 4 frames ≈ 15fps at 60fps
+const TRIPPY_MAX_SNAPSHOTS = 12 // ~800ms of history at 15fps
 
 // Peak follower decay per frame at 60fps.
 // 0.92^60 ≈ 0.007 — visible rhythmic pulse: 73% at 100ms, ~20% at 500ms.
@@ -124,6 +134,11 @@ export function Oscilloscope(): React.JSX.Element {
   const isPausedRef = useRef<boolean>(false)
   const pauseStartTsRef = useRef<number>(-1)
   const levelAtPauseRef = useRef<number>(DB_FLOOR)
+
+  // Trippy echo ring buffer — y-position snapshots saved every N frames.
+  const echoSnapshotsRef = useRef<Float32Array[]>([])
+  const echoTimestampsRef = useRef<number[]>([])
+  const echoFrameCountRef = useRef<number>(0)
 
   useEffect(() => {
     if (isPaused) pauseStartTsRef.current = -1
@@ -328,6 +343,52 @@ export function Oscilloscope(): React.JSX.Element {
       const displayAmp = Math.max(envAmp, NOISE_FLOOR_AMP)
       const { r, g, b } = accentRgbRef.current
       const midY = h / 2 + driftY
+
+      const traceStyle = useStore.getState().stereoRackTraceStyle
+      const styleParams = STYLE_PARAMS[traceStyle] ?? STYLE_PARAMS.glowy
+
+      // --- Trippy: maintain echo ring buffer and draw ghost traces ---
+      if (traceStyle === 'trippy') {
+        echoFrameCountRef.current++
+        if (echoFrameCountRef.current % TRIPPY_SNAPSHOT_FRAMES === 0) {
+          const snap = new Float32Array(w)
+          for (let x = 0; x < w; x++) snap[x] = midY - buf[x] * displayAmp
+          echoSnapshotsRef.current.push(snap)
+          echoTimestampsRef.current.push(timestamp)
+          if (echoSnapshotsRef.current.length > TRIPPY_MAX_SNAPSHOTS) {
+            echoSnapshotsRef.current.shift()
+            echoTimestampsRef.current.shift()
+          }
+        }
+
+        ctx.save()
+        ctx.setLineDash([])
+        ctx.lineJoin = 'round'
+        for (let e = 0; e < echoSnapshotsRef.current.length; e++) {
+          const age = Math.min(1, (timestamp - echoTimestampsRef.current[e]) / 1000)
+          const echoAlpha = (1 - age) * 0.35
+          if (echoAlpha < 0.01) continue
+          const snap = echoSnapshotsRef.current[e]
+          ctx.strokeStyle = `rgba(${r},${g},${b},${echoAlpha})`
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          for (let x = 0; x < snap.length && x < w; x++) {
+            if (x === 0) ctx.moveTo(x, snap[x])
+            else ctx.lineTo(x, snap[x])
+          }
+          ctx.stroke()
+        }
+        ctx.restore()
+      } else {
+        // Clear stale echo state when switching away from trippy.
+        if (echoSnapshotsRef.current.length > 0) {
+          echoSnapshotsRef.current = []
+          echoTimestampsRef.current = []
+          echoFrameCountRef.current = 0
+        }
+      }
+
+      // --- Main trace ---
       ctx.save()
       ctx.setLineDash([])
       ctx.lineJoin = 'round'
@@ -337,10 +398,12 @@ export function Oscilloscope(): React.JSX.Element {
         if (x === 0) ctx.moveTo(x, py)
         else ctx.lineTo(x, py)
       }
-      // Outer glow (wide dim bloom)
-      ctx.strokeStyle = `rgba(${r},${g},${b},${GLOW_ALPHA})`
-      ctx.lineWidth = GLOW_LINE_WIDTH
-      ctx.stroke()
+      // Outer glow (skipped for 'clean')
+      if (styleParams.glowWidth > 0) {
+        ctx.strokeStyle = `rgba(${r},${g},${b},${styleParams.glowAlpha})`
+        ctx.lineWidth = styleParams.glowWidth
+        ctx.stroke()
+      }
       // Inner trace (bright pinpoint core)
       ctx.strokeStyle = `rgba(${r},${g},${b},${TRACE_ALPHA})`
       ctx.lineWidth = TRACE_LINE_WIDTH
