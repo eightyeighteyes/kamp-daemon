@@ -23,6 +23,10 @@
 .mb-modal {
   width: min(680px, 92vw);
   max-height: 80vh;
+  /* Grid lets the body row take whatever space the actual header/footer leave,
+     without a hardcoded magic number that breaks when header height changes. */
+  display: grid;
+  grid-template-rows: auto 1fr auto;
 }
 
 /* Header */
@@ -94,11 +98,9 @@
   text-align: center;
 }
 
-/* Body — scrollable. Max-height reserves space for header (~57px) + footer (~57px).
-   flex: 1 1 auto would need an explicit parent height; max-height is simpler here. */
 .mb-modal__body {
   overflow-y: auto;
-  max-height: calc(80vh - 114px);
+  min-height: 0; /* grid 1fr rows shrink to scroll rather than overflow */
   padding: 0 20px;
 }
 
