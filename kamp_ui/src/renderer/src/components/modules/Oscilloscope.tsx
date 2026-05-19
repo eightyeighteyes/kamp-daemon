@@ -76,8 +76,8 @@ const STYLE_PARAMS: Record<string, TraceParams> = {
 }
 
 // Trippy echo ring buffer — snapshots of y-positions saved every N frames.
-const TRIPPY_SNAPSHOT_FRAMES = 8 // one snapshot per 8 frames ≈ 8fps at 60fps
-const TRIPPY_MAX_SNAPSHOTS = 8 // ~1s of history at 8fps
+const TRIPPY_SNAPSHOT_FRAMES = 4  // one snapshot per 4 frames ≈ 15fps at 60fps
+const TRIPPY_MAX_SNAPSHOTS = 12   // ~800ms of history at 15fps
 
 // Peak follower decay per frame at 60fps.
 // 0.92^60 ≈ 0.007 — visible rhythmic pulse: 73% at 100ms, ~20% at 500ms.
@@ -366,11 +366,11 @@ export function Oscilloscope(): React.JSX.Element {
         ctx.lineJoin = 'round'
         for (let e = 0; e < echoSnapshotsRef.current.length; e++) {
           const age = Math.min(1, (timestamp - echoTimestampsRef.current[e]) / 1000)
-          const echoAlpha = (1 - age) * 0.1
+          const echoAlpha = (1 - age) * 0.35
           if (echoAlpha < 0.01) continue
           const snap = echoSnapshotsRef.current[e]
           ctx.strokeStyle = `rgba(${r},${g},${b},${echoAlpha})`
-          ctx.lineWidth = 1
+          ctx.lineWidth = 2
           ctx.beginPath()
           for (let x = 0; x < snap.length && x < w; x++) {
             if (x === 0) ctx.moveTo(x, snap[x])
