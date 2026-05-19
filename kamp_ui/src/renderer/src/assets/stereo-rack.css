@@ -332,4 +332,9 @@
   [data-plasma="always"] .vu-meter {
     display: none;
   }
+
+  [data-plasma="always"] .oscilloscope {
+    flex: 1;
+    width: 0;
+  }
 }
