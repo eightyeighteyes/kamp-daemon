@@ -569,6 +569,7 @@ def _cmd_daemon(
     from kamp_core.scrobbler import Scrobbler, authenticate as _lastfm_authenticate
     from kamp_core.server import create_app
     from kamp_daemon.config import config_set as _config_set
+    from kamp_daemon.tagger import lookup_releases_from_tracks
 
     _logger = logging.getLogger(__name__)
     pkg_version = _get_version()
@@ -902,6 +903,7 @@ def _cmd_daemon(
         on_bandcamp_sync_all_trigger=_on_bandcamp_sync_all_trigger,
         dev_mode=bool(os.environ.get("KAMP_DEV")),
         auth_token=_auth_token,
+        mb_lookup_fn=lookup_releases_from_tracks,
     )
 
     # Wrap the existing on_track_end callback to also push track.changed events.

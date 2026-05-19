@@ -1234,8 +1234,9 @@ class LibraryIndex:
         genre: str | None = None,
         label: str | None = None,
         year: str | None = None,
+        mb_release_id: str | None = None,
     ) -> list[Track]:
-        """Write genre, label, and/or year to every track in *album*.
+        """Write genre, label, year, and/or mb_release_id to every track in *album*.
 
         Returns the updated Track objects.  Only the provided (non-None) fields
         are changed; the others are left as-is in the database.
@@ -1251,6 +1252,9 @@ class LibraryIndex:
         if year is not None:
             sets.append("year = ?")
             params.append(year)
+        if mb_release_id is not None:
+            sets.append("mb_release_id = ?")
+            params.append(mb_release_id)
         if not sets:
             return self.tracks_for_album(album_artist, album)
         params.extend([album_artist, album])
@@ -1261,6 +1265,23 @@ class LibraryIndex:
         )
         self._conn.commit()
         return self.tracks_for_album(album_artist, album)
+
+    def update_track_mb_recording_id(
+        self, track_id: int, mb_recording_id: str
+    ) -> Track | None:
+        """Write mb_recording_id to a single track in the database.
+
+        Returns the updated Track, or None if the track_id is not found.
+        """
+        self._conn.execute(
+            "UPDATE tracks SET mb_recording_id = ? WHERE id = ?",
+            (mb_recording_id, track_id),
+        )
+        self._conn.commit()
+        row = self._conn.execute(
+            "SELECT * FROM tracks WHERE id = ?", (track_id,)
+        ).fetchone()
+        return _row_to_track(row) if row else None
 
     def toggle_album_favorite(
         self, album_artist: str, album: str, favorite: bool
@@ -2056,8 +2077,9 @@ def write_meta_tags_to_file(
     genre: str | None = None,
     label: str | None = None,
     year: str | None = None,
+    mb_release_id: str | None = None,
 ) -> None:
-    """Write genre, label, and/or year tags to an audio file without moving it.
+    """Write genre, label, year, and/or mb_release_id to an audio file without moving it.
 
     Only the fields that are not None are written; the others are left
     unchanged on disk.  This is a tag-only operation — no file rename occurs.
@@ -2074,6 +2096,10 @@ def write_meta_tags_to_file(
             tags["TPUB"] = id3.TPUB(encoding=3, text=label)
         if year is not None:
             tags["TDRC"] = id3.TDRC(encoding=3, text=year)
+        if mb_release_id is not None:
+            tags["TXXX:MusicBrainz Release Id"] = id3.TXXX(
+                encoding=3, desc="MusicBrainz Release Id", text=mb_release_id
+            )
         tags.save(str(path))
     elif suffix == ".m4a":
         audio = mutagen.mp4.MP4(str(path))
@@ -2087,6 +2113,10 @@ def write_meta_tags_to_file(
             ]
         if year is not None:
             audio.tags["\xa9day"] = [year]  # type: ignore[index]
+        if mb_release_id is not None:
+            audio.tags["----:com.apple.iTunes:MusicBrainz Release Id"] = [  # type: ignore[index]
+                mutagen.mp4.MP4FreeForm(mb_release_id.encode())
+            ]
         audio.save()
     elif suffix == ".flac":
         audio = mutagen.flac.FLAC(str(path))
@@ -2098,6 +2128,8 @@ def write_meta_tags_to_file(
             audio.tags["LABEL"] = [label]  # type: ignore[index]
         if year is not None:
             audio.tags["DATE"] = [year]  # type: ignore[index]
+        if mb_release_id is not None:
+            audio.tags["MUSICBRAINZ_ALBUMID"] = [mb_release_id]  # type: ignore[index]
         audio.save()
     elif suffix == ".ogg":
         audio = mutagen.oggvorbis.OggVorbis(str(path))
@@ -2109,9 +2141,50 @@ def write_meta_tags_to_file(
             audio.tags["LABEL"] = [label]  # type: ignore[index]
         if year is not None:
             audio.tags["DATE"] = [year]  # type: ignore[index]
+        if mb_release_id is not None:
+            audio.tags["MUSICBRAINZ_ALBUMID"] = [mb_release_id]  # type: ignore[index]
         audio.save()
     else:
         raise ValueError(f"Unsupported format for meta tag write: {path.suffix}")
+
+
+def write_track_mbid_to_file(path: Path, *, mb_recording_id: str) -> None:
+    """Write a MusicBrainz recording ID to an audio file without moving it.
+
+    Tag-only operation — no file rename occurs.
+    """
+    suffix = path.suffix.lower()
+    if suffix == ".mp3":
+        try:
+            tags = id3.ID3(str(path))
+        except Exception:
+            tags = id3.ID3()
+        tags["TXXX:MusicBrainz Track Id"] = id3.TXXX(
+            encoding=3, desc="MusicBrainz Track Id", text=mb_recording_id
+        )
+        tags.save(str(path))
+    elif suffix == ".m4a":
+        audio = mutagen.mp4.MP4(str(path))
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags["----:com.apple.iTunes:MusicBrainz Track Id"] = [  # type: ignore[index]
+            mutagen.mp4.MP4FreeForm(mb_recording_id.encode())
+        ]
+        audio.save()
+    elif suffix == ".flac":
+        audio = mutagen.flac.FLAC(str(path))
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags["MUSICBRAINZ_TRACKID"] = [mb_recording_id]  # type: ignore[index]
+        audio.save()
+    elif suffix == ".ogg":
+        audio = mutagen.oggvorbis.OggVorbis(str(path))
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags["MUSICBRAINZ_TRACKID"] = [mb_recording_id]  # type: ignore[index]
+        audio.save()
+    else:
+        raise ValueError(f"Unsupported format for MBID tag write: {path.suffix}")
 
 
 def _read_tags(path: Path) -> Track | None:

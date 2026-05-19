@@ -1,12 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { artUrl } from '../api/client'
-import type { AlbumTagsCollision, Track, TrackTagsCollision } from '../api/client'
+import { artUrl, fetchMusicBrainzCandidates, patchTrackMeta } from '../api/client'
+import type {
+  AlbumTagsCollision,
+  MusicBrainzRelease,
+  Track,
+  TrackTagsCollision
+} from '../api/client'
 import { TrackContextMenu } from './TrackContextMenu'
 import { EditableTrackTitle } from './EditableTrackTitle'
 import { EditableAlbumField } from './EditableAlbumField'
 import { CollisionModal } from './CollisionModal'
 import { AlbumMetaPanel } from './AlbumMetaPanel'
+import { MusicBrainzModal } from './MusicBrainzModal'
+import type { MBApplyPayload } from './MusicBrainzModal'
 import {
   FavoriteIcon,
   PencilIcon,
@@ -23,6 +30,12 @@ type AlbumRenameToast = {
   message: string
   undo: () => Promise<AlbumTagsCollision | null>
 }
+
+type MBFetchState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; candidates: MusicBrainzRelease[] }
+  | { status: 'error'; message: string }
 
 function HeroImage({ src }: { src: string }): React.JSX.Element {
   const [loaded, setLoaded] = useState(false)
@@ -57,11 +70,13 @@ export function TrackList(): React.JSX.Element | null {
   const patchAlbumMeta = useStore((s) => s.patchAlbumMeta)
   const patchTrackTitle = useStore((s) => s.patchTrackTitle)
   const patchAlbumTags = useStore((s) => s.patchAlbumTags)
+  const refreshOpenAlbum = useStore((s) => s.refreshOpenAlbum)
   const albumRenameProgress = useStore((s) => s.albumRenameProgress)
   const deferredOps = useStore((s) => s.deferredOps)
 
   const albumTitleRef = useRef<HTMLHeadingElement>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mbAbortRef = useRef<AbortController | null>(null)
   const [collision, setCollision] = useState<
     (TrackTagsCollision & { pendingTrackId: number; pendingTitle: string }) | null
   >(null)
@@ -69,6 +84,16 @@ export function TrackList(): React.JSX.Element | null {
     (AlbumTagsCollision & { pendingOpts: Parameters<typeof patchAlbumTags>[2] }) | null
   >(null)
   const [albumRenameToast, setAlbumRenameToast] = useState<AlbumRenameToast | null>(null)
+  const [mbState, setMbState] = useState<MBFetchState>({ status: 'idle' })
+
+  // Reset MB state when navigating to a different album (derived state from props).
+  // Using the render-time pattern avoids a setState-in-effect lint violation.
+  const albumKey = album ? `${album.album_artist}\0${album.album}` : null
+  const [prevAlbumKey, setPrevAlbumKey] = useState<string | null>(albumKey)
+  if (albumKey !== prevAlbumKey) {
+    setPrevAlbumKey(albumKey)
+    setMbState({ status: 'idle' })
+  }
 
   const showRenameToast = (toast: AlbumRenameToast): void => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
@@ -81,6 +106,79 @@ export function TrackList(): React.JSX.Element | null {
   useEffect(() => {
     if (albumEditMode) albumTitleRef.current?.focus()
   }, [albumEditMode])
+
+  // Abort any in-flight MB request when the album changes or on unmount.
+  useEffect(() => {
+    return () => {
+      mbAbortRef.current?.abort()
+      mbAbortRef.current = null
+    }
+  }, [albumKey])
+
+  const handleFetchMB = (): void => {
+    if (!album) return
+    mbAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    mbAbortRef.current = ctrl
+    setMbState({ status: 'loading' })
+    fetchMusicBrainzCandidates(album.album_artist, album.album, ctrl.signal).then(
+      (candidates) => {
+        if (!ctrl.signal.aborted) setMbState({ status: 'ready', candidates })
+      },
+      (err: unknown) => {
+        if (ctrl.signal.aborted) return
+        const msg = err instanceof Error ? err.message : 'MusicBrainz lookup failed'
+        setMbState({ status: 'error', message: msg })
+        // Auto-reset error display after 4 s so the pill returns to idle.
+        setTimeout(() => setMbState({ status: 'idle' }), 4_000)
+      }
+    )
+  }
+
+  const handleMBApply = async (payload: MBApplyPayload): Promise<void> => {
+    if (!album) return
+    setMbState({ status: 'idle' })
+
+    const mbRelease =
+      (mbState as Extract<MBFetchState, { status: 'ready' }>).candidates?.[0] ?? null
+    if (!mbRelease) return
+
+    // 1. Album meta (year, label, mb_release_id)
+    const metaOpts: { year?: string; label?: string; mb_release_id?: string } = {
+      mb_release_id: mbRelease.mbid
+    }
+    if (payload.album.year === 'mb' && mbRelease.year) metaOpts.year = mbRelease.year
+    if (payload.album.label === 'mb' && mbRelease.label) metaOpts.label = mbRelease.label
+    await patchAlbumMeta(album.album_artist, album.album, metaOpts)
+
+    // 2. Album tags (title, album_artist)
+    const tagOpts: { album?: string; album_artist?: string } = {}
+    if (payload.album.title === 'mb') tagOpts.album = mbRelease.title
+    if (payload.album.album_artist === 'mb') tagOpts.album_artist = mbRelease.album_artist
+    if (tagOpts.album || tagOpts.album_artist) {
+      await patchAlbumTags(album.album_artist, album.album, tagOpts)
+    }
+
+    // 3. Track titles (sequential) + recording MBIDs (parallel)
+    const mbTrackMap = new Map(
+      mbRelease.tracks.map((t) => [`${t.disc_number}-${t.track_number}`, t])
+    )
+    const mbidPromises: Promise<unknown>[] = []
+    for (const local of tracks) {
+      const key = `${local.disc_number}-${local.track_number}`
+      const mbTrack = mbTrackMap.get(key)
+      if (!mbTrack) continue
+      if (payload.tracks[key] === 'mb' && local.title !== mbTrack.title) {
+        await patchTrackTitle(local.id, mbTrack.title)
+      }
+      if (mbTrack.recording_mbid && local.mb_recording_id !== mbTrack.recording_mbid) {
+        mbidPromises.push(patchTrackMeta(local.id, mbTrack.recording_mbid))
+      }
+    }
+    if (mbidPromises.length > 0) await Promise.allSettled(mbidPromises)
+
+    await refreshOpenAlbum()
+  }
 
   const [menu, setMenu] = useState<ContextMenu | null>(null)
 
@@ -138,6 +236,39 @@ export function TrackList(): React.JSX.Element | null {
         <PencilIcon size={11} />
         {albumEditMode ? 'Done' : 'Edit tags'}
       </button>
+
+      {/* MusicBrainz fetch pill — only visible in edit mode, stacked below Edit/Done */}
+      {albumEditMode && (
+        <button
+          className={`breadcrumb-edit-btn mb-pill${mbState.status === 'loading' ? ' mb-pill--loading' : mbState.status === 'error' ? ' mb-pill--error' : ''}`}
+          disabled={mbState.status === 'loading'}
+          title={mbState.status === 'error' ? mbState.message : 'Fetch from MusicBrainz'}
+          onClick={handleFetchMB}
+          type="button"
+        >
+          {mbState.status === 'loading' ? (
+            <>
+              Searching
+              <span className="mb-pill__dots" aria-hidden="true">
+                <span>.</span>
+                <span>.</span>
+                <span>.</span>
+              </span>
+            </>
+          ) : mbState.status === 'error' ? (
+            'No match'
+          ) : (
+            'MusicBrainz'
+          )}
+          {mbState.status === 'loading' && (
+            <span
+              className="mb-pill__progress"
+              aria-hidden="true"
+              style={{ animationDuration: `${tracks.length * 1.2}s` }}
+            />
+          )}
+        </button>
+      )}
 
       {/* Screen-reader announcement for edit-mode transitions */}
       <div aria-live="polite" className="sr-only">
@@ -328,6 +459,14 @@ export function TrackList(): React.JSX.Element | null {
 
       {menu && (
         <TrackContextMenu x={menu.x} y={menu.y} track={menu.track} onClose={() => setMenu(null)} />
+      )}
+      {mbState.status === 'ready' && (
+        <MusicBrainzModal
+          release={mbState.candidates[0]}
+          localTracks={tracks}
+          onApply={(payload) => void handleMBApply(payload)}
+          onClose={() => setMbState({ status: 'idle' })}
+        />
       )}
       {collision && (
         <CollisionModal

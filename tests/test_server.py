@@ -2828,7 +2828,7 @@ class TestPatchAlbumMetaEndpoint:
 
         assert resp.status_code == 200
         mock_index.update_album_meta.assert_called_once_with(
-            "Artist", "Record", genre=None, label="ECM", year="1975"
+            "Artist", "Record", genre=None, label="ECM", year="1975", mb_release_id=None
         )
 
     def test_returns_404_for_unknown_album(

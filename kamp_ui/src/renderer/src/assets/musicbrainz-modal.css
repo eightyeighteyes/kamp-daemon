@@ -1,0 +1,218 @@
+/* MusicBrainz comparison modal (KAMP-230) ---------------------------------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mb-modal {
+  width: min(680px, 92vw);
+  max-height: 80vh;
+}
+
+/* Header */
+.mb-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mb-modal__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.mb-modal__release-type {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--surface-hover);
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+/* Body — scrollable. Max-height reserves space for header (~57px) + footer (~57px).
+   flex: 1 1 auto would need an explicit parent height; max-height is simpler here. */
+.mb-modal__body {
+  overflow-y: auto;
+  max-height: calc(80vh - 114px);
+  padding: 0 20px;
+}
+
+/* Section headings */
+.mb-modal__section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 14px 0 6px;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+/* Comparison row */
+.mb-cmp-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: start;
+  gap: 0 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mb-cmp-row:last-child {
+  border-bottom: none;
+}
+
+/* Field label */
+.mb-cmp-row__label {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Values column — stacked local on top, MB below */
+.mb-cmp-row__values {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mb-cmp-row__local {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mb-cmp-row__local--overridden {
+  text-decoration: line-through;
+}
+
+.mb-cmp-row__mb {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mb-cmp-row__mb--diff {
+  color: var(--mb-warning);
+}
+
+.mb-cmp-row__mb--same {
+  color: var(--mb-safe);
+}
+
+/* Toggle pill */
+.mb-toggle {
+  display: inline-flex;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.mb-toggle__btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  border: none;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+}
+
+.mb-toggle__btn--active {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.mb-toggle__btn:first-child {
+  border-right: 1px solid var(--border);
+}
+
+/* Unmatched track row */
+.mb-cmp-row--unmatched .mb-cmp-row__label,
+.mb-cmp-row--unmatched .mb-cmp-row__local {
+  opacity: 0.45;
+}
+
+.mb-cmp-row--unmatched .mb-cmp-row__mb--no-match {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-dim);
+  opacity: 0.55;
+}
+
+/* Footer */
+.mb-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mb-modal__btn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: filter 0.1s, opacity 0.1s;
+}
+
+.mb-modal__btn--ghost {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.mb-modal__btn--ghost:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.mb-modal__btn--accent {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--text-on-accent);
+}
+
+.mb-modal__btn--accent:hover {
+  filter: brightness(1.1);
+}

@@ -27,6 +27,7 @@ from kamp_daemon.tagger import (
     _write_tags,
     configure_musicbrainz,
     is_tagged,
+    lookup_releases_from_tracks,
     read_release_mbids,
     read_track_metadata_from_file,
     tag_directory,
@@ -173,7 +174,7 @@ class TestTagDirectory:
         _make_mp3(mp3)
 
         with patch("musicbrainzngs.search_releases", return_value={"release-list": []}):
-            with pytest.raises(TaggingError, match="No MusicBrainz results"):
+            with pytest.raises(TaggingError, match="No parseable MusicBrainz release"):
                 tag_directory(tmp_path, [mp3])
 
     def test_mp3_tags_written(self, tmp_path: Path) -> None:
@@ -241,8 +242,10 @@ class TestTagDirectory:
             ) as mock_get:
                 tag_directory(tmp_path, [mp3])
 
-        # The winning MBID ("high") must be passed to get_release_by_id
-        assert mock_get.call_args[0][0] == "high"
+        # The highest-scoring MBID ("high") must be fetched first.
+        # _search_releases fetches all candidates in score order, so check
+        # the first call rather than the last.
+        assert mock_get.call_args_list[0][0][0] == "high"
 
     def test_tie_breaks_by_earliest_date(self, tmp_path: Path) -> None:
         """When scores are equal, the earlier-dated release is preferred over a
@@ -511,7 +514,7 @@ class TestEditionSuffixRetry:
         empty: dict[str, Any] = {"release-list": []}
 
         with patch("musicbrainzngs.search_releases", return_value=empty):
-            with pytest.raises(TaggingError, match="No MusicBrainz results"):
+            with pytest.raises(TaggingError, match="No parseable MusicBrainz release"):
                 tag_directory(tmp_path, [mp3])
 
 
@@ -2070,3 +2073,82 @@ class TestWriteTagsFromTrackMetadata:
 
         assert "DATE" not in mock_audio.tags
         assert "MUSICBRAINZ_ALBUMID" not in mock_audio.tags
+
+
+# ---------------------------------------------------------------------------
+# lookup_releases_from_tracks (KAMP-230)
+# ---------------------------------------------------------------------------
+
+RECORDING_HIT: dict[str, Any] = {
+    "recording-list": [
+        {
+            "id": "rec-1",
+            "title": "First Track",
+            "release-list": [{"id": "abc-123"}, {"id": "other-123"}],
+        }
+    ]
+}
+
+
+class TestLookupReleasesFromTracks:
+    def test_raises_on_empty_input(self) -> None:
+        with pytest.raises(TaggingError, match="No tracks provided"):
+            lookup_releases_from_tracks([])
+
+    def test_happy_path_tier1_vote(self) -> None:
+        """Tier-1 path: recording votes resolve to a release."""
+        tracks = [("Cool Artist", "First Track", "Great Album")]
+        empty_releases: dict[str, Any] = {"release-list": []}
+        with patch("musicbrainzngs.search_recordings", return_value=RECORDING_HIT):
+            with patch("musicbrainzngs.search_releases", return_value=empty_releases):
+                with patch(
+                    "musicbrainzngs.get_release_by_id",
+                    return_value=SAMPLE_RELEASE_DETAIL,
+                ):
+                    releases = lookup_releases_from_tracks(tracks)
+
+        assert len(releases) >= 1
+        assert releases[0].mbid == "abc-123"
+        assert releases[0].title == "Great Album"
+
+    def test_falls_back_to_tier2_when_no_votes(self) -> None:
+        """When no recording results, falls back to album-level search."""
+        tracks = [("Cool Artist", "First Track", "Great Album")]
+        empty_recordings: dict[str, Any] = {"recording-list": []}
+        with patch("musicbrainzngs.search_recordings", return_value=empty_recordings):
+            with patch("musicbrainzngs.search_releases", return_value=SAMPLE_RELEASE):
+                with patch(
+                    "musicbrainzngs.get_release_by_id",
+                    return_value=SAMPLE_RELEASE_DETAIL,
+                ):
+                    releases = lookup_releases_from_tracks(tracks)
+
+        assert len(releases) >= 1
+        assert releases[0].mbid == "abc-123"
+
+    def test_raises_when_all_paths_fail(self) -> None:
+        """Raises TaggingError when both tier-1 and tier-2 find nothing."""
+        tracks = [("Unknown", "???", "???")]
+        empty_recordings: dict[str, Any] = {"recording-list": []}
+        empty_releases: dict[str, Any] = {"release-list": []}
+        with patch("musicbrainzngs.search_recordings", return_value=empty_recordings):
+            with patch("musicbrainzngs.search_releases", return_value=empty_releases):
+                with pytest.raises(TaggingError, match="No MusicBrainz results"):
+                    lookup_releases_from_tracks(tracks)
+
+    def test_skips_tracks_without_title(self) -> None:
+        """Tracks with empty title strings do not make recording API calls."""
+        tracks = [("Artist", "", "Album"), ("Artist", "Real Title", "Album")]
+        empty_releases: dict[str, Any] = {"release-list": []}
+        with patch(
+            "musicbrainzngs.search_recordings", return_value=RECORDING_HIT
+        ) as mock_rec:
+            with patch("musicbrainzngs.search_releases", return_value=empty_releases):
+                with patch(
+                    "musicbrainzngs.get_release_by_id",
+                    return_value=SAMPLE_RELEASE_DETAIL,
+                ):
+                    lookup_releases_from_tracks(tracks)
+
+        # Only one call — the empty-title track is skipped.
+        assert mock_rec.call_count == 1
