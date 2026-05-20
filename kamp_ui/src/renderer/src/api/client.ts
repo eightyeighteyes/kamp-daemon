@@ -600,7 +600,11 @@ export async function applyAlbumArt(
   const res = await fetch(`${BASE_URL}/api/v1/albums/art/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ..._authHeaders() },
-    body: JSON.stringify({ album_artist: albumArtist, album, artwork_url_template: artworkUrlTemplate })
+    body: JSON.stringify({
+      album_artist: albumArtist,
+      album,
+      artwork_url_template: artworkUrlTemplate
+    })
   })
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }))

@@ -522,8 +522,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
     }
   },
 
-  patchOpenAlbum: (album) =>
-    set((s) => ({ library: { ...s.library, selectedAlbum: album } })),
+  patchOpenAlbum: (album) => set((s) => ({ library: { ...s.library, selectedAlbum: album } })),
 
   selectArtist: (artist) =>
     set((s) => ({ library: { ...s.library, selectedArtist: artist, selectedAlbum: null } })),

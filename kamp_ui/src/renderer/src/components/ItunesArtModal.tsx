@@ -25,7 +25,6 @@ type Props = {
   onApplied: (updatedAlbum: Album) => void
 }
 
-
 function ArtThumbnail({
   candidate,
   selected,
