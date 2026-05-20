@@ -182,6 +182,11 @@
   overflow: hidden; /* clips progress bar at rounded corners */
 }
 
+/* Third pill slot — stacked below MusicBrainz pill */
+.mb-pill--second {
+  top: 80px; /* MusicBrainz pill top:46px + ~27px height + 7px gap */
+}
+
 .mb-pill--loading {
   opacity: 0.85;
   cursor: default;

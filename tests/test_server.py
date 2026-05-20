@@ -2938,9 +2938,9 @@ _ITUNES_CANDIDATE = {
     ),
 }
 
-_MZSTATIC_URL = (
+_MZSTATIC_TEMPLATE = (
     "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/49/f7/8b/"
-    "49f78bb0/cover.jpg/600x600bb.jpg"
+    "49f78bb0/cover.jpg/{size}.jpg"
 )
 
 
@@ -3040,7 +3040,7 @@ class TestItunesArtApplyEndpoint:
         return {
             "album_artist": "Joan Jett",
             "album": "Up Your Alley",
-            "artwork_url": _MZSTATIC_URL,
+            "artwork_url_template": _MZSTATIC_TEMPLATE,
         }
 
     def _make_jpeg_bytes(self, w: int = 600, h: int = 600) -> bytes:
@@ -3094,7 +3094,10 @@ class TestItunesArtApplyEndpoint:
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
         c = TestClient(app)
 
-        payload = {**self._valid_payload(), "artwork_url": "https://evil.com/art.jpg"}
+        payload = {
+            **self._valid_payload(),
+            "artwork_url_template": "https://evil.com/art.jpg",
+        }
         res = c.post("/api/v1/albums/art/apply", json=payload)
         assert res.status_code == 400
 
@@ -3107,7 +3110,7 @@ class TestItunesArtApplyEndpoint:
 
         payload = {
             **self._valid_payload(),
-            "artwork_url": "file:///etc/passwd",
+            "artwork_url_template": "file:///etc/passwd",
         }
         res = c.post("/api/v1/albums/art/apply", json=payload)
         assert res.status_code == 400
@@ -3118,7 +3121,7 @@ class TestItunesArtApplyEndpoint:
             json={
                 "album_artist": "Ghost",
                 "album": "Nobody",
-                "artwork_url": _MZSTATIC_URL,
+                "artwork_url_template": _MZSTATIC_TEMPLATE,
             },
         )
         assert res.status_code == 404
