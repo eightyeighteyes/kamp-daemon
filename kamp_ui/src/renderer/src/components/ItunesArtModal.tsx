@@ -282,7 +282,8 @@ export function ItunesArtModal({
             <div className="art-modal__confirm">
               <img
                 className="art-modal__confirm-img art-modal__confirm-img--local"
-                src={state.previewUrl}
+                // URL.createObjectURL always returns blob: — validate before rendering.
+                src={state.previewUrl.startsWith('blob:') ? state.previewUrl : ''}
                 alt={state.file.name}
               />
               <div className="art-modal__confirm-meta">
