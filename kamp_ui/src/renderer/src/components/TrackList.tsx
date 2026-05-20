@@ -72,6 +72,7 @@ export function TrackList(): React.JSX.Element | null {
   const patchTrackTitle = useStore((s) => s.patchTrackTitle)
   const patchAlbumTags = useStore((s) => s.patchAlbumTags)
   const refreshOpenAlbum = useStore((s) => s.refreshOpenAlbum)
+  const patchOpenAlbum = useStore((s) => s.patchOpenAlbum)
   const albumRenameProgress = useStore((s) => s.albumRenameProgress)
   const deferredOps = useStore((s) => s.deferredOps)
 
@@ -274,7 +275,7 @@ export function TrackList(): React.JSX.Element | null {
       {/* iTunes album art fetch pill — only visible in edit mode */}
       {albumEditMode && (
         <button
-          className="breadcrumb-edit-btn mb-pill"
+          className="breadcrumb-edit-btn mb-pill mb-pill--second"
           title="Fetch album art"
           onClick={() => setArtSearchOpen(true)}
           type="button"
@@ -487,9 +488,9 @@ export function TrackList(): React.JSX.Element | null {
           album={album.album}
           hasExistingArt={album.has_art}
           onClose={() => setArtSearchOpen(false)}
-          onApplied={() => {
+          onApplied={(updatedAlbum) => {
             setArtSearchOpen(false)
-            void refreshOpenAlbum()
+            patchOpenAlbum(updatedAlbum)
           }}
         />
       )}

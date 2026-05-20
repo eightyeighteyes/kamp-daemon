@@ -25,9 +25,6 @@ type Props = {
   onApplied: (updatedAlbum: Album) => void
 }
 
-function resolveArtUrl(template: string, size: string): string {
-  return template.replace('{size}', size)
-}
 
 function ArtThumbnail({
   candidate,
@@ -107,9 +104,8 @@ export function ItunesArtModal({
   ): Promise<void> => {
     setState({ kind: 'applying', candidates, selectedIndex })
     const candidate = candidates[selectedIndex]
-    const artworkUrl = resolveArtUrl(candidate.artwork_url_template, '600x600bb')
     try {
-      const updatedAlbum = await applyAlbumArt(albumArtist, album, artworkUrl)
+      const updatedAlbum = await applyAlbumArt(albumArtist, album, candidate.artwork_url_template)
       onApplied(updatedAlbum)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Apply failed'

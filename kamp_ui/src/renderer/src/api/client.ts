@@ -595,12 +595,12 @@ export async function searchAlbumArt(
 export async function applyAlbumArt(
   albumArtist: string,
   album: string,
-  artworkUrl: string
+  artworkUrlTemplate: string
 ): Promise<Album> {
   const res = await fetch(`${BASE_URL}/api/v1/albums/art/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ..._authHeaders() },
-    body: JSON.stringify({ album_artist: albumArtist, album, artwork_url: artworkUrl })
+    body: JSON.stringify({ album_artist: albumArtist, album, artwork_url_template: artworkUrlTemplate })
   })
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }))

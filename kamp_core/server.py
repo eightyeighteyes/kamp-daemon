@@ -351,8 +351,8 @@ class ItunesSearchOut(BaseModel):
 class ItunesApplyRequest(BaseModel):
     album_artist: str
     album: str
-    # Full-res mzstatic URL built by the frontend from artwork_url_template.
-    artwork_url: str
+    # mzstatic URL template with "{size}" placeholder; server resolves to min_dimension.
+    artwork_url_template: str
 
 
 class BandcampProxyFetchResult(BaseModel):
@@ -1529,7 +1529,7 @@ def create_app(
         )
 
         # SSRF guard — only mzstatic.com URLs are permitted.
-        parsed = urlparse(body.artwork_url)
+        parsed = urlparse(body.artwork_url_template)
         if not (
             parsed.scheme in ("http", "https")
             and parsed.netloc
@@ -1537,7 +1537,7 @@ def create_app(
         ):
             raise HTTPException(
                 status_code=400,
-                detail="artwork_url must be an https://….mzstatic.com URL",
+                detail="artwork_url_template must be an https://….mzstatic.com URL",
             )
 
         tracks = index.tracks_for_album(body.album_artist, body.album)
@@ -1562,9 +1562,15 @@ def create_app(
         min_dim: int = int(config.get("artwork.min_dimension", 500))
         max_b: int = int(config.get("artwork.max_bytes", 5_000_000))
 
+        # Resolve template to the user's configured minimum dimension so we always
+        # request exactly the quality they require (Apple CDN resizes on demand).
+        artwork_url = body.artwork_url_template.replace(
+            "{size}", f"{min_dim}x{min_dim}bb"
+        )
+
         try:
             image_bytes = await asyncio.get_event_loop().run_in_executor(
-                None, fetch_itunes_image, body.artwork_url, min_dim, max_b
+                None, fetch_itunes_image, artwork_url, min_dim, max_b
             )
         except ArtworkError as exc:
             msg = str(exc)

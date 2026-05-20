@@ -165,6 +165,7 @@ type PlayerStore = {
   clearDeferredOp: (trackId: number) => void
   setAlbumRenameProgress: (progress: { done: number; total: number } | null) => void
   refreshOpenAlbum: () => Promise<void>
+  patchOpenAlbum: (album: Album) => void
   scanLibrary: () => Promise<void>
   setLibraryPath: (path: string) => Promise<void>
   setWatchFolderPath: (path: string) => Promise<void>
@@ -520,6 +521,9 @@ export const useStore = create<PlayerStore>((set, get) => ({
       // Best-effort — stale track list is better than a broken UI.
     }
   },
+
+  patchOpenAlbum: (album) =>
+    set((s) => ({ library: { ...s.library, selectedAlbum: album } })),
 
   selectArtist: (artist) =>
     set((s) => ({ library: { ...s.library, selectedArtist: artist, selectedAlbum: null } })),
