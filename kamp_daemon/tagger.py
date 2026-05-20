@@ -86,13 +86,17 @@ def is_tagged(path: Path) -> bool:
         suffix = path.suffix.lower()
         if suffix == ".mp3":
             tags = id3.ID3(str(path))
-            frame = tags.get("TXXX:MusicBrainz Release Id")
+            frame = tags.get("TXXX:MusicBrainz Album Id") or tags.get(
+                "TXXX:MusicBrainz Release Id"
+            )
             return bool(frame and str(frame))
         if suffix == ".m4a":
             audio = mutagen.mp4.MP4(str(path))
             if audio.tags is None:
                 return False
-            vals = audio.tags.get("----:com.apple.iTunes:MusicBrainz Release Id")
+            vals = audio.tags.get(
+                "----:com.apple.iTunes:MusicBrainz Album Id"
+            ) or audio.tags.get("----:com.apple.iTunes:MusicBrainz Release Id")
             return bool(vals)
         if suffix == ".flac":
             audio = mutagen.flac.FLAC(str(path))
@@ -121,14 +125,18 @@ def read_release_mbids(path: Path) -> tuple[str, str]:
         suffix = path.suffix.lower()
         if suffix == ".mp3":
             tags = id3.ID3(str(path))
-            rel = tags.get("TXXX:MusicBrainz Release Id")
+            rel = tags.get("TXXX:MusicBrainz Album Id") or tags.get(
+                "TXXX:MusicBrainz Release Id"
+            )
             rg = tags.get("TXXX:MusicBrainz Release Group Id")
             return str(rel) if rel else "", str(rg) if rg else ""
         if suffix == ".m4a":
             audio = mutagen.mp4.MP4(str(path))
             if audio.tags is None:
                 return "", ""
-            rel_vals = audio.tags.get("----:com.apple.iTunes:MusicBrainz Release Id")
+            rel_vals = audio.tags.get(
+                "----:com.apple.iTunes:MusicBrainz Album Id"
+            ) or audio.tags.get("----:com.apple.iTunes:MusicBrainz Release Id")
             rg_vals = audio.tags.get(
                 "----:com.apple.iTunes:MusicBrainz Release Group Id"
             )
@@ -362,8 +370,8 @@ def _write_mp3_tags_from_metadata(
     tags["TPOS"] = id3.TPOS(encoding=3, text=tpos_str)
 
     if track.release_mbid:
-        tags["TXXX:MusicBrainz Release Id"] = id3.TXXX(
-            encoding=3, desc="MusicBrainz Release Id", text=track.release_mbid
+        tags["TXXX:MusicBrainz Album Id"] = id3.TXXX(
+            encoding=3, desc="MusicBrainz Album Id", text=track.release_mbid
         )
     if track.release_group_mbid:
         tags["TXXX:MusicBrainz Release Group Id"] = id3.TXXX(
@@ -403,7 +411,7 @@ def _write_m4a_tags_from_metadata(
     audio.tags["disk"] = [(disc_number, total_discs)]
 
     for key, value in [
-        ("----:com.apple.iTunes:MusicBrainz Release Id", track.release_mbid),
+        ("----:com.apple.iTunes:MusicBrainz Album Id", track.release_mbid),
         (
             "----:com.apple.iTunes:MusicBrainz Release Group Id",
             track.release_group_mbid,
@@ -1256,8 +1264,8 @@ def _write_mp3_tags(path: Path, release: ReleaseInfo, track: TrackInfo | None) -
     tags["TPE2"] = id3.TPE2(encoding=3, text=release.album_artist)
     tags["TALB"] = id3.TALB(encoding=3, text=release.title)
     tags["TDRC"] = id3.TDRC(encoding=3, text=release.year)
-    tags["TXXX:MusicBrainz Release Id"] = id3.TXXX(
-        encoding=3, desc="MusicBrainz Release Id", text=release.mbid
+    tags["TXXX:MusicBrainz Album Id"] = id3.TXXX(
+        encoding=3, desc="MusicBrainz Album Id", text=release.mbid
     )
 
     # Sort names
@@ -1364,7 +1372,7 @@ def _write_m4a_tags(path: Path, release: ReleaseInfo, track: TrackInfo | None) -
     audio.tags["aART"] = [release.album_artist]
     audio.tags["\xa9alb"] = [release.title]
     audio.tags["\xa9day"] = [release.year]
-    audio.tags["----:com.apple.iTunes:MusicBrainz Release Id"] = _ff(release.mbid)
+    audio.tags["----:com.apple.iTunes:MusicBrainz Album Id"] = _ff(release.mbid)
 
     # Sort names
     if release.artist_sort:

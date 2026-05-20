@@ -2097,8 +2097,8 @@ def write_meta_tags_to_file(
         if year is not None:
             tags["TDRC"] = id3.TDRC(encoding=3, text=year)
         if mb_release_id is not None:
-            tags["TXXX:MusicBrainz Release Id"] = id3.TXXX(
-                encoding=3, desc="MusicBrainz Release Id", text=mb_release_id
+            tags["TXXX:MusicBrainz Album Id"] = id3.TXXX(
+                encoding=3, desc="MusicBrainz Album Id", text=mb_release_id
             )
         tags.save(str(path))
     elif suffix == ".m4a":
@@ -2114,7 +2114,7 @@ def write_meta_tags_to_file(
         if year is not None:
             audio.tags["\xa9day"] = [year]  # type: ignore[index]
         if mb_release_id is not None:
-            audio.tags["----:com.apple.iTunes:MusicBrainz Release Id"] = [  # type: ignore[index]
+            audio.tags["----:com.apple.iTunes:MusicBrainz Album Id"] = [  # type: ignore[index]
                 mutagen.mp4.MP4FreeForm(mb_release_id.encode())
             ]
         audio.save()
