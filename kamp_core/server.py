@@ -1594,6 +1594,9 @@ def create_app(
                 await asyncio.get_event_loop().run_in_executor(
                     None, write_cover_file, image_bytes, "image/jpeg", album_dir
                 )
+                index.mark_album_art_embedded(
+                    body.album_artist, body.album, [t.file_path for t in tracks]
+                )
             except Exception:
                 logger.exception("Failed to write cover file to %s", album_dir)
         else:
@@ -1707,6 +1710,9 @@ def create_app(
             try:
                 await asyncio.get_event_loop().run_in_executor(
                     None, write_cover_file, image_bytes, cover_mime, album_dir
+                )
+                index.mark_album_art_embedded(
+                    album_artist, album, [t.file_path for t in tracks]
                 )
             except Exception:
                 logger.exception("Failed to write cover file to %s", album_dir)

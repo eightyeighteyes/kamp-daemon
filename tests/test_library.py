@@ -891,6 +891,52 @@ class TestLibraryScanner:
 
         assert result.added == 1
 
+    def test_scan_sets_embedded_art_true_when_cover_file_present(
+        self, tmp_path: Path
+    ) -> None:
+        """Files alongside a cover.jpg are indexed with embedded_art=True."""
+        lib = tmp_path / "music"
+        lib.mkdir()
+        _make_mp3(lib / "01.mp3")
+        (lib / "cover.jpg").write_bytes(b"\xff\xd8\xff")  # minimal JPEG magic
+
+        index = LibraryIndex(tmp_path / "library.db")
+        LibraryScanner(index).scan(lib)
+        tracks = index.all_tracks()
+        index.close()
+
+        assert len(tracks) == 1
+        assert tracks[0].embedded_art is True
+
+    def test_scan_sets_embedded_art_true_for_cover_png(self, tmp_path: Path) -> None:
+        """Files alongside a cover.png are indexed with embedded_art=True."""
+        lib = tmp_path / "music"
+        lib.mkdir()
+        _make_mp3(lib / "01.mp3")
+        (lib / "cover.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        index = LibraryIndex(tmp_path / "library.db")
+        LibraryScanner(index).scan(lib)
+        tracks = index.all_tracks()
+        index.close()
+
+        assert len(tracks) == 1
+        assert tracks[0].embedded_art is True
+
+    def test_scan_no_cover_file_leaves_embedded_art_false(self, tmp_path: Path) -> None:
+        """Files without embedded art or a cover file have embedded_art=False."""
+        lib = tmp_path / "music"
+        lib.mkdir()
+        _make_mp3(lib / "01.mp3")
+
+        index = LibraryIndex(tmp_path / "library.db")
+        LibraryScanner(index).scan(lib)
+        tracks = index.all_tracks()
+        index.close()
+
+        assert len(tracks) == 1
+        assert tracks[0].embedded_art is False
+
 
 # ---------------------------------------------------------------------------
 # Tag reader helpers

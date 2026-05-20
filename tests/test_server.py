@@ -3274,7 +3274,7 @@ class TestItunesArtApplyEndpoint:
 
         assert res.status_code == 200
         mock_write.assert_called_once()
-        mock_index.mark_album_art_embedded.assert_not_called()
+        mock_index.mark_album_art_embedded.assert_called_once()
 
 
 class TestApplyLocalAlbumArt:
@@ -3426,4 +3426,4 @@ class TestApplyLocalAlbumArt:
 
         assert res.status_code == 200
         mock_write.assert_called_once()
-        mock_index.mark_album_art_embedded.assert_not_called()
+        mock_index.mark_album_art_embedded.assert_called_once()
