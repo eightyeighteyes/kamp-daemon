@@ -299,17 +299,17 @@ export function ItunesArtModal({
               )}
             </div>
           )}
-        </div>
 
-        {/* Footer */}
-        <div className="mb-modal__footer">
           {hasExistingArt &&
             (state.kind === 'confirming' ||
               state.kind === 'results' ||
               state.kind === 'local_confirming') && (
               <span className="art-modal__replace-note">Replaces existing art</span>
             )}
+        </div>
 
+        {/* Footer */}
+        <div className="mb-modal__footer">
           {/* Hidden native file input — triggered by the Choose File button */}
           <input
             ref={fileInputRef}

@@ -36,6 +36,7 @@
   overflow-y: auto;
   min-height: 0;
   padding: 16px 20px;
+  position: relative;
 }
 
 /* Empty / error / searching states */
@@ -197,11 +198,14 @@
   max-width: 320px;
 }
 
-/* Footer */
+/* "Replaces existing art" warning — absolute in body lower-left */
 .art-modal__replace-note {
+  position: absolute;
+  bottom: 10px;
+  left: 20px;
   font-size: 11px;
-  color: var(--text-dim);
-  margin-right: auto;
+  color: var(--mb-warning);
+  pointer-events: none;
 }
 
 .art-modal__footer-actions {
