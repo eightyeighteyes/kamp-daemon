@@ -21,6 +21,7 @@ const RESTART_KEYS = new Set([
 ])
 
 const BANDCAMP_FORMATS = ['mp3-v0', 'mp3-320', 'flac', 'aac-hi', 'vorbis', 'alac', 'wav']
+const DISCORD_INVITE_URL = 'https://discord.gg/VRkRnmAcNj'
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -1186,6 +1187,20 @@ export function PreferencesDialog({
                       initialValue={str('artwork.save_format') !== 'cover-file'}
                       onSave={handleArtworkSave}
                     />
+                  </div>
+
+                  {/* ABOUT */}
+                  <div className="prefs-section">
+                    <div className="prefs-section-label">About</div>
+                    <div className="prefs-row">
+                      <button
+                        className="prefs-choose-btn"
+                        onClick={() => window.api.openExternal(DISCORD_INVITE_URL)}
+                      >
+                        Join Discord
+                      </button>
+                      <p className="prefs-hint">Give feedback and connect with other Kamp users.</p>
+                    </div>
                   </div>
                 </>
               )}
