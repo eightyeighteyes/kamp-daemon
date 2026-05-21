@@ -308,6 +308,60 @@ function stopServer(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Update check
+// ---------------------------------------------------------------------------
+
+type ReleaseEntry = { version: string; notes: string }
+type UpdateState = { dismissedVersion: string }
+
+function updateStatePath(): string {
+  return join(app.getPath('userData'), 'update-state.json')
+}
+
+function readUpdateState(): UpdateState | null {
+  try {
+    return JSON.parse(readFileSync(updateStatePath(), 'utf8')) as UpdateState
+  } catch {
+    return null
+  }
+}
+
+function writeUpdateState(state: UpdateState): void {
+  try {
+    writeFileSync(updateStatePath(), JSON.stringify(state))
+  } catch {
+    // Non-critical — ignore write errors.
+  }
+}
+
+function semverGt(a: string, b: string): boolean {
+  const parse = (v: string): number[] => v.replace(/^v/, '').split('.').map(Number)
+  const [aMaj = 0, aMin = 0, aPatch = 0] = parse(a)
+  const [bMaj = 0, bMin = 0, bPatch = 0] = parse(b)
+  if (aMaj !== bMaj) return aMaj > bMaj
+  if (aMin !== bMin) return aMin > bMin
+  return aPatch > bPatch
+}
+
+async function checkForUpdate(win: BrowserWindow): Promise<void> {
+  try {
+    const fake = process.env['KAMP_FAKE_UPDATE'] === '1'
+    const res = await net.fetch('https://kamp.fm/releases.json')
+    if (!res.ok) return
+    const releases = (await res.json()) as ReleaseEntry[]
+    if (!releases.length) return
+    const latest = releases[0]
+    const installed = app.getVersion()
+    if (!fake && !semverGt(latest.version, installed)) return
+    const state = readUpdateState()
+    if (!fake && state?.dismissedVersion === latest.version) return
+    win.webContents.send('update:available', { version: latest.version, notes: latest.notes })
+  } catch {
+    // Non-critical — silently skip on network or parse error.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Bandcamp login via BrowserWindow
 // ---------------------------------------------------------------------------
 
@@ -823,6 +877,10 @@ app.whenReady().then(async () => {
     shell.showItemInFolder(filePath)
   })
 
+  ipcMain.handle('update:dismiss', (_event, version: string) => {
+    writeUpdateState({ dismissedVersion: version })
+  })
+
   ipcMain.handle('open-directory', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
@@ -902,6 +960,12 @@ app.whenReady().then(async () => {
   startNowPlayingHelper()
 
   createWindow()
+
+  // Check for updates once per launch after the window is created. The fetch
+  // is async so the renderer will have mounted and subscribed before the IPC
+  // event fires even on fast local networks.
+  const mainWin = BrowserWindow.getAllWindows()[0]
+  if (mainWin) void checkForUpdate(mainWin)
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
