@@ -21,7 +21,6 @@ const RESTART_KEYS = new Set([
 ])
 
 const BANDCAMP_FORMATS = ['mp3-v0', 'mp3-320', 'flac', 'aac-hi', 'vorbis', 'alac', 'wav']
-const ARTWORK_SAVE_FORMATS = ['embedded', 'cover-file']
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -1016,6 +1015,14 @@ export function PreferencesDialog({
     await setConfigValue(key, value)
   }
 
+  const handleArtworkSave = async (key: string, value: string): Promise<void> => {
+    if (key === 'artwork.save_format') {
+      await handleSave(key, value === 'true' ? 'embedded' : 'cover-file')
+      return
+    }
+    await handleSave(key, value)
+  }
+
   const handleHighlightSave = async (key: string, value: string): Promise<void> => {
     if (key === 'highlight.enabled') {
       setHighlightEnabled(value === 'true')
@@ -1172,12 +1179,12 @@ export function PreferencesDialog({
                       initialValue={str('artwork.max_bytes')}
                       onSave={handleSave}
                     />
-                    <SelectRow
-                      label="Save format"
+                    <BoolRow
+                      label="Embed album art in media files?"
                       configKey="artwork.save_format"
-                      options={ARTWORK_SAVE_FORMATS}
-                      initialValue={str('artwork.save_format') || 'embedded'}
-                      onSave={handleSave}
+                      hint="embedded art makes larger files, but is supported in more players"
+                      initialValue={str('artwork.save_format') !== 'cover-file'}
+                      onSave={handleArtworkSave}
                     />
                   </div>
                 </>
