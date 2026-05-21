@@ -22,7 +22,7 @@ const USAGE_TIPS = [
   'Drag albums from the Library straight into the Queue.',
   'Right click albums to favorite them or slot them in the queue.',
   'Base Kamp is configurable. Make it yours with the gear icon.',
-  'A ten dollar digital album sale is worth 3000 streams to an artist. Your support matters.',
+  'A ten dollar digital album sale is worth 3000 streams to an artist. Your support matters.'
 ]
 
 // Movement 2 filler: general waiting strings mixed into the random pool after tips are done.
@@ -30,7 +30,7 @@ const FILLER_STRINGS = [
   'Almost done…',
   'Just a little bit longer…',
   'Good things are worth waiting for…',
-  'What are you gonna listen to first?',
+  'What are you gonna listen to first?'
 ]
 
 // Movement 3 stingers: combined with a stat root each time a finalizing string is shown.
@@ -55,7 +55,7 @@ const FINALIZING_STINGERS = [
   ' ready to rock the party.',
   ". Calm down. We're nearly there.",
   ". It's a love affair.",
-  ". This is so going to be worth it when we're done.",
+  ". This is so going to be worth it when we're done."
 ]
 
 type DynamicString = { id: string; text: string }
@@ -63,7 +63,9 @@ type DynamicString = { id: string; text: string }
 function buildDynamicStrings(progress: ScanProgress | null): DynamicString[] {
   if (!progress?.active) return []
   const out: DynamicString[] = []
-  const add = (id: string, text: string): void => { out.push({ id, text }) }
+  const add = (id: string, text: string): void => {
+    out.push({ id, text })
+  }
   if (progress.current_file && progress.current_artist)
     add('fav-song', `My favorite song is ${progress.current_file} by ${progress.current_artist}…`)
   if (progress.current_artist)
@@ -75,11 +77,17 @@ function buildDynamicStrings(progress: ScanProgress | null): DynamicString[] {
   if (progress.current_artist)
     add('left-kidney', `I'd sell my left kidney to see ${progress.current_artist} live…`)
   if (progress.current_artist)
-    add('underrated', `Nobody will say it out loud, but ${progress.current_artist} is totally underrated.`)
+    add(
+      'underrated',
+      `Nobody will say it out loud, but ${progress.current_artist} is totally underrated.`
+    )
   if (progress.top_artist)
     add('carrying', `${progress.top_artist} has been carrying this library for a while now, huh.`)
   if (progress.current_artist)
-    add('tiny-venue', `If ${progress.current_artist} played a tiny venue tomorrow, you'd already have a ticket.`)
+    add(
+      'tiny-venue',
+      `If ${progress.current_artist} played a tiny venue tomorrow, you'd already have a ticket.`
+    )
   return out
 }
 
