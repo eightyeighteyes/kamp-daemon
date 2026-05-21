@@ -210,6 +210,55 @@ class TestPipelineRun:
         # File should have been moved to library despite artwork failure
         assert list(config.paths.library.rglob("*.mp3"))
 
+    def test_cover_file_mode_writes_cover_jpg_to_library(
+        self, tmp_path: Path, config: Config
+    ) -> None:
+        """With save_format='cover-file', pipeline writes cover.jpg to library dir."""
+        config.artwork = ArtworkConfig(
+            min_dimension=1000, max_bytes=5_000_000, save_format="cover-file"
+        )
+        config.paths.watch_folder.mkdir(parents=True)
+        config.paths.library.mkdir(parents=True)
+
+        album_dir = config.paths.watch_folder / "great-album"
+        album_dir.mkdir()
+        mp3 = album_dir / "01.mp3"
+        mp3.write_bytes(b"\xff\xfb" * 64)
+        tags = id3.ID3()
+        tags["TPE1"] = id3.TPE1(encoding=3, text="Cool Artist")
+        tags["TALB"] = id3.TALB(encoding=3, text="Great Album")
+        tags.save(str(mp3))
+
+        image_data = b"\xff\xd8\xff" + b"\x00" * 200
+
+        with (
+            patch("musicbrainzngs.search_releases", return_value=MB_SEARCH_RESULT),
+            patch("musicbrainzngs.get_release_by_id", return_value=MB_RELEASE_DETAIL),
+            patch("kamp_daemon.pipeline_impl.find_local_artwork", return_value=None),
+            patch("kamp_daemon.artwork.has_embedded_art", return_value=False),
+            patch.object(
+                KampCoverArtArchive,
+                "fetch",
+                return_value=ArtworkResult(
+                    image_bytes=image_data, mime_type="image/jpeg"
+                ),
+            ),
+        ):
+            run(album_dir, config)
+
+        library_mp3s = list(config.paths.library.rglob("*.mp3"))
+        assert len(library_mp3s) == 1
+
+        cover = library_mp3s[0].parent / "cover.jpg"
+        assert cover.is_file()
+        assert cover.read_bytes() == image_data
+
+        # Art must not be embedded in the file
+        from mutagen.id3 import ID3
+
+        saved_tags = ID3(str(library_mp3s[0]))
+        assert not any(k.startswith("APIC") for k in saved_tags)
+
     def test_quarantine_on_move_failure(self, tmp_path: Path, config: Config) -> None:
         """A MoveError causes the directory to be quarantined."""
         config.paths.watch_folder.mkdir(parents=True)
@@ -770,6 +819,77 @@ class TestFetchAndEmbedViaExtension:
             )
 
         mock_embed.assert_called_once_with(mp3, image_data)
+
+    def test_cover_file_mode_local_art_returns_bytes_does_not_embed(
+        self, tmp_path: Path
+    ) -> None:
+        """With save_format='cover-file', local art is returned, not embedded."""
+        mp3 = tmp_path / "01.mp3"
+        mp3.write_bytes(b"\xff\xfb" * 64)
+        id3.ID3().save(str(mp3))
+        image_data = b"\xff\xd8\xff" + b"\x00" * 100
+
+        with (
+            patch(
+                "kamp_daemon.pipeline_impl.find_local_artwork",
+                return_value=tmp_path / "cover.jpg",
+            ),
+            patch(
+                "kamp_daemon.artwork._load_local_artwork",
+                return_value=image_data,
+            ),
+            patch("kamp_daemon.pipeline_impl._embed") as mock_embed,
+            patch.object(KampCoverArtArchive, "fetch") as mock_fetch,
+        ):
+            result = _fetch_and_embed_via_extension(
+                ctx=self._ctx(),
+                audio_files=[mp3],
+                release_mbid="rel-1",
+                release_group_mbid="rg-1",
+                directory=tmp_path,
+                min_dimension=500,
+                max_bytes=5_000_000,
+                save_format="cover-file",
+            )
+
+        assert result == (image_data, "image/jpeg")
+        mock_embed.assert_not_called()
+        mock_fetch.assert_not_called()
+
+    def test_cover_file_mode_caa_returns_bytes_does_not_embed(
+        self, tmp_path: Path
+    ) -> None:
+        """With save_format='cover-file', CAA result is returned, not embedded."""
+        mp3 = tmp_path / "01.mp3"
+        mp3.write_bytes(b"\xff\xfb" * 64)
+        id3.ID3().save(str(mp3))
+        image_data = b"\xff\xd8\xff" + b"\x00" * 200
+
+        with (
+            patch("kamp_daemon.pipeline_impl.find_local_artwork", return_value=None),
+            patch("kamp_daemon.artwork.has_embedded_art", return_value=False),
+            patch.object(
+                KampCoverArtArchive,
+                "fetch",
+                return_value=ArtworkResult(
+                    image_bytes=image_data, mime_type="image/jpeg"
+                ),
+            ),
+            patch("kamp_daemon.pipeline_impl._embed") as mock_embed,
+        ):
+            result = _fetch_and_embed_via_extension(
+                ctx=self._ctx(),
+                audio_files=[mp3],
+                release_mbid="rel-1",
+                release_group_mbid="rg-1",
+                directory=tmp_path,
+                min_dimension=500,
+                max_bytes=5_000_000,
+                save_format="cover-file",
+            )
+
+        assert result == (image_data, "image/jpeg")
+        mock_embed.assert_not_called()
 
     def test_no_art_anywhere_skips_embed(self, tmp_path: Path) -> None:
         """When no art is found anywhere, embed is never called."""

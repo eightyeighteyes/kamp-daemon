@@ -186,6 +186,7 @@ def run(
         # original files shipped with).
         if stage_callback:
             stage_callback("Updating artwork")
+        cover_art_result: tuple[bytes, str] | None = None
         try:
             if _TEST_INJECT["artwork"] in directory.name:
                 raise ArtworkError("Injected by test-notify --type artwork")
@@ -193,7 +194,7 @@ def run(
                 # Skip network artwork fetch when testing the move stage so it
                 # doesn't raise its own ArtworkError before we reach the move
                 # injection point.
-                _fetch_and_embed_via_extension(
+                cover_art_result = _fetch_and_embed_via_extension(
                     ctx=ctx,
                     audio_files=audio_files,
                     release_mbid=mbid,
@@ -201,6 +202,7 @@ def run(
                     directory=directory,
                     min_dimension=config.artwork.min_dimension,
                     max_bytes=config.artwork.max_bytes,
+                    save_format=config.artwork.save_format,
                 )
         except ArtworkError as exc:
             # Artwork failure is non-fatal: log and continue.
@@ -231,6 +233,14 @@ def run(
             title,
         )
 
+        # Write cover file after a successful move so the path is the final
+        # library location, not the transient watch-folder directory.
+        if isinstance(cover_art_result, tuple):
+            from .artwork import write_cover_file  # noqa: PLC0415
+
+            cover_bytes, cover_mime = cover_art_result
+            write_cover_file(cover_bytes, cover_mime, destinations[0].parent)
+
     finally:
         # Always clear the stage so the caller's display resets on success,
         # quarantine, or unexpected error.
@@ -246,13 +256,19 @@ def _fetch_and_embed_via_extension(
     directory: Path,
     min_dimension: int,
     max_bytes: int,
-) -> None:
+    save_format: str = "embedded",
+) -> tuple[bytes, str] | None:
     """Fetch cover art via KampCoverArtArchive extension and embed in audio files.
 
     Checks *directory* for a bundled image first (local-first; host responsibility
     because it requires file path access).  If no qualifying local image is found,
     delegates to KampCoverArtArchive to fetch from the MusicBrainz Cover Art Archive.
     Embedding is performed by the host — the extension only returns image bytes.
+
+    When *save_format* is ``"cover-file"``, art is not embedded; instead the raw
+    ``(image_bytes, mime_type)`` tuple is returned so the caller can write a
+    cover file after the audio files have been moved to the library.
+    Returns ``None`` when no qualifying art was found or when art was embedded.
     """
     from .artwork import _load_local_artwork, has_embedded_art
 
@@ -277,7 +293,7 @@ def _fetch_and_embed_via_extension(
                 "All %d file(s) have qualifying embedded art — skipping Cover Art Archive fetch",
                 len(audio_files),
             )
-            return
+            return None
 
         query = ArtworkQuery(
             mbid=release_mbid,
@@ -300,7 +316,14 @@ def _fetch_and_embed_via_extension(
             min_dimension,
             max_bytes,
         )
-        return
+        return None
+
+    if save_format == "cover-file":
+        logger.info(
+            "Deferring cover art (%d bytes) to cover file after move",
+            len(image_bytes),
+        )
+        return image_bytes, mime_type
 
     logger.info(
         "Embedding cover art (%d bytes) into %d file(s)",
@@ -309,6 +332,7 @@ def _fetch_and_embed_via_extension(
     )
     for audio_file in audio_files:
         _embed(audio_file, image_bytes)
+    return None
 
 
 def _mb_tags_conflict(
