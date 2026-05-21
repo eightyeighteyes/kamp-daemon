@@ -1015,6 +1015,14 @@ export function PreferencesDialog({
     await setConfigValue(key, value)
   }
 
+  const handleArtworkSave = async (key: string, value: string): Promise<void> => {
+    if (key === 'artwork.save_format') {
+      await handleSave(key, value === 'true' ? 'embedded' : 'cover-file')
+      return
+    }
+    await handleSave(key, value)
+  }
+
   const handleHighlightSave = async (key: string, value: string): Promise<void> => {
     if (key === 'highlight.enabled') {
       setHighlightEnabled(value === 'true')
@@ -1170,6 +1178,13 @@ export function PreferencesDialog({
                       unit="bytes"
                       initialValue={str('artwork.max_bytes')}
                       onSave={handleSave}
+                    />
+                    <BoolRow
+                      label="Embed album art in media files?"
+                      configKey="artwork.save_format"
+                      hint="embedded art makes larger files, but is supported in more players"
+                      initialValue={str('artwork.save_format') !== 'cover-file'}
+                      onSave={handleArtworkSave}
                     />
                   </div>
                 </>

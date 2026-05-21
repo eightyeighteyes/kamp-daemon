@@ -221,6 +221,14 @@ def _get_mtime(path: Path) -> float | None:
         return None
 
 
+_COVER_FILENAMES = ("cover.jpg", "cover.png")
+
+
+def _has_cover_file(directory: Path) -> bool:
+    """Return True if *directory* contains a cover.jpg or cover.png."""
+    return any((directory / name).is_file() for name in _COVER_FILENAMES)
+
+
 def _get_date_added(path: Path) -> float | None:
     """Return the best available creation timestamp for *path*.
 
@@ -2294,6 +2302,8 @@ class LibraryScanner:
         for current, path in enumerate(to_process, start=1):
             track = _read_tags(path)
             if track is not None:
+                if not track.embedded_art and _has_cover_file(path.parent):
+                    track.embedded_art = True
                 tracks_to_upsert.append(track)
             else:
                 logger.warning("Skipped unreadable file: %s", path)
