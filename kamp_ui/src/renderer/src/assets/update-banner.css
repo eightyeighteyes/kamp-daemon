@@ -60,6 +60,16 @@
   color: var(--text-dim);
 }
 
+.update-notes-modal__body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.update-notes-modal__body a:hover {
+  opacity: 0.8;
+}
+
 .update-notes-modal__body p {
   margin: 0 0 10px;
 }
