@@ -21,6 +21,7 @@ const RESTART_KEYS = new Set([
 ])
 
 const BANDCAMP_FORMATS = ['mp3-v0', 'mp3-320', 'flac', 'aac-hi', 'vorbis', 'alac', 'wav']
+const DISCORD_INVITE_URL = 'https://discord.gg/VRkRnmAcNj'
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -1194,7 +1195,7 @@ export function PreferencesDialog({
                     <div className="prefs-row">
                       <button
                         className="prefs-choose-btn"
-                        onClick={() => window.api.openExternal('https://discord.gg/VRkRnmAcNj')}
+                        onClick={() => window.api.openExternal(DISCORD_INVITE_URL)}
                       >
                         Join Discord
                       </button>
