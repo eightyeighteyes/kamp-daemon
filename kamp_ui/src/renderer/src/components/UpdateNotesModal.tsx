@@ -26,7 +26,23 @@ export function UpdateNotesModal({ version, notes, onClose, onDismiss }: Props):
           <span className="update-notes-modal__title">What&rsquo;s new in Kamp {version}</span>
         </div>
         <div className="update-notes-modal__body">
-          <ReactMarkdown>{notes}</ReactMarkdown>
+          <ReactMarkdown
+            components={{
+              a: ({ href, children }) => (
+                <a
+                  href={href}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (href) window.open(href, '_blank')
+                  }}
+                >
+                  {children}
+                </a>
+              )
+            }}
+          >
+            {notes}
+          </ReactMarkdown>
         </div>
         <div className="update-notes-modal__footer">
           <a href="https://kamp.fm" className="update-notes-modal__site-link" onClick={openSite}>
