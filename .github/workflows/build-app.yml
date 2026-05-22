@@ -85,6 +85,7 @@ jobs:
           git clone --depth=1 --branch v0.41.0 \
             https://github.com/mpv-player/mpv.git /tmp/mpv-src
           cd /tmp/mpv-src
+          export MACOSX_DEPLOYMENT_TARGET=11.0
           meson setup build \
             -Dbuildtype=release \
             -Dvapoursynth=disabled \
@@ -153,6 +154,14 @@ jobs:
             exit 1
           fi
           echo "OK: no non-audio dylibs in bundle"
+          echo "→ Verifying no Swift system dylibs were bundled:"
+          SWIFT_LIBS=$(ls kamp_ui/resources/mpv-libs/ | grep '^libswift' || true)
+          if [ -n "$SWIFT_LIBS" ]; then
+            echo "$SWIFT_LIBS"
+            echo "ERROR: Swift dylibs must not be bundled (OS-provided at /usr/lib/swift/)" >&2
+            exit 1
+          fi
+          echo "OK: no Swift dylibs bundled"
 
       - name: Build Now Playing helper
         # Compile the Swift helper that owns the macOS Now Playing session and

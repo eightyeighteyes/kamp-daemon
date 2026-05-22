@@ -14,19 +14,17 @@ def test_env_var_takes_priority(tmp_path):
         assert _resolve_mpv_binary() == str(bundled)
 
 
-def test_env_var_ignored_when_path_missing(tmp_path):
-    """KAMP_MPV_BIN is ignored when the file does not exist; falls through to next check."""
+def test_env_var_trusted_even_when_path_missing(tmp_path):
+    """KAMP_MPV_BIN is returned as-is even when the file does not exist.
+
+    Electron constructs this path deterministically from process.resourcesPath,
+    so we trust it without an existence check. A missing binary surfaces as
+    FileNotFoundError: '/full/path' rather than silently falling through to the
+    useless bare 'mpv' string.
+    """
     nonexistent = str(tmp_path / "mpv_does_not_exist")
-    fallback_mpv = tmp_path / "fallback_mpv"
-    fallback_mpv.touch()
-    # Patch both fallback lists so the assertion holds on any platform — the
-    # resolver picks one list based on sys.platform.
-    with (
-        patch.dict("os.environ", {"KAMP_MPV_BIN": nonexistent}),
-        patch("kamp_daemon.__main__._HOMEBREW_MPV_PATHS", [str(fallback_mpv)]),
-        patch("kamp_daemon.__main__._WIN_MPV_PATHS", [str(fallback_mpv)]),
-    ):
-        assert _resolve_mpv_binary() == str(fallback_mpv)
+    with patch.dict("os.environ", {"KAMP_MPV_BIN": nonexistent}):
+        assert _resolve_mpv_binary() == nonexistent
 
 
 def test_env_var_not_set_falls_back_to_platform_paths(tmp_path):
@@ -47,8 +45,9 @@ def test_env_var_not_set_falls_back_to_platform_paths(tmp_path):
 def test_frozen_bundle_without_env_var_uses_meipass(tmp_path):
     """Frozen bundle without KAMP_MPV_BIN derives mpv from _internal/ layout.
 
-    This covers launchd services started before KAMP_MPV_BIN was injected by
-    Electron — the daemon must still find the bundled mpv sibling.
+    Covers any frozen-bundle scenario where KAMP_MPV_BIN was not injected
+    (e.g. the binary was started directly from the terminal rather than via
+    Electron) — the daemon still finds the bundled mpv sibling.
     """
     # Simulate Contents/Resources/kamp/_internal/ layout:
     internal = tmp_path / "kamp" / "_internal"
