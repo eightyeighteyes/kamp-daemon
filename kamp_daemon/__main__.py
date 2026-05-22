@@ -1314,13 +1314,23 @@ def _resolve_mpv_binary() -> str:
     """Return the absolute path to the mpv binary.
 
     The .app bundle sets KAMP_MPV_BIN to the bundled binary path; check that
-    first. For launchd (macOS minimal PATH) or an Electron-spawned daemon on
-    Windows (stale parent-shell PATH), fall back to platform-typical install
-    locations before relying on PATH.
+    first. When running as a frozen PyInstaller bundle without KAMP_MPV_BIN
+    (e.g. a launchd service that pre-dates the env-var injection), derive the
+    path from sys._MEIPASS: _internal/ → ../  → ../../mpv[/mpv.exe]. For
+    launchd (macOS minimal PATH) or an Electron-spawned daemon on Windows
+    (stale parent-shell PATH), fall back to platform-typical install locations
+    before relying on PATH.
     """
     env_path = os.environ.get("KAMP_MPV_BIN")
     if env_path and Path(env_path).exists():
         return env_path
+    # Frozen bundle without KAMP_MPV_BIN: infer from _internal/ layout.
+    # Contents/Resources/kamp/_internal/ → ../../ → Contents/Resources/mpv
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        name = Path("mpv", "mpv.exe") if sys.platform == "win32" else Path("mpv")
+        bundled = Path(sys._MEIPASS).parent.parent / name
+        if bundled.exists():
+            return str(bundled)
     fallback_paths = _WIN_MPV_PATHS if sys.platform == "win32" else _HOMEBREW_MPV_PATHS
     for path in fallback_paths:
         if Path(path).exists():

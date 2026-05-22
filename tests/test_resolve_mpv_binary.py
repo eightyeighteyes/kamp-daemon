@@ -1,5 +1,6 @@
 """Tests for _resolve_mpv_binary() in kamp_daemon.__main__."""
 
+import sys
 from unittest.mock import patch
 
 from kamp_daemon.__main__ import _resolve_mpv_binary
@@ -41,6 +42,48 @@ def test_env_var_not_set_falls_back_to_platform_paths(tmp_path):
         patch("kamp_daemon.__main__._WIN_MPV_PATHS", [str(fallback_mpv)]),
     ):
         assert _resolve_mpv_binary() == str(fallback_mpv)
+
+
+def test_frozen_bundle_without_env_var_uses_meipass(tmp_path):
+    """Frozen bundle without KAMP_MPV_BIN derives mpv from _internal/ layout.
+
+    This covers launchd services started before KAMP_MPV_BIN was injected by
+    Electron — the daemon must still find the bundled mpv sibling.
+    """
+    # Simulate Contents/Resources/kamp/_internal/ layout:
+    internal = tmp_path / "kamp" / "_internal"
+    internal.mkdir(parents=True)
+    bundled_mpv = tmp_path / "mpv"
+    bundled_mpv.touch()
+
+    without_kamp_mpv_bin = {
+        k: v for k, v in __import__("os").environ.items() if k != "KAMP_MPV_BIN"
+    }
+    with (
+        patch.dict("os.environ", without_kamp_mpv_bin, clear=True),
+        patch.object(sys, "frozen", True, create=True),
+        patch.object(sys, "_MEIPASS", str(internal), create=True),
+        patch("kamp_daemon.__main__._HOMEBREW_MPV_PATHS", []),
+        patch("kamp_daemon.__main__._WIN_MPV_PATHS", []),
+    ):
+        assert _resolve_mpv_binary() == str(bundled_mpv)
+
+
+def test_frozen_bundle_env_var_still_takes_priority(tmp_path):
+    """KAMP_MPV_BIN env var beats the frozen-bundle path when it exists."""
+    internal = tmp_path / "kamp" / "_internal"
+    internal.mkdir(parents=True)
+    bundled_mpv = tmp_path / "mpv"
+    bundled_mpv.touch()
+    explicit_mpv = tmp_path / "explicit_mpv"
+    explicit_mpv.touch()
+
+    with (
+        patch.dict("os.environ", {"KAMP_MPV_BIN": str(explicit_mpv)}),
+        patch.object(sys, "frozen", True, create=True),
+        patch.object(sys, "_MEIPASS", str(internal), create=True),
+    ):
+        assert _resolve_mpv_binary() == str(explicit_mpv)
 
 
 def test_windows_uses_win_paths_not_homebrew(tmp_path):
