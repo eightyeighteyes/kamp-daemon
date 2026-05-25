@@ -659,15 +659,7 @@ jobs:
   debug-macos:
     needs: build-bundle
     if: github.event_name == 'workflow_dispatch' && inputs.debug_macos == true
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-14
-            label: macOS-14
-          - runner: macos-13-xlarge
-            label: macOS-13
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     timeout-minutes: 60
 
     steps:
@@ -692,6 +684,11 @@ jobs:
           sw_vers
           echo "→ Deployment target stamped in mpv binary:"
           vtool -show-build kamp_ui/resources/mpv
+          echo "→ Checking for Swift symbol references in mpv and bundled dylibs:"
+          for f in kamp_ui/resources/mpv kamp_ui/resources/mpv-libs/*.dylib; do
+            refs=$(nm -u "$f" 2>/dev/null | grep -i swift || true)
+            [ -n "$refs" ] && echo "  $f:" && echo "$refs" | sed 's/^/    /'
+          done
           echo "→ mpv --version (fails if deployment target still wrong):"
           kamp_ui/resources/mpv --version || true
 
