@@ -27,6 +27,11 @@ jobs:
             runner: macos-15-intel # Intel (x64)
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      # Set the deployment target for the whole job so every compilation step
+      # (poetry install, PyInstaller, mpv meson) stamps minos=13.0 on any
+      # Mach-O it produces. Matches the minimum macOS version we support.
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -90,7 +95,6 @@ jobs:
           git clone --depth=1 --branch v0.41.0 \
             https://github.com/mpv-player/mpv.git /tmp/mpv-src
           cd /tmp/mpv-src
-          export MACOSX_DEPLOYMENT_TARGET=11.0
           meson setup build \
             -Dbuildtype=release \
             -Dvapoursynth=disabled \
