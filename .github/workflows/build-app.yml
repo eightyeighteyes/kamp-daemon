@@ -650,14 +650,24 @@ jobs:
           gh release upload "${{ github.event.release.tag_name }}" \
             kamp_ui/dist/*.exe
 
-  # Manual debug job: SSH into a macOS 14 Apple Silicon runner with the freshly
-  # built ARM bundle to reproduce and investigate deployment-target crashes.
-  # Triggered via workflow_dispatch with the debug_macos input checked.
+  # Manual debug job: SSH into an Apple Silicon runner with the freshly built
+  # ARM bundle to investigate deployment-target / Swift ABI crashes.
+  # Runs as a matrix across macOS 14 (standard) and macOS 13 (xlarge, ~10x cost)
+  # so one trigger shows diagnostic output from both OS versions in parallel.
+  # mpv --version in the log tells you if a Swift symbol is missing before SSH.
   # bundle-arm64 is the raw kamp_ui/resources/ directory (NOT a DMG) — no mounting needed.
   debug-macos:
     needs: build-bundle
     if: github.event_name == 'workflow_dispatch' && inputs.debug_macos == true
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            label: macOS-14
+          - runner: macos-13-xlarge
+            label: macOS-13
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
     steps:
