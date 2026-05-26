@@ -177,7 +177,8 @@ jobs:
             -Dalsa=disabled \
             -Dvulkan=disabled \
             -Dshaderc=disabled \
-            -Dpipewire=disabled
+            -Dpipewire=disabled \
+            -Dswift-build=disabled
           ninja -C build
           cp build/mpv "$GITHUB_WORKSPACE/kamp_ui/resources/mpv"
           chmod +x "$GITHUB_WORKSPACE/kamp_ui/resources/mpv"
