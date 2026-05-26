@@ -140,6 +140,7 @@ jobs:
             -Dcpp_args="-arch $NATIVE_ARCH -mmacosx-version-min=13.0" \
             -Dcpp_link_args="-arch $NATIVE_ARCH -mmacosx-version-min=13.0" \
             -Dvulkan=disabled \
+            -Dopengl=disabled \
             -Dshaderc=disabled \
             -Dlcms=disabled \
             -Ddemos=false \
