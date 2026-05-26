@@ -117,7 +117,8 @@ jobs:
             --disable-static \
             --disable-programs \
             --disable-doc \
-            --disable-avfoundation
+            --disable-avfoundation \
+            --disable-x86asm
           make -j$(sysctl -n hw.ncpu)
           make install
           echo "→ FFmpeg libavdevice deployment target (must show minos=13.0):"
@@ -202,6 +203,21 @@ jobs:
             exit 1
           fi
           echo "OK: no Swift dylibs bundled"
+          # Patch any bundled Homebrew Sonoma dylib (minos 14.0) down to 13.0.
+          # Most are pure C/C++ libs with no macOS 14-specific code; their minos=14.0
+          # reflects only the runner OS. On macOS 13, dyld installs "missing stubs"
+          # for all symbols in any library with minos > running OS — any call into
+          # the library aborts with "missing symbol called". vtool changes only the
+          # LC_BUILD_VERSION metadata; no code is altered.
+          for lib in kamp_ui/resources/mpv-libs/*.dylib; do
+            minos=$(vtool -show-build "$lib" 2>/dev/null | awk '/minos/{print $2}')
+            case "$minos" in
+              1[4-9].*|[2-9][0-9].*)
+                vtool -set-build-version macos 13.0 14.0 -output "$lib" "$lib"
+                echo "→ patched minos $minos→13.0: $(basename $lib)"
+                ;;
+            esac
+          done
 
       - name: Build Now Playing helper
         # Compile the Swift helper that owns the macOS Now Playing session and
