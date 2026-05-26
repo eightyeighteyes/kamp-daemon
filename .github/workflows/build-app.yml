@@ -91,7 +91,8 @@ jobs:
         # from ~47 to ~32 dylibs. libplacebo is a required dep in v0.41.0 and
         # has no disable flag; it pulls in shaderc/vulkan-loader transitively.
         run: |
-          brew install dylibbundler meson ninja ffmpeg libass libplacebo
+          brew install dylibbundler meson ninja libass libplacebo
+          brew install --build-from-source ffmpeg
           git clone --depth=1 --branch v0.41.0 \
             https://github.com/mpv-player/mpv.git /tmp/mpv-src
           cd /tmp/mpv-src
