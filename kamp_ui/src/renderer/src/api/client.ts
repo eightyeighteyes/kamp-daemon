@@ -176,6 +176,8 @@ export const search = (q: string, sort = 'album_artist'): Promise<SearchResult> 
 export type QueueState = {
   tracks: Track[]
   position: number
+  shuffle: boolean
+  repeat: boolean
 }
 
 export const getQueue = (): Promise<QueueState> => get('/api/v1/player/queue')

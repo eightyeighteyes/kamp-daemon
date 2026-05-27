@@ -230,25 +230,40 @@ class PlaybackQueue:
         """
         return [self._tracks[i] for i in self._order], self._pos
 
-    def get_state(self) -> tuple[list[Path], int, bool, bool]:
-        """Return (tracks_in_playback_order, pos, shuffle, repeat) for persistence.
+    def get_state(self) -> tuple[list[Path], list[int], int, bool, bool]:
+        """Return (original_paths, order, pos, shuffle, repeat) for persistence.
 
-        Tracks are returned in the current playback order so the shuffle
-        sequence can be faithfully restored without re-shuffling.
+        *original_paths* is _tracks in load order; *order* is the index
+        permutation (_order) so the shuffled sequence can be faithfully
+        restored and toggling shuffle off recovers the true original order.
         """
-        ordered_paths = [self._tracks[i].file_path for i in self._order]
-        return ordered_paths, self._pos, self._shuffle, self._repeat
+        original_paths = [t.file_path for t in self._tracks]
+        return original_paths, list(self._order), self._pos, self._shuffle, self._repeat
+
+    @property
+    def shuffle(self) -> bool:
+        return self._shuffle
+
+    @property
+    def repeat(self) -> bool:
+        return self._repeat
 
     def restore(
-        self, tracks: list[Track], pos: int, shuffle: bool, repeat: bool
+        self,
+        tracks: list[Track],
+        order: list[int],
+        pos: int,
+        shuffle: bool,
+        repeat: bool,
     ) -> None:
         """Restore queue from persisted state.
 
-        *tracks* must already be in playback order (as returned by get_state).
-        The order is taken as-is so shuffle sequences survive restarts.
+        *tracks* are in their original load order; *order* is the index
+        permutation that was active when the state was saved (may be shuffled).
+        An empty *order* is treated as natural order [0, 1, …, n-1].
         """
         self._tracks = list(tracks)
-        self._order = list(range(len(tracks)))
+        self._order = list(order) if order else list(range(len(tracks)))
         self._pos = pos if tracks else -1
         self._shuffle = shuffle
         self._repeat = repeat
@@ -360,10 +375,42 @@ class PlaybackQueue:
             self._pos += 1
 
     def _shuffled_order(self, anchor_idx: int) -> None:
-        """Shuffle _order so anchor_idx appears first."""
-        rest = [i for i in range(len(self._tracks)) if i != anchor_idx]
-        random.shuffle(rest)
-        self._order = ([anchor_idx] if anchor_idx >= 0 else []) + rest
+        """Shuffle _order placing anchor_idx first; maximises artist diversity.
+
+        Greedily picks each next track from a pool that avoids repeating the
+        previous artist. Falls back to a different album when the whole
+        remaining pool shares the previous artist, then to unconstrained
+        random when even album diversity is impossible (e.g. single-album
+        queue). All tracks appear exactly once regardless of constraints.
+        """
+        result: list[int] = [anchor_idx] if anchor_idx >= 0 else []
+        remaining: list[int] = [i for i in range(len(self._tracks)) if i != anchor_idx]
+        prev_artist: str | None = (
+            self._tracks[anchor_idx].artist if anchor_idx >= 0 else None
+        )
+        prev_album: str | None = (
+            self._tracks[anchor_idx].album if anchor_idx >= 0 else None
+        )
+
+        while remaining:
+            preferred = [i for i in remaining if self._tracks[i].artist != prev_artist]
+            if preferred:
+                pick = random.choice(preferred)
+            else:
+                diff_album = [
+                    i for i in remaining if self._tracks[i].album != prev_album
+                ]
+                pick = (
+                    random.choice(diff_album)
+                    if diff_album
+                    else random.choice(remaining)
+                )
+            result.append(pick)
+            remaining.remove(pick)
+            prev_artist = self._tracks[pick].artist
+            prev_album = self._tracks[pick].album
+
+        self._order = result
 
 
 # ---------------------------------------------------------------------------
