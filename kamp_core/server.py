@@ -213,6 +213,8 @@ class SearchOut(BaseModel):
 class QueueOut(BaseModel):
     tracks: list[TrackOut]
     position: int  # index of the currently playing track; -1 if empty
+    shuffle: bool
+    repeat: bool
 
 
 class AddToQueueRequest(BaseModel):
@@ -2187,7 +2189,12 @@ def create_app(
     @app.get("/api/v1/player/queue", response_model=QueueOut)
     def get_queue() -> QueueOut:
         tracks, pos = queue.queue_tracks()
-        return QueueOut(tracks=[TrackOut.from_track(t) for t in tracks], position=pos)
+        return QueueOut(
+            tracks=[TrackOut.from_track(t) for t in tracks],
+            position=pos,
+            shuffle=queue.shuffle,
+            repeat=queue.repeat,
+        )
 
     def _drain_unlocked(old_current: Any, old_lookahead: Any) -> None:
         """Fire async drains for tracks that are no longer locked after a skip."""

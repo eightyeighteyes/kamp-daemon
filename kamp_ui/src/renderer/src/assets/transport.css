@@ -120,6 +120,17 @@
   min-width: 32px;
 }
 
+.transport-mode-btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.transport-btn.active {
+  color: var(--accent);
+}
+
 .transport-volume {
   display: flex;
   align-items: center;

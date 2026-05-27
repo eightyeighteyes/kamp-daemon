@@ -68,6 +68,8 @@ def mock_queue() -> MagicMock:
     queue.current.return_value = None
     queue.peek_next.return_value = None
     queue.queue_tracks.return_value = ([], -1)
+    queue.shuffle = False
+    queue.repeat = False
     return queue
 
 
@@ -920,6 +922,8 @@ class TestQueueEndpoint:
         data = response.json()
         assert data["tracks"] == []
         assert data["position"] == -1
+        assert data["shuffle"] is False
+        assert data["repeat"] is False
 
     def test_returns_tracks_with_position(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
@@ -948,6 +952,17 @@ class TestQueueEndpoint:
             "file_path",
             "ext",
         }
+
+    def test_queue_response_includes_shuffle_and_repeat_flags(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_queue.shuffle = True
+        mock_queue.repeat = False
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        data = c.get("/api/v1/player/queue").json()
+        assert data["shuffle"] is True
+        assert data["repeat"] is False
 
 
 class TestQueueMutationEndpoints:

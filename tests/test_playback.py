@@ -40,6 +40,23 @@ def _track(n: int) -> Track:
     )
 
 
+def _track_for(n: int, artist: str, album: str) -> Track:
+    return Track(
+        file_path=Path(f"/music/{artist}/{album}/{n:02d}.mp3"),
+        title=f"Track {n}",
+        artist=artist,
+        album_artist=artist,
+        album=album,
+        year="2024",
+        track_number=n,
+        disc_number=1,
+        ext="mp3",
+        embedded_art=False,
+        mb_release_id="",
+        mb_recording_id="",
+    )
+
+
 # ---------------------------------------------------------------------------
 # PlaybackQueue
 # ---------------------------------------------------------------------------
@@ -731,6 +748,120 @@ class TestIPCTransport:
         finally:
             c.close()
             d.close()
+
+
+# ---------------------------------------------------------------------------
+# Shuffle artist-diversity algorithm
+# ---------------------------------------------------------------------------
+
+
+class TestShuffleArtistDiversity:
+    """Tests for the artist-diversity constraint in _shuffled_order."""
+
+    def test_no_consecutive_same_artist_when_avoidable(self) -> None:
+        # 3 tracks by artist A, 3 by artist B — never need consecutive same artist
+        tracks = [_track_for(i, "A", "AlbumA") for i in range(3)] + [
+            _track_for(i, "B", "AlbumB") for i in range(3)
+        ]
+        q = PlaybackQueue()
+        q.load(tracks)
+        for _ in range(50):
+            q.set_shuffle(False)
+            q.set_shuffle(True)
+            ordered, pos = q.queue_tracks()
+            for prev, nxt in zip(ordered, ordered[1:]):
+                assert (
+                    prev.artist != nxt.artist
+                ), f"consecutive same artist after shuffle: {[t.artist for t in ordered]}"
+
+    def test_fallback_to_different_album_when_all_same_artist(self) -> None:
+        # 1 artist, 2 albums with equal track counts (5 each). With equal
+        # counts the greedy diff-album fallback can always alternate — the
+        # last-resort branch never fires and all consecutive pairs must have
+        # different albums.
+        tracks = [_track_for(i, "X", "AlbumA") for i in range(5)] + [
+            _track_for(i, "X", "AlbumB") for i in range(5)
+        ]
+        q = PlaybackQueue()
+        q.load(tracks)
+        for _ in range(50):
+            q.set_shuffle(False)
+            q.set_shuffle(True)
+            ordered, _ = q.queue_tracks()
+            # All consecutive pairs share the same artist (single artist queue);
+            # every pair must therefore come from different albums.
+            for prev, nxt in zip(ordered, ordered[1:]):
+                assert (
+                    prev.album != nxt.album
+                ), f"same artist+album consecutive: {[(t.artist, t.album) for t in ordered]}"
+
+    def test_last_resort_same_artist_and_album_no_crash(self) -> None:
+        # All same artist + same album — must complete without error
+        tracks = [_track_for(i, "Z", "AlbumZ") for i in range(5)]
+        q = PlaybackQueue()
+        q.load(tracks)
+        q.set_shuffle(True)
+        ordered, _ = q.queue_tracks()
+        assert len(ordered) == 5
+        assert {t.file_path for t in ordered} == {t.file_path for t in tracks}
+
+    def test_anchor_neg_one_with_tracks_no_crash(self) -> None:
+        # Queue exhausted (_pos==-1) then shuffle toggled — must not crash
+        tracks = [_track_for(i, "A", "Album") for i in range(3)]
+        q = PlaybackQueue()
+        q.load(tracks)
+        # Exhaust the queue
+        while q.next() is not None:
+            pass
+        assert q.current() is None
+        q.set_shuffle(True)  # should not raise
+        # After set_shuffle with pos==-1, anchor_idx==-1; all tracks remain
+        ordered, _ = q.queue_tracks()
+        assert len(ordered) == 3
+
+    def test_all_tracks_visited_exactly_once_after_diversity_shuffle(self) -> None:
+        tracks = (
+            [_track_for(i, "A", "AlbumA") for i in range(5)]
+            + [_track_for(i, "B", "AlbumB") for i in range(5)]
+            + [_track_for(i, "C", "AlbumC") for i in range(5)]
+            + [_track_for(i, "D", "AlbumD") for i in range(5)]
+        )
+        q = PlaybackQueue()
+        q.load(tracks)
+        q.set_shuffle(True)
+        seen = set()
+        current = q.current()
+        assert current is not None
+        seen.add(current.file_path)
+        for _ in range(19):
+            nxt = q.next()
+            assert nxt is not None
+            seen.add(nxt.file_path)
+        assert len(seen) == 20
+
+    def test_anchor_track_stays_current_after_shuffle_when_advanced(self) -> None:
+        tracks = [_track_for(i, "A", "AlbumA") for i in range(5)] + [
+            _track_for(i, "B", "AlbumB") for i in range(5)
+        ]
+        q = PlaybackQueue()
+        q.load(tracks)
+        # Advance to position 4
+        for _ in range(4):
+            q.next()
+        before = q.current()
+        q.set_shuffle(True)
+        assert q.current() == before
+
+    def test_shuffle_and_repeat_properties(self) -> None:
+        q = PlaybackQueue()
+        assert q.shuffle is False
+        assert q.repeat is False
+        q.set_shuffle(True)
+        assert q.shuffle is True
+        q.set_repeat(True)
+        assert q.repeat is True
+        q.set_shuffle(False)
+        assert q.shuffle is False
 
 
 # ---------------------------------------------------------------------------

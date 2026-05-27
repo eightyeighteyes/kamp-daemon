@@ -239,6 +239,14 @@ class PlaybackQueue:
         ordered_paths = [self._tracks[i].file_path for i in self._order]
         return ordered_paths, self._pos, self._shuffle, self._repeat
 
+    @property
+    def shuffle(self) -> bool:
+        return self._shuffle
+
+    @property
+    def repeat(self) -> bool:
+        return self._repeat
+
     def restore(
         self, tracks: list[Track], pos: int, shuffle: bool, repeat: bool
     ) -> None:
@@ -360,10 +368,42 @@ class PlaybackQueue:
             self._pos += 1
 
     def _shuffled_order(self, anchor_idx: int) -> None:
-        """Shuffle _order so anchor_idx appears first."""
-        rest = [i for i in range(len(self._tracks)) if i != anchor_idx]
-        random.shuffle(rest)
-        self._order = ([anchor_idx] if anchor_idx >= 0 else []) + rest
+        """Shuffle _order placing anchor_idx first; maximises artist diversity.
+
+        Greedily picks each next track from a pool that avoids repeating the
+        previous artist. Falls back to a different album when the whole
+        remaining pool shares the previous artist, then to unconstrained
+        random when even album diversity is impossible (e.g. single-album
+        queue). All tracks appear exactly once regardless of constraints.
+        """
+        result: list[int] = [anchor_idx] if anchor_idx >= 0 else []
+        remaining: list[int] = [i for i in range(len(self._tracks)) if i != anchor_idx]
+        prev_artist: str | None = (
+            self._tracks[anchor_idx].artist if anchor_idx >= 0 else None
+        )
+        prev_album: str | None = (
+            self._tracks[anchor_idx].album if anchor_idx >= 0 else None
+        )
+
+        while remaining:
+            preferred = [i for i in remaining if self._tracks[i].artist != prev_artist]
+            if preferred:
+                pick = random.choice(preferred)
+            else:
+                diff_album = [
+                    i for i in remaining if self._tracks[i].album != prev_album
+                ]
+                pick = (
+                    random.choice(diff_album)
+                    if diff_album
+                    else random.choice(remaining)
+                )
+            result.append(pick)
+            remaining.remove(pick)
+            prev_artist = self._tracks[pick].artist
+            prev_album = self._tracks[pick].album
+
+        self._order = result
 
 
 # ---------------------------------------------------------------------------

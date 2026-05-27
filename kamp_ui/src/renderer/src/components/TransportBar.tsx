@@ -7,6 +7,8 @@ import {
   PlayIcon,
   PrevIcon,
   QueueIcon,
+  RepeatIcon,
+  ShuffleIcon,
   StopIcon,
   VolumeIcon
 } from './TransportIcons'
@@ -28,6 +30,11 @@ export function TransportBar(): React.JSX.Element {
   const queueVisible = useStore((s) => s.queueVisible)
   const toggleQueuePanel = useStore((s) => s.toggleQueuePanel)
   const setFavorite = useStore((s) => s.setFavorite)
+  const queue = useStore((s) => s.queue)
+  const setShuffle = useStore((s) => s.setShuffle)
+  const setRepeat = useStore((s) => s.setRepeat)
+  const shuffle = queue?.shuffle ?? false
+  const repeat = queue?.repeat ?? false
 
   const { playing, position, duration, volume, current_track } = player
   // Local scrub position: holds the seek-bar value while the pointer is down so
@@ -157,6 +164,27 @@ export function TransportBar(): React.JSX.Element {
           }
         />
         <span className="time">{formatTime(duration)}</span>
+      </div>
+
+      <div className="transport-mode-btns">
+        <button
+          className={`transport-btn${shuffle ? ' active' : ''}`}
+          onClick={() => void setShuffle(!shuffle)}
+          title="Shuffle"
+          aria-label="Shuffle"
+          aria-pressed={shuffle}
+        >
+          <ShuffleIcon />
+        </button>
+        <button
+          className={`transport-btn${repeat ? ' active' : ''}`}
+          onClick={() => void setRepeat(!repeat)}
+          title="Repeat"
+          aria-label="Repeat"
+          aria-pressed={repeat}
+        >
+          <RepeatIcon />
+        </button>
       </div>
 
       <div className="transport-volume">

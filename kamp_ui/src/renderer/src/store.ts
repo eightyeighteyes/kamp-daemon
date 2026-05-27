@@ -595,6 +595,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
 
   setRepeat: async (repeat) => {
     await api.setRepeat(repeat)
+    void get().loadQueue()
   },
 
   addAlbumToQueue: async (albumArtist, album, filePath = '') => {
