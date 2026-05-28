@@ -69,9 +69,9 @@ export function LastPlayedConfig(): React.JSX.Element {
 export function LastPlayedModule({ displayStyle }: ModuleProps): React.JSX.Element {
   const count = useStore((s) => s.lastPlayedCount)
   const days = useStore((s) => s.lastPlayedDays)
-  // Re-fetch whenever the current track changes — the server updates last_played
-  // at EOF before broadcasting track.changed, so the list is already stale by
-  // the time this selector fires.
+  // Re-fetch whenever the current track changes — the server writes last_played
+  // before broadcasting track.changed, so the list is up-to-date by the time
+  // this selector fires.
   const currentFilePath = useStore((s) => s.player?.current_track?.file_path ?? null)
   const serverStatus = useStore((s) => s.serverStatus)
   const [albums, setAlbums] = useState<Album[]>([])
