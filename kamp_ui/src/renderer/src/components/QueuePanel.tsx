@@ -51,26 +51,22 @@ export function QueuePanel(): React.JSX.Element {
   // so that a drag can start before the collapse fires. dragstart cancels it.
   const pendingSingleSelect = useRef<number | null>(null)
   const tooltip = useTooltip()
+  const [historyCollapsed, setHistoryCollapsed] = useState(
+    () => localStorage.getItem('kamp:queue-history-collapsed') === 'true'
+  )
 
   const tracks = queue?.tracks ?? []
   const position = queue?.position ?? -1
 
-  // Scroll so that up to 5 history rows are visible above the current track.
-  // On initial mount use instant scroll to avoid a visible jump from the top;
-  // only animate when the position advances during an active session.
+  // Scroll the current track into view with scroll-margin-top providing the
+  // look-ahead offset. scrollIntoView is correct regardless of section headers
+  // or other non-uniform DOM elements that precede the active row.
+  // On initial mount use instant scroll; animate only during an active session.
   useEffect(() => {
     const behavior: ScrollBehavior = hasMounted.current ? 'smooth' : 'instant'
     hasMounted.current = true
-    const list = listRef.current
-    const active = activeRef.current
-    if (!list || !active || position < 5) {
-      // For the first few tracks just ensure the active row is visible.
-      activeRef.current?.scrollIntoView({ block: 'nearest', behavior })
-      return
-    }
-    const rowHeight = active.offsetHeight
-    list.scrollTo({ top: (position - 5) * rowHeight, behavior })
-  }, [position])
+    activeRef.current?.scrollIntoView({ block: 'start', behavior })
+  }, [position, historyCollapsed])
 
   // Clear selection when the queue changes length or position advances —
   // indices would be stale and could refer to different tracks.
@@ -80,6 +76,12 @@ export function QueuePanel(): React.JSX.Element {
 
     setAnchorIdx(null)
   }, [tracks.length, position])
+
+  function toggleHistoryCollapsed(): void {
+    const next = !historyCollapsed
+    setHistoryCollapsed(next)
+    localStorage.setItem('kamp:queue-history-collapsed', String(next))
+  }
 
   function handleRowMouseDown(e: React.MouseEvent, idx: number): void {
     if (e.button !== 0) return
@@ -183,6 +185,112 @@ export function QueuePanel(): React.JSX.Element {
     }
   }
 
+  function renderTrackRow(track: Track, idx: number): React.JSX.Element {
+    const isCurrent = idx === position
+    const isPlayed = position >= 0 && idx < position
+    const isUnplayed = position >= 0 && idx > position
+    const isSelected = selectedIndices.has(idx)
+    return (
+      <li
+        key={idx}
+        ref={isCurrent ? activeRef : null}
+        className={[
+          'queue-track-row',
+          isCurrent ? 'current' : '',
+          isPlayed ? 'played' : '',
+          isSelected ? 'selected' : ''
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        draggable={!isCurrent}
+        onMouseDown={(e) => handleRowMouseDown(e, idx)}
+        onMouseUp={() => handleRowMouseUp(idx)}
+        onDragStart={(e) => {
+          if (isCurrent) return
+          // A drag started — cancel any pending selection collapse so the full
+          // selection is available for the multi-drag path below.
+          pendingSingleSelect.current = null
+          // Filter the current playing track out of multi-drag —
+          // it is not draggable and including it would corrupt _pos.
+          const dragCandidates = [...selectedIndices].filter((i) => i !== position)
+          const isMulti = isSelected && dragCandidates.length > 1
+          if (isMulti) {
+            const sorted = dragCandidates.sort((a, b) => a - b)
+            e.dataTransfer.setData('text/kamp-queue-idx', String(idx))
+            e.dataTransfer.setData('text/kamp-queue-multi', JSON.stringify(sorted))
+            const ghost = document.createElement('div')
+            ghost.textContent = `${sorted.length} tracks`
+            ghost.style.cssText =
+              'position:fixed;top:-100px;background:var(--accent);color:#fff;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:600'
+            document.body.appendChild(ghost)
+            e.dataTransfer.setDragImage(ghost, 0, 0)
+            // Browser latches the ghost image synchronously; safe to remove next frame
+            requestAnimationFrame(() => document.body.removeChild(ghost))
+          } else {
+            // Solo drag: clear any selection so the drop handler uses single-move path
+            setSelectedIndices(new Set())
+            setAnchorIdx(null)
+            e.dataTransfer.setData('text/kamp-queue-idx', String(idx))
+          }
+          e.dataTransfer.effectAllowed = 'move'
+        }}
+        onDragEnd={() => {
+          // Always clear after drag — avoids stale index mapping when loadQueue()
+          // returns the reordered array with the same length.
+          setSelectedIndices(new Set())
+          setAnchorIdx(null)
+        }}
+        onDragOver={(e) => {
+          if (!isQueueDrop(e.dataTransfer.types)) return
+          e.preventDefault()
+          e.stopPropagation()
+          e.currentTarget.classList.add('drag-over')
+          // Clear tail-drop outline when pointer enters a row.
+          listRef.current?.classList.remove('queue-tail-drop')
+        }}
+        onDragLeave={(e) => {
+          e.stopPropagation()
+          e.currentTarget.classList.remove('drag-over')
+        }}
+        onDrop={(e) => handleDrop(e, idx)}
+        onDoubleClick={() => void skipToQueueTrack(idx)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          // Compute the intended new selection synchronously — setSelectedIndices
+          // is async in React so we can't read it back in the same event handler.
+          const nextIndices = isSelected ? selectedIndices : new Set([idx])
+          if (!isSelected) {
+            setSelectedIndices(nextIndices)
+            setAnchorIdx(idx)
+          }
+          const sortedIndices = [...nextIndices].sort((a, b) => a - b)
+          const selectedTracks = sortedIndices.map((i) => tracks[i])
+          const unplayedSelectedIndices = sortedIndices.filter((i) => i > position)
+          setMenu({
+            x: e.clientX,
+            y: e.clientY,
+            trackIdx: isUnplayed ? idx : null,
+            track,
+            selectedTracks,
+            unplayedSelectedIndices
+          })
+        }}
+      >
+        <span className="queue-track-fav">
+          {track.favorite && <FavoriteIcon active size={10} />}
+        </span>
+        <span className="queue-track-num">{idx + 1}</span>
+        <span className="queue-track-title">{track.title}</span>
+        <span className="queue-track-artist">{track.artist}</span>
+      </li>
+    )
+  }
+
+  const hasHistory = position > 0
+  const historyCount = Math.max(0, position)
+  const isPlaying = position >= 0 && position < tracks.length
+
   return (
     <aside className="queue-panel">
       <div className="queue-panel-header">
@@ -230,7 +338,7 @@ export function QueuePanel(): React.JSX.Element {
       ) : (
         <ol
           ref={listRef}
-          className="queue-track-list"
+          className={`queue-track-list${historyCollapsed ? ' history-collapsed' : ''}`}
           onContextMenu={(e) => {
             e.preventDefault()
             setMenu({
@@ -255,107 +363,55 @@ export function QueuePanel(): React.JSX.Element {
           }}
           onDrop={handleListDrop}
         >
-          {tracks.map((track, idx) => {
-            const isCurrent = idx === position
-            const isPlayed = position >= 0 && idx < position
-            const isUnplayed = position >= 0 && idx > position
-            const isSelected = selectedIndices.has(idx)
-            return (
+          {isPlaying ? (
+            <>
               <li
-                key={idx}
-                ref={isCurrent ? activeRef : null}
-                className={[
-                  'queue-track-row',
-                  isCurrent ? 'current' : '',
-                  isPlayed ? 'played' : '',
-                  isSelected ? 'selected' : ''
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                draggable={!isCurrent}
-                onMouseDown={(e) => handleRowMouseDown(e, idx)}
-                onMouseUp={() => handleRowMouseUp(idx)}
-                onDragStart={(e) => {
-                  if (isCurrent) return
-                  // A drag started — cancel any pending selection collapse so the full
-                  // selection is available for the multi-drag path below.
-                  pendingSingleSelect.current = null
-                  // Filter the current playing track out of multi-drag —
-                  // it is not draggable and including it would corrupt _pos.
-                  const dragCandidates = [...selectedIndices].filter((i) => i !== position)
-                  const isMulti = isSelected && dragCandidates.length > 1
-                  if (isMulti) {
-                    const sorted = dragCandidates.sort((a, b) => a - b)
-                    e.dataTransfer.setData('text/kamp-queue-idx', String(idx))
-                    e.dataTransfer.setData('text/kamp-queue-multi', JSON.stringify(sorted))
-                    const ghost = document.createElement('div')
-                    ghost.textContent = `${sorted.length} tracks`
-                    ghost.style.cssText =
-                      'position:fixed;top:-100px;background:var(--accent);color:#fff;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:600'
-                    document.body.appendChild(ghost)
-                    e.dataTransfer.setDragImage(ghost, 0, 0)
-                    // Browser latches the ghost image synchronously; safe to remove next frame
-                    requestAnimationFrame(() => document.body.removeChild(ghost))
-                  } else {
-                    // Solo drag: clear any selection so the drop handler uses single-move path
-                    setSelectedIndices(new Set())
-                    setAnchorIdx(null)
-                    e.dataTransfer.setData('text/kamp-queue-idx', String(idx))
-                  }
-                  e.dataTransfer.effectAllowed = 'move'
-                }}
-                onDragEnd={() => {
-                  // Always clear after drag — avoids stale index mapping when loadQueue()
-                  // returns the reordered array with the same length.
-                  setSelectedIndices(new Set())
-                  setAnchorIdx(null)
-                }}
-                onDragOver={(e) => {
-                  if (!isQueueDrop(e.dataTransfer.types)) return
-                  e.preventDefault()
-                  e.stopPropagation()
-                  e.currentTarget.classList.add('drag-over')
-                  // Clear tail-drop outline when pointer enters a row.
-                  listRef.current?.classList.remove('queue-tail-drop')
-                }}
-                onDragLeave={(e) => {
-                  e.stopPropagation()
-                  e.currentTarget.classList.remove('drag-over')
-                }}
-                onDrop={(e) => handleDrop(e, idx)}
-                onDoubleClick={() => void skipToQueueTrack(idx)}
+                className={`queue-section-header${!hasHistory ? ' disabled' : ''}`}
+                onMouseDown={(e) => e.stopPropagation()}
                 onContextMenu={(e) => {
-                  e.preventDefault()
                   e.stopPropagation()
-                  // Compute the intended new selection synchronously — setSelectedIndices
-                  // is async in React so we can't read it back in the same event handler.
-                  const nextIndices = isSelected ? selectedIndices : new Set([idx])
-                  if (!isSelected) {
-                    setSelectedIndices(nextIndices)
-                    setAnchorIdx(idx)
-                  }
-                  const sortedIndices = [...nextIndices].sort((a, b) => a - b)
-                  const selectedTracks = sortedIndices.map((i) => tracks[i])
-                  const unplayedSelectedIndices = sortedIndices.filter((i) => i > position)
-                  setMenu({
-                    x: e.clientX,
-                    y: e.clientY,
-                    trackIdx: isUnplayed ? idx : null,
-                    track,
-                    selectedTracks,
-                    unplayedSelectedIndices
-                  })
+                  e.preventDefault()
                 }}
               >
-                <span className="queue-track-fav">
-                  {track.favorite && <FavoriteIcon active size={10} />}
-                </span>
-                <span className="queue-track-num">{idx + 1}</span>
-                <span className="queue-track-title">{track.title}</span>
-                <span className="queue-track-artist">{track.artist}</span>
+                <span>HISTORY ({historyCount})</span>
+                {hasHistory && (
+                  <button className="queue-history-toggle" onClick={toggleHistoryCollapsed}>
+                    {historyCollapsed ? '▸' : '▾'}
+                  </button>
+                )}
               </li>
-            )
-          })}
+              {!historyCollapsed &&
+                tracks.slice(0, position).map((track, i) => renderTrackRow(track, i))}
+              <li
+                className="queue-section-header"
+                onMouseDown={(e) => e.stopPropagation()}
+                onContextMenu={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                }}
+              >
+                <span>NOW PLAYING</span>
+              </li>
+              {renderTrackRow(tracks[position], position)}
+              {position < tracks.length - 1 && (
+                <li
+                  className="queue-section-header"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onContextMenu={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                  }}
+                >
+                  <span>NEXT UP</span>
+                </li>
+              )}
+              {tracks
+                .slice(position + 1)
+                .map((track, i) => renderTrackRow(track, position + 1 + i))}
+            </>
+          ) : (
+            tracks.map((track, idx) => renderTrackRow(track, idx))
+          )}
         </ol>
       )}
       {menu && (

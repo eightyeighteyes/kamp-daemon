@@ -71,6 +71,12 @@
 
 .queue-track-row.current {
   border-left-color: var(--accent);
+  /* offset so ~5 history rows remain visible above the current track */
+  scroll-margin-top: 170px;
+}
+
+.queue-track-list.history-collapsed .queue-track-row.current {
+  scroll-margin-top: 32px;
 }
 
 .queue-track-row.played {
@@ -184,6 +190,43 @@
 .queue-track-list.queue-tail-drop {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* Queue section headers: History / Now Playing / Next Up */
+.queue-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  list-style: none;
+  cursor: default;
+  user-select: none;
+}
+
+.queue-section-header.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.queue-history-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  line-height: 1;
+}
+
+.queue-history-toggle:hover {
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 /* Right-click context menu on track rows */
