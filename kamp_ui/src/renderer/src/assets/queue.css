@@ -44,6 +44,7 @@
 }
 
 .queue-track-list {
+  --queue-section-h: 22px;
   list-style: none;
   margin: 0;
   padding: 4px 0;
@@ -71,12 +72,13 @@
 
 .queue-track-row.current {
   border-left-color: var(--accent);
-  /* offset so ~5 history rows remain visible above the current track */
-  scroll-margin-top: 170px;
+  /* two sticky headers + ~5 history rows look-ahead */
+  scroll-margin-top: calc(var(--queue-section-h, 22px) * 2 + 170px);
 }
 
 .queue-track-list.history-collapsed .queue-track-row.current {
-  scroll-margin-top: 32px;
+  /* two sticky headers, no history rows to show */
+  scroll-margin-top: calc(var(--queue-section-h, 22px) * 2);
 }
 
 .queue-track-row.played {
@@ -194,6 +196,9 @@
 
 /* Queue section headers: History / Now Playing / Next Up */
 .queue-section-header {
+  position: sticky;
+  background: var(--surface);
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -208,9 +213,23 @@
   user-select: none;
 }
 
+/* Sticky positions: History anchors at top, Now Playing stacks below it */
+.queue-section-header--history {
+  top: 0;
+}
+
+.queue-section-header--now-playing {
+  top: var(--queue-section-h, 22px);
+}
+
+.queue-section-header--next-up {
+  /* Not sticky — only History and Now Playing need to persist */
+  position: static;
+}
+
 .queue-section-header.disabled {
+  /* Keep pointer-events so onContextMenu on the <li> can stop propagation */
   opacity: 0.4;
-  pointer-events: none;
 }
 
 .queue-history-toggle {

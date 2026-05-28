@@ -66,7 +66,7 @@ export function QueuePanel(): React.JSX.Element {
     const behavior: ScrollBehavior = hasMounted.current ? 'smooth' : 'instant'
     hasMounted.current = true
     activeRef.current?.scrollIntoView({ block: 'start', behavior })
-  }, [position, historyCollapsed])
+  }, [position])
 
   // Clear selection when the queue changes length or position advances —
   // indices would be stale and could refer to different tracks.
@@ -366,7 +366,7 @@ export function QueuePanel(): React.JSX.Element {
           {isPlaying ? (
             <>
               <li
-                className={`queue-section-header${!hasHistory ? ' disabled' : ''}`}
+                className={`queue-section-header queue-section-header--history${!hasHistory ? ' disabled' : ''}`}
                 onMouseDown={(e) => e.stopPropagation()}
                 onContextMenu={(e) => {
                   e.stopPropagation()
@@ -383,7 +383,7 @@ export function QueuePanel(): React.JSX.Element {
               {!historyCollapsed &&
                 tracks.slice(0, position).map((track, i) => renderTrackRow(track, i))}
               <li
-                className="queue-section-header"
+                className="queue-section-header queue-section-header--now-playing"
                 onMouseDown={(e) => e.stopPropagation()}
                 onContextMenu={(e) => {
                   e.stopPropagation()
@@ -395,7 +395,7 @@ export function QueuePanel(): React.JSX.Element {
               {renderTrackRow(tracks[position], position)}
               {position < tracks.length - 1 && (
                 <li
-                  className="queue-section-header"
+                  className="queue-section-header queue-section-header--next-up"
                   onMouseDown={(e) => e.stopPropagation()}
                   onContextMenu={(e) => {
                     e.stopPropagation()
