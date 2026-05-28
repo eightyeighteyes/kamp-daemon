@@ -16,8 +16,9 @@
   align-items: center;
   gap: 8px;
   padding: 6px 16px;
-  /* Bleed past .main-content's 16px padding so the bar covers the full width */
-  margin: -16px -16px 0;
+  /* Bleed past .main-content's left/right padding to cover the full width.
+     Top padding is removed by layout.css when the album grid is active. */
+  margin: 0 -16px 0;
 }
 
 /* Shared toolbar dropdown styles ------------------------------------------- */

@@ -428,6 +428,13 @@ html[data-platform='win32'] .view-tabs {
   overflow: hidden;
 }
 
+/* Library view: the sticky toolbar manages its own top edge, so remove the
+   top padding here to let it sit flush with the pane. Left/right/bottom
+   padding remain so the album grid and track list keep their margins. */
+.main-content:has(.view-pane--active .album-grid-container) {
+  padding-top: 0;
+}
+
 /* Artist panel ------------------------------------------------------------- */
 
 .artist-panel {
