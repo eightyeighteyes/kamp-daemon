@@ -43,6 +43,41 @@
   background: var(--surface-hover);
 }
 
+/* Pinned block: History + Now Playing, always visible above Next Up */
+.queue-pinned {
+  flex-shrink: 0;
+  max-height: calc(100% - 60px); /* ensure at least ~60px for Next Up */
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+/* History track list — caps height so Now Playing is never pushed out of view */
+.queue-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(210px, 30vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Single current-track list in the Now Playing section */
+.queue-now-playing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Next Up section takes remaining panel height and scrolls */
+.queue-next-up {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
 .queue-track-list {
   list-style: none;
   margin: 0;
@@ -184,6 +219,41 @@
 .queue-track-list.queue-tail-drop {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* Queue section headers: History / Now Playing / Next Up */
+.queue-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  cursor: default;
+  user-select: none;
+}
+
+.queue-section-header.disabled {
+  opacity: 0.4;
+}
+
+.queue-history-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  line-height: 1;
+}
+
+.queue-history-toggle:hover {
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 /* Right-click context menu on track rows */
