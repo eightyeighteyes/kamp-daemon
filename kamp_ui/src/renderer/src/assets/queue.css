@@ -43,8 +43,42 @@
   background: var(--surface-hover);
 }
 
+/* Pinned block: History + Now Playing, always visible above Next Up */
+.queue-pinned {
+  flex-shrink: 0;
+  max-height: calc(100% - 60px); /* ensure at least ~60px for Next Up */
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+/* History track list — caps height so Now Playing is never pushed out of view */
+.queue-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(210px, 30vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Single current-track list in the Now Playing section */
+.queue-now-playing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Next Up section takes remaining panel height and scrolls */
+.queue-next-up {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
 .queue-track-list {
-  --queue-section-h: 22px;
   list-style: none;
   margin: 0;
   padding: 4px 0;
@@ -72,13 +106,6 @@
 
 .queue-track-row.current {
   border-left-color: var(--accent);
-  /* two sticky headers + ~5 history rows look-ahead */
-  scroll-margin-top: calc(var(--queue-section-h, 22px) * 2 + 170px);
-}
-
-.queue-track-list.history-collapsed .queue-track-row.current {
-  /* two sticky headers, no history rows to show */
-  scroll-margin-top: calc(var(--queue-section-h, 22px) * 2);
 }
 
 .queue-track-row.played {
@@ -196,9 +223,6 @@
 
 /* Queue section headers: History / Now Playing / Next Up */
 .queue-section-header {
-  position: sticky;
-  background: var(--surface);
-  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -208,27 +232,11 @@
   letter-spacing: 0.08em;
   color: var(--text-dim);
   text-transform: uppercase;
-  list-style: none;
   cursor: default;
   user-select: none;
 }
 
-/* Sticky positions: History anchors at top, Now Playing stacks below it */
-.queue-section-header--history {
-  top: 0;
-}
-
-.queue-section-header--now-playing {
-  top: var(--queue-section-h, 22px);
-}
-
-.queue-section-header--next-up {
-  /* Not sticky — only History and Now Playing need to persist */
-  position: static;
-}
-
 .queue-section-header.disabled {
-  /* Keep pointer-events so onContextMenu on the <li> can stop propagation */
   opacity: 0.4;
 }
 

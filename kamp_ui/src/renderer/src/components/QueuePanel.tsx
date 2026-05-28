@@ -41,9 +41,8 @@ export function QueuePanel(): React.JSX.Element {
   const insertIntoQueue = useStore((s) => s.insertIntoQueue)
   const insertAlbumAt = useStore((s) => s.insertAlbumAt)
   const addAlbumToQueue = useStore((s) => s.addAlbumToQueue)
-  const activeRef = useRef<HTMLLIElement>(null)
+  // listRef is on the Next Up <ol> — used for queue-tail-drop visual
   const listRef = useRef<HTMLOListElement>(null)
-  const hasMounted = useRef(false)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set())
   const [anchorIdx, setAnchorIdx] = useState<number | null>(null)
@@ -57,16 +56,6 @@ export function QueuePanel(): React.JSX.Element {
 
   const tracks = queue?.tracks ?? []
   const position = queue?.position ?? -1
-
-  // Scroll the current track into view with scroll-margin-top providing the
-  // look-ahead offset. scrollIntoView is correct regardless of section headers
-  // or other non-uniform DOM elements that precede the active row.
-  // On initial mount use instant scroll; animate only during an active session.
-  useEffect(() => {
-    const behavior: ScrollBehavior = hasMounted.current ? 'smooth' : 'instant'
-    hasMounted.current = true
-    activeRef.current?.scrollIntoView({ block: 'start', behavior })
-  }, [position])
 
   // Clear selection when the queue changes length or position advances —
   // indices would be stale and could refer to different tracks.
@@ -193,7 +182,6 @@ export function QueuePanel(): React.JSX.Element {
     return (
       <li
         key={idx}
-        ref={isCurrent ? activeRef : null}
         className={[
           'queue-track-row',
           isCurrent ? 'current' : '',
@@ -287,6 +275,17 @@ export function QueuePanel(): React.JSX.Element {
     )
   }
 
+  const listContextMenu = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      trackIdx: null,
+      selectedTracks: [],
+      unplayedSelectedIndices: []
+    })
+  }
+
   const hasHistory = position > 0
   const historyCount = Math.max(0, position)
   const isPlaying = position >= 0 && position < tracks.length
@@ -335,83 +334,106 @@ export function QueuePanel(): React.JSX.Element {
         >
           No tracks in queue.
         </div>
+      ) : isPlaying ? (
+        <>
+          {/* Pinned block: History + Now Playing — always visible */}
+          <div className="queue-pinned">
+            <div
+              className={`queue-section-header queue-section-header--history${!hasHistory ? ' disabled' : ''}`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onContextMenu={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+              }}
+            >
+              <span>HISTORY ({historyCount})</span>
+              {hasHistory && (
+                <button className="queue-history-toggle" onClick={toggleHistoryCollapsed}>
+                  {historyCollapsed ? '▸' : '▾'}
+                </button>
+              )}
+            </div>
+            {!historyCollapsed && historyCount > 0 && (
+              <ol
+                className="queue-history-list"
+                onContextMenu={listContextMenu}
+                onDragOver={(e) => {
+                  if (!isQueueDrop(e.dataTransfer.types)) return
+                  e.preventDefault()
+                }}
+                onDrop={(e) => e.preventDefault()}
+              >
+                {tracks.slice(0, position).map((track, i) => renderTrackRow(track, i))}
+              </ol>
+            )}
+            <div
+              className="queue-section-header queue-section-header--now-playing"
+              onMouseDown={(e) => e.stopPropagation()}
+              onContextMenu={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+              }}
+            >
+              <span>NOW PLAYING</span>
+            </div>
+            <ol className="queue-now-playing-list">{renderTrackRow(tracks[position], position)}</ol>
+          </div>
+
+          {/* Scrollable block: Next Up */}
+          <div className="queue-next-up">
+            <div
+              className="queue-section-header queue-section-header--next-up"
+              onMouseDown={(e) => e.stopPropagation()}
+              onContextMenu={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+              }}
+            >
+              <span>NEXT UP</span>
+            </div>
+            <ol
+              ref={listRef}
+              className="queue-track-list"
+              onContextMenu={listContextMenu}
+              onDragOver={(e) => {
+                if (!isQueueDrop(e.dataTransfer.types)) return
+                e.preventDefault()
+                e.currentTarget.classList.add('queue-tail-drop')
+              }}
+              onDragLeave={(e) => {
+                // Only remove the indicator when the pointer leaves the <ol> entirely,
+                // not when entering a child <li> (which stops its own drag events).
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  e.currentTarget.classList.remove('queue-tail-drop')
+                }
+              }}
+              onDrop={handleListDrop}
+            >
+              {tracks
+                .slice(position + 1)
+                .map((track, i) => renderTrackRow(track, position + 1 + i))}
+            </ol>
+          </div>
+        </>
       ) : (
+        // Nothing playing — flat list
         <ol
           ref={listRef}
-          className={`queue-track-list${historyCollapsed ? ' history-collapsed' : ''}`}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            setMenu({
-              x: e.clientX,
-              y: e.clientY,
-              trackIdx: null,
-              selectedTracks: [],
-              unplayedSelectedIndices: []
-            })
-          }}
+          className="queue-track-list"
+          onContextMenu={listContextMenu}
           onDragOver={(e) => {
             if (!isQueueDrop(e.dataTransfer.types)) return
             e.preventDefault()
             e.currentTarget.classList.add('queue-tail-drop')
           }}
           onDragLeave={(e) => {
-            // Only remove the indicator when the pointer leaves the <ol> entirely,
-            // not when entering a child <li> (which stops its own drag events).
             if (!e.currentTarget.contains(e.relatedTarget as Node)) {
               e.currentTarget.classList.remove('queue-tail-drop')
             }
           }}
           onDrop={handleListDrop}
         >
-          {isPlaying ? (
-            <>
-              <li
-                className={`queue-section-header queue-section-header--history${!hasHistory ? ' disabled' : ''}`}
-                onMouseDown={(e) => e.stopPropagation()}
-                onContextMenu={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                }}
-              >
-                <span>HISTORY ({historyCount})</span>
-                {hasHistory && (
-                  <button className="queue-history-toggle" onClick={toggleHistoryCollapsed}>
-                    {historyCollapsed ? '▸' : '▾'}
-                  </button>
-                )}
-              </li>
-              {!historyCollapsed &&
-                tracks.slice(0, position).map((track, i) => renderTrackRow(track, i))}
-              <li
-                className="queue-section-header queue-section-header--now-playing"
-                onMouseDown={(e) => e.stopPropagation()}
-                onContextMenu={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                }}
-              >
-                <span>NOW PLAYING</span>
-              </li>
-              {renderTrackRow(tracks[position], position)}
-              {position < tracks.length - 1 && (
-                <li
-                  className="queue-section-header queue-section-header--next-up"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onContextMenu={(e) => {
-                    e.stopPropagation()
-                    e.preventDefault()
-                  }}
-                >
-                  <span>NEXT UP</span>
-                </li>
-              )}
-              {tracks
-                .slice(position + 1)
-                .map((track, i) => renderTrackRow(track, position + 1 + i))}
-            </>
-          ) : (
-            tracks.map((track, idx) => renderTrackRow(track, idx))
-          )}
+          {tracks.map((track, idx) => renderTrackRow(track, idx))}
         </ol>
       )}
       {menu && (
