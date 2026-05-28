@@ -18,6 +18,7 @@ interface Props {
   selectedTracks: Track[] // all selected items — used for bulk favorites
   unplayedSelectedIndices: number[] // display indices of unplayed selected tracks
   position: number // currently playing track's display index
+  onClearSelection: () => void
   onClose: () => void
 }
 
@@ -29,6 +30,7 @@ export function QueueContextMenu({
   selectedTracks,
   unplayedSelectedIndices,
   position,
+  onClearSelection,
   onClose
 }: Props): React.JSX.Element {
   const albums = useStore((s) => s.library.albums)
@@ -147,6 +149,7 @@ export function QueueContextMenu({
                   ]
                   void reorderQueue(newOrder)
                 }
+                onClearSelection()
                 onClose()
               }}
             >
