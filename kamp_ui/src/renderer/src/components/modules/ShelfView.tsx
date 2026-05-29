@@ -16,6 +16,10 @@ export function ShelfView({ albums, scrollToPlaying = false }: ShelfViewProps): 
   const currentTrack = useStore((s) => s.player.current_track)
   // undefined = not yet initialized (skip scroll on first load)
   const prevFirstAddedAt = useRef<number | null | undefined>(undefined)
+  // Track the previous current track so we only auto-scroll when the track
+  // itself changes, not when last_played reorders the album list (e.g. after
+  // the 5-second debuff timer fires following a skip).
+  const prevCurrentTrack = useRef<typeof currentTrack | undefined>(undefined)
 
   useEffect(() => {
     const firstAddedAt = albums[0]?.added_at ?? null
@@ -38,8 +42,20 @@ export function ShelfView({ albums, scrollToPlaying = false }: ShelfViewProps): 
   useEffect(() => {
     const shelf = scrollRef.current
     if (!shelf || !scrollToPlaying) return
+
+    const trackChanged =
+      currentTrack?.album_artist !== prevCurrentTrack.current?.album_artist ||
+      currentTrack?.album !== prevCurrentTrack.current?.album ||
+      currentTrack?.file_path !== prevCurrentTrack.current?.file_path
+    prevCurrentTrack.current = currentTrack
+
     const behavior: ScrollBehavior = hasMounted.current ? 'smooth' : 'instant'
     hasMounted.current = true
+
+    // When albums reorder due to last_played updates (debuff timer) but the
+    // currently playing track hasn't changed, skip the scroll so the user's
+    // position in the shelf isn't hijacked.
+    if (!trackChanged) return
 
     if (!currentTrack) {
       shelf.scrollTo({ left: 0, behavior })
