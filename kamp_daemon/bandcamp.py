@@ -224,13 +224,12 @@ class NeedsLoginError(Exception):
 
 def mark_collection_synced(
     bc_config: BandcampConfig,
-    state_file: Path,
     index: "LibraryIndex",
 ) -> int:
     """Record every item in the Bandcamp collection as already downloaded.
 
-    Fetches the full collection and writes all sale_item_ids to *state_file*
-    without downloading anything.  Returns the number of items marked.
+    Writes all sale_item_ids to bandcamp_collection with mode='local' and
+    synced_at=now without downloading anything.  Returns the number of new items marked.
     """
     session_data = _ensure_session(bc_config, index)
     session = _make_requests_session(session_data)
@@ -240,15 +239,22 @@ def mark_collection_synced(
     _store_username_in_session(username, session_data, index)
     collection = _fetch_collection(fan_id, session, index)
 
-    state = _load_state(state_file)
+    state = index.get_collection_state()
     newly_marked = 0
+    now = time.time()
     for item in collection:
         key = str(item["sale_item_id"])
         if key not in state:
-            state[key] = time.time()
             newly_marked += 1
+        index.upsert_collection_item(
+            key,
+            mode="local",
+            item_type=str(item.get("sale_item_type", "p")),
+            band_name=str(item.get("band_name", "")),
+            item_title=str(item.get("item_title", "")),
+            synced_at=now,
+        )
 
-    _save_state(state_file, state)
     logger.info(
         "Marked %d item(s) as synced (%d already recorded). "
         "Future `sync` runs will only download new purchases.",
@@ -261,12 +267,14 @@ def mark_collection_synced(
 def sync_new_purchases(
     bc_config: BandcampConfig,
     watch_dir: Path,
-    state_file: Path,
     index: "LibraryIndex",
     status_callback: Callable[[str], None] | None = None,
 ) -> list[Path]:
-    """Download any purchases not yet recorded in *state_file* to *watch_dir*.
+    """Download any purchases not yet recorded in bandcamp_collection to *watch_dir*.
 
+    An item is considered new if it has no row in bandcamp_collection, or its
+    row has mode != 'local' (e.g. 'preorder' that has since become available).
+    Items with mode='remote' are skipped (stream-only, not downloaded).
     Returns a list of paths to the downloaded ZIP files.
     """
     session_data = _ensure_session(bc_config, index)
@@ -277,10 +285,15 @@ def sync_new_purchases(
     _store_username_in_session(username, session_data, index)
     logger.info("Fetched fan_id=%s for user %r", fan_id, username)
 
-    state = _load_state(state_file)
+    state = index.get_collection_state()
     collection = _fetch_collection(fan_id, session, index)
 
-    new_items = [item for item in collection if str(item["sale_item_id"]) not in state]
+    new_items = [
+        item
+        for item in collection
+        if state.get(str(item["sale_item_id"])) != "local"
+        and state.get(str(item["sale_item_id"])) != "remote"
+    ]
 
     if not new_items:
         logger.info("No new purchases to download.")
@@ -312,8 +325,14 @@ def sync_new_purchases(
                 )
             path = _download_item(item, bc_config, watch_dir, session)
             downloaded.append(path)
-            state[str(item["sale_item_id"])] = time.time()
-            _save_state(state_file, state)
+            index.upsert_collection_item(
+                str(item["sale_item_id"]),
+                mode="local",
+                item_type=str(item.get("sale_item_type", "p")),
+                band_name=str(item.get("band_name", "")),
+                item_title=str(item.get("item_title", "")),
+                synced_at=time.time(),
+            )
             logger.info("Downloaded: %s", path.name)
         except Exception as exc:
             logger.error(
@@ -832,18 +851,3 @@ def _download_file(
 # ---------------------------------------------------------------------------
 # State persistence
 # ---------------------------------------------------------------------------
-
-
-def _load_state(state_file: Path) -> dict[str, float]:
-    if not state_file.exists():
-        return {}
-    try:
-        return dict(json.loads(state_file.read_text()))
-    except Exception:
-        logger.warning("Could not read state file %s — starting fresh.", state_file)
-        return {}
-
-
-def _save_state(state_file: Path, state: dict[str, float]) -> None:
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(json.dumps(state, indent=2))

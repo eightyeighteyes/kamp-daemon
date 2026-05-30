@@ -90,7 +90,7 @@ def _maybe_unprotect(text: str) -> str:
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 18
+_SCHEMA_VERSION = 19
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -208,6 +208,23 @@ BEFORE UPDATE ON extension_audit_log
 BEGIN
     SELECT RAISE(ABORT, 'extension_audit_log is append-only: UPDATE is not permitted');
 END;
+
+-- Bandcamp collection ownership state (replaces bandcamp_state.json from KAMP-381).
+-- mode: 'local' = downloaded/owned locally, 'remote' = stream-only,
+--       'preorder' = purchased but not yet available, 'ignored' = excluded from sync.
+-- tralbum_id and album_url are populated by the streaming URL resolver (KAMP-382);
+-- migration rows start with '' and are backfilled on next sync.
+CREATE TABLE IF NOT EXISTS bandcamp_collection (
+    sale_item_id   TEXT NOT NULL PRIMARY KEY,
+    item_type      TEXT NOT NULL DEFAULT 'p',
+    band_name      TEXT NOT NULL DEFAULT '',
+    item_title     TEXT NOT NULL DEFAULT '',
+    tralbum_id     TEXT NOT NULL DEFAULT '',
+    album_url      TEXT NOT NULL DEFAULT '',
+    mode           TEXT NOT NULL DEFAULT 'local',
+    synced_at      REAL,
+    added_at       REAL NOT NULL DEFAULT 0
+);
 """
 
 # Characters that have special meaning in FTS5 MATCH expressions.
@@ -669,6 +686,33 @@ class LibraryIndex:
                 )
             self._conn.execute("UPDATE schema_version SET version = 18")
             self._conn.commit()
+            version = 18
+
+        if version < 19:
+            # v18 → v19: replace bandcamp_state.json with the bandcamp_collection
+            # table (KAMP-381).  The table is created by _DDL above.  Import any
+            # existing state file entries as mode='local' rows, then delete the
+            # file so future startups skip this branch entirely.
+            # The state file lives alongside library.db in the same directory.
+            state_file = self._db_path.parent / "bandcamp_state.json"
+            if state_file.exists():
+                try:
+                    raw: dict[str, float] = json.loads(state_file.read_text())
+                except Exception:
+                    raw = {}
+                for sid, ts in raw.items():
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO bandcamp_collection"
+                        " (sale_item_id, mode, synced_at, added_at)"
+                        " VALUES (?, 'local', ?, ?)",
+                        (sid, ts, ts),
+                    )
+                try:
+                    state_file.unlink()
+                except OSError:
+                    pass
+            self._conn.execute("UPDATE schema_version SET version = 19")
+            self._conn.commit()
 
     def _rebuild_fts(self) -> None:
         """Rebuild the FTS index from the current contents of the tracks table."""
@@ -957,6 +1001,78 @@ class LibraryIndex:
         # Truncate the WAL so deleted credential data (cookies, session keys) is
         # not recoverable from the WAL file after disconnect.
         self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    # ------------------------------------------------------------------
+    # Bandcamp collection (KAMP-381)
+    # ------------------------------------------------------------------
+
+    def get_collection_state(self) -> dict[str, str]:
+        """Return {sale_item_id: mode} for every row in bandcamp_collection."""
+        rows = self._conn.execute(
+            "SELECT sale_item_id, mode FROM bandcamp_collection"
+        ).fetchall()
+        return {r["sale_item_id"]: r["mode"] for r in rows}
+
+    def upsert_collection_item(
+        self,
+        sale_item_id: str,
+        *,
+        mode: str,
+        item_type: str = "p",
+        band_name: str = "",
+        item_title: str = "",
+        tralbum_id: str = "",
+        album_url: str = "",
+        synced_at: float | None = None,
+        added_at: float | None = None,
+    ) -> None:
+        """Insert or update a single entry in bandcamp_collection."""
+        now = _time.time()
+        self._conn.execute(
+            """
+            INSERT INTO bandcamp_collection
+                (sale_item_id, item_type, band_name, item_title,
+                 tralbum_id, album_url, mode, synced_at, added_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sale_item_id) DO UPDATE SET
+                item_type  = excluded.item_type,
+                band_name  = excluded.band_name,
+                item_title = excluded.item_title,
+                tralbum_id = excluded.tralbum_id,
+                album_url  = excluded.album_url,
+                mode       = excluded.mode,
+                synced_at  = excluded.synced_at
+            """,
+            (
+                sale_item_id,
+                item_type,
+                band_name,
+                item_title,
+                tralbum_id,
+                album_url,
+                mode,
+                synced_at,
+                added_at if added_at is not None else now,
+            ),
+        )
+        self._conn.commit()
+
+    def get_remote_collection(self) -> list[dict[str, Any]]:
+        """Return all bandcamp_collection rows with mode='remote'."""
+        rows = self._conn.execute(
+            "SELECT * FROM bandcamp_collection WHERE mode = 'remote'"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def reset_collection_sync_state(self) -> None:
+        """Set synced_at = NULL for all rows so the next sync re-downloads everything."""
+        self._conn.execute("UPDATE bandcamp_collection SET synced_at = NULL")
+        self._conn.commit()
+
+    def clear_bandcamp_collection(self) -> None:
+        """Delete all rows from bandcamp_collection (called on logout)."""
+        self._conn.execute("DELETE FROM bandcamp_collection")
+        self._conn.commit()
 
     # ------------------------------------------------------------------
     # Settings (application configuration)

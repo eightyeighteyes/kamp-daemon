@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 def _sync_worker(
     bc_config: BandcampConfig,
     watch_dir: Path,
-    state_file: Path,
     db_path: Path,
     status_q: Any,
     log_q: Any,
@@ -58,7 +57,6 @@ def _sync_worker(
             paths = sync_new_purchases(
                 bc_config=bc_config,
                 watch_dir=watch_dir,
-                state_file=state_file,
                 index=index,
                 status_callback=lambda msg: status_q.put(msg),
             )
@@ -80,7 +78,6 @@ def _sync_worker(
 
 def _mark_synced_worker(
     bc_config: BandcampConfig,
-    state_file: Path,
     db_path: Path,
     status_q: Any,
     log_q: Any,
@@ -100,9 +97,7 @@ def _mark_synced_worker(
 
         index = LibraryIndex(db_path)
         try:
-            mark_collection_synced(
-                bc_config=bc_config, state_file=state_file, index=index
-            )
+            mark_collection_synced(bc_config=bc_config, index=index)
             result_q.put(("ok", None))
         finally:
             index.close()
@@ -249,14 +244,25 @@ class Syncer:
             logger.warning("No [bandcamp] section in config — nothing to sync.")
             return
 
-        state_file = _state_dir() / "bandcamp_state.json"
+        db_path = _state_dir() / "library.db"
 
-        if not skip_auto_mark and not state_file.exists():
-            logger.info(
-                "No sync state found — marking existing collection as already synced "
-                "before first download.  Use --download-all to re-download everything."
-            )
-            self.mark_synced()
+        if not skip_auto_mark:
+            # First-run detection: if bandcamp_collection has no rows, mark
+            # the entire existing collection as synced before downloading.
+            # This prevents re-downloading everything on first run when the
+            # user already has their Bandcamp purchases locally.
+            # Use --download-all (skip_auto_mark=True) to bypass.
+            from kamp_core.library import LibraryIndex as _LI
+
+            _idx = _LI(db_path)
+            _is_first_run = not _idx.get_collection_state()
+            _idx.close()
+            if _is_first_run:
+                logger.info(
+                    "No sync state found — marking existing collection as already synced "
+                    "before first download.  Use --download-all to re-download everything."
+                )
+                self.mark_synced()
 
         logger.info("Starting Bandcamp sync…")
         # Signal "sync in progress" immediately — the subprocess spends most
@@ -266,10 +272,9 @@ class Syncer:
         if self.status_callback is not None:
             self.status_callback("Syncing\u2026")
 
-        db_path = _state_dir() / "library.db"
         proc, status_q, log_q, result_q = _spawn_worker(
             _sync_worker,
-            (bc, self._config.paths.watch_folder, state_file, db_path),
+            (bc, self._config.paths.watch_folder, db_path),
         )
 
         # Drain both queues while the subprocess runs.  log_q MUST be drained
@@ -323,11 +328,16 @@ class Syncer:
             self.status_callback("")
 
     def sync_all_purchases(self) -> None:
-        """Clear the sync-state file and re-download the entire Bandcamp collection."""
-        state_file = _state_dir() / "bandcamp_state.json"
-        if state_file.exists():
-            state_file.unlink()
-            logger.info("Bandcamp sync-all: cleared state file.")
+        """Reset sync state and re-download the entire Bandcamp collection."""
+        from kamp_core.library import LibraryIndex as _LI
+
+        db_path = _state_dir() / "library.db"
+        idx = _LI(db_path)
+        try:
+            idx.reset_collection_sync_state()
+        finally:
+            idx.close()
+        logger.info("Bandcamp sync-all: reset collection sync state.")
         self.sync_once(skip_auto_mark=True)
 
     def mark_synced(self) -> None:
@@ -336,12 +346,11 @@ class Syncer:
         if bc is None:
             logger.warning("No [bandcamp] section in config — nothing to mark.")
             return
-        state_file = _state_dir() / "bandcamp_state.json"
         db_path = _state_dir() / "library.db"
 
         proc, _status_q, log_q, result_q = _spawn_worker(
             _mark_synced_worker,
-            (bc, state_file, db_path),
+            (bc, db_path),
         )
 
         # Drain log_q while the subprocess runs — same pattern as sync_once().
@@ -397,30 +406,28 @@ class Syncer:
 
 
 def logout() -> None:
-    """Clear the Bandcamp session from DB and delete the sync-state file.
+    """Clear the Bandcamp session and collection state from the DB.
 
     After logout the next sync will re-authenticate interactively and
-    re-examine the full collection.  Both the DB session row and the
-    sync-state file are removed together — a session without state (or
-    vice versa) would leave the system in an inconsistent half-logged-in
-    state.
+    re-examine the full collection.
     """
     from kamp_core.library import LibraryIndex
 
     state = _state_dir()
     db_path = state / "library.db"
-    state_file = state / "bandcamp_state.json"
 
     if db_path.exists():
         index = LibraryIndex(db_path)
         try:
             index.clear_session("bandcamp")
+            index.clear_bandcamp_collection()
         finally:
             index.close()
-        logger.info("Bandcamp logout: session cleared.")
+        logger.info("Bandcamp logout: session and collection state cleared.")
 
-    # Remove legacy session file if it still exists (e.g. migration failed).
+    # Remove legacy files left over from pre-v19 installs.
     session_file = state / "bandcamp_session.json"
+    state_file = state / "bandcamp_state.json"
     removed: list[str] = []
     for f in (session_file, state_file):
         if f.exists():
@@ -428,6 +435,4 @@ def logout() -> None:
             removed.append(f.name)
 
     if removed:
-        logger.info("Bandcamp logout: removed %s.", ", ".join(removed))
-    else:
-        logger.info("Bandcamp logout: no state files found.")
+        logger.info("Bandcamp logout: removed legacy files %s.", ", ".join(removed))
