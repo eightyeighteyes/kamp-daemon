@@ -78,27 +78,26 @@ def _load_session(session_file: Path) -> requests.Session:
 def _extract_tralbum_data(html: str) -> dict[str, Any] | None:
     """Extract TralbumData from Bandcamp album page HTML.
 
-    Bandcamp embeds track info as:
-        var TralbumData = { ... };
-    in a <script> block. The value is valid JSON (with some JS-specific
-    literals that we handle).
+    Bandcamp now embeds track info as a data-tralbum attribute (current format).
+    Older pages used a 'var TralbumData = {...};' script block.
     """
-    # Primary pattern: var TralbumData = {...};
-    m = re.search(r"var TralbumData\s*=\s*(\{.*?\});\s*(?:var |</script>)", html, re.DOTALL)
+    import html as html_lib
+
+    # Primary (current): data-tralbum attribute
+    m = re.search(r'data-tralbum="([^"]+)"', html)
     if m:
         try:
-            return json.loads(m.group(1))
-        except json.JSONDecodeError as exc:
-            print(f"  [warn] TralbumData JSON parse failed: {exc}")
-
-    # Fallback: data-tralbum attribute on any element
-    m2 = re.search(r'data-tralbum="([^"]+)"', html)
-    if m2:
-        import html as html_lib
-        try:
-            return json.loads(html_lib.unescape(m2.group(1)))
+            return json.loads(html_lib.unescape(m.group(1)))
         except json.JSONDecodeError as exc:
             print(f"  [warn] data-tralbum JSON parse failed: {exc}")
+
+    # Fallback (older format): var TralbumData = {...};
+    m2 = re.search(r"var TralbumData\s*=\s*(\{.*?\});\s*(?:var |</script>)", html, re.DOTALL)
+    if m2:
+        try:
+            return json.loads(m2.group(1))
+        except json.JSONDecodeError as exc:
+            print(f"  [warn] TralbumData JSON parse failed: {exc}")
 
     return None
 
