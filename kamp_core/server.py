@@ -427,7 +427,14 @@ def _validate_library_path(file_path: str, library_path: Path | None) -> Path:
     Raises HTTP 400 when a library_path is configured and the resolved path
     falls outside it — preventing path-traversal attacks from reaching any
     future code that uses the caller-supplied path directly.
+
+    Remote track URIs (bandcamp://) are rejected here; remote tracks are only
+    reachable through the queue/album flow, not by direct file_path reference.
     """
+    if file_path.startswith("bandcamp://"):
+        raise HTTPException(
+            status_code=400, detail="Remote tracks cannot be addressed by path"
+        )
     p = Path(file_path).resolve()
     if library_path is not None and not p.is_relative_to(library_path.resolve()):
         raise HTTPException(status_code=400, detail="Path outside library directory")
@@ -469,6 +476,7 @@ def create_app(
     on_bandcamp_disconnect: Callable[[], None] | None = None,
     on_bandcamp_sync_trigger: Callable[[], None] | None = None,
     on_bandcamp_sync_all_trigger: Callable[[], None] | None = None,
+    refresh_stream_url: Callable[[str, int], tuple[str, float] | None] | None = None,
     dev_mode: bool = False,
     auth_token: str | None = None,
     mb_lookup_fn: Callable[..., Any] | None = None,
@@ -635,6 +643,63 @@ def create_app(
         t = _threading.Timer(5.0, _fire)
         _last_played_timer[0] = t
         t.start()
+
+    def _resolve_playback(track: "Track") -> str:
+        """Return the URL or path string to pass to mpv for *track*.
+
+        For local tracks returns str(track.file_path). For remote tracks checks
+        stream URL expiry and attempts a refresh via the refresh_stream_url
+        callback before returning track.playback_uri.
+        """
+        if not track.is_remote:
+            return track.playback_uri
+
+        import time as _t
+
+        needs_refresh = (
+            track.stream_url_expires_at is None
+            or track.stream_url_expires_at < _t.time() + 60
+        )
+        if needs_refresh and refresh_stream_url is not None:
+            _fp = str(track.file_path)
+            # Parse sale_item_id and track_number from bandcamp://sale_id/track_num.
+            # Path() normalises bandcamp:// → bandcamp:/ on POSIX (// collapse);
+            # strip either prefix and reconstruct the canonical form for DB lookups.
+            _canonical_fp: str | None = None
+            _rest: str | None = None
+            for _prefix in ("bandcamp://", "bandcamp:/"):
+                if _fp.startswith(_prefix):
+                    _rest = _fp[len(_prefix) :]
+                    _canonical_fp = "bandcamp://" + _rest
+                    break
+            if _canonical_fp is not None and _rest is not None:
+                parts = _rest.split("/", 1)
+                if len(parts) == 2:
+                    sale_item_id, track_num_str = parts
+                    try:
+                        track_num = int(track_num_str)
+                    except ValueError:
+                        track_num = 0
+                    item = index.get_collection_item(sale_item_id)
+                    album_url = (item or {}).get("album_url", "")
+                    if album_url:
+                        result = refresh_stream_url(album_url, track_num)
+                        if result is not None:
+                            new_url, expires_at = result
+                            index.update_stream_url(_canonical_fp, new_url, expires_at)
+                            return new_url
+                        else:
+                            logger.warning(
+                                "Stream URL refresh failed for %s — using existing URI",
+                                _canonical_fp,
+                            )
+                    else:
+                        logger.warning(
+                            "No album_url for %s — cannot refresh stream URL; "
+                            "run kamp sync to populate.",
+                            _canonical_fp,
+                        )
+        return track.playback_uri
 
     # Wire play-state change callback directly — the engine fires it from its
     # background reader thread whenever mpv's pause property flips.
@@ -2267,7 +2332,7 @@ def create_app(
         queue.load(tracks, start_index=req.track_index)
         current = queue.current()
         if current:
-            engine.play(current.file_path)
+            engine.play(_resolve_playback(current))
             _record_track_started_immediate(current.file_path)
         _notify_track_changed()
         _drain_unlocked(old_current, old_lookahead)
@@ -2305,7 +2370,7 @@ def create_app(
         old_lookahead = queue.peek_next()
         track = queue.next()
         if track:
-            engine.play(track.file_path)
+            engine.play(_resolve_playback(track))
             _record_track_started_debounced(track.file_path)
         else:
             engine.stop()
@@ -2319,7 +2384,7 @@ def create_app(
         old_lookahead = queue.peek_next()
         track = queue.prev()
         if track:
-            engine.play(track.file_path)
+            engine.play(_resolve_playback(track))
             _record_track_started_debounced(track.file_path)
         _notify_track_changed()
         _drain_unlocked(old_current, old_lookahead)
@@ -2344,8 +2409,8 @@ def create_app(
         track = queue.skip_to(req.position)
         if track:
             engine.play(
-                track.file_path
-            )  # play() resets lookahead; file-loaded re-primes it
+                _resolve_playback(track)
+            )  # resets lookahead; file-loaded re-primes it
             _record_track_started_debounced(track.file_path)
         _notify_track_changed()
         _drain_unlocked(old_current, old_lookahead)
@@ -2361,7 +2426,7 @@ def create_app(
         queue.add_to_queue(track)
         current = queue.current()
         if was_stopped and current is not None:
-            engine.play(current.file_path)
+            engine.play(_resolve_playback(current))
             _record_track_started_immediate(current.file_path)
             _notify_track_changed()
         else:
@@ -2378,7 +2443,7 @@ def create_app(
         queue.play_next(track)
         current = queue.current()
         if was_stopped and current is not None:
-            engine.play(current.file_path)
+            engine.play(_resolve_playback(current))
             _record_track_started_immediate(current.file_path)
             _notify_track_changed()
         else:
@@ -2409,7 +2474,7 @@ def create_app(
         queue.add_album_to_queue(tracks)
         current = queue.current()
         if was_stopped and current is not None:
-            engine.play(current.file_path)
+            engine.play(_resolve_playback(current))
             _record_track_started_immediate(current.file_path)
             _notify_track_changed()
         else:
@@ -2430,7 +2495,7 @@ def create_app(
         queue.play_album_next(tracks)
         current = queue.current()
         if was_stopped and current is not None:
-            engine.play(current.file_path)
+            engine.play(_resolve_playback(current))
             _record_track_started_immediate(current.file_path)
             _notify_track_changed()
         else:

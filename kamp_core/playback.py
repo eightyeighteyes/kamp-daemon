@@ -1126,7 +1126,7 @@ class MpvPlaybackEngine:
     # Public interface
     # ------------------------------------------------------------------
 
-    def play(self, path: Path) -> None:
+    def play(self, path: str | Path) -> None:
         # loadfile replace clears mpv's entire playlist, including any lookahead.
         # _lookahead_path mutation and the IPC send are paired under _lock so a
         # concurrent end-file/eof handler cannot observe a stale lookahead value.

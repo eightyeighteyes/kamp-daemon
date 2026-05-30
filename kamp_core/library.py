@@ -90,7 +90,7 @@ def _maybe_unprotect(text: str) -> str:
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 19
+_SCHEMA_VERSION = 20
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -116,8 +116,11 @@ CREATE TABLE IF NOT EXISTS tracks (
     favorite         INTEGER NOT NULL DEFAULT 0,
     play_count       INTEGER NOT NULL DEFAULT 0,
     file_mtime       REAL,    -- st_mtime at last scan; NULL until v6 migration backfill
-    genre            TEXT    NOT NULL DEFAULT '',
-    label            TEXT    NOT NULL DEFAULT ''
+    genre                TEXT    NOT NULL DEFAULT '',
+    label                TEXT    NOT NULL DEFAULT '',
+    source               TEXT    NOT NULL DEFAULT 'local',
+    stream_url           TEXT,
+    stream_url_expires_at REAL
 );
 
 -- FTS5 virtual table for full-text search across track metadata.
@@ -314,6 +317,18 @@ class Track:
     favorite: bool = field(default=False, compare=False)
     play_count: int = field(default=0, compare=False)
     file_mtime: float | None = field(default=None, compare=False)
+    source: str = field(default="local", compare=False)
+    stream_url: str | None = field(default=None, compare=False)
+    stream_url_expires_at: float | None = field(default=None, compare=False)
+
+    @property
+    def is_remote(self) -> bool:
+        return self.source != "local"
+
+    @property
+    def playback_uri(self) -> str:
+        """URL or file-path string to pass to mpv for playback."""
+        return self.stream_url or str(self.file_path)
 
 
 @dataclass
@@ -714,6 +729,28 @@ class LibraryIndex:
             self._conn.execute("UPDATE schema_version SET version = 19")
             self._conn.commit()
 
+        if version < 20:
+            # v19 → v20: add source, stream_url, stream_url_expires_at to tracks
+            # so local and remote (Bandcamp stream-only) tracks coexist in one table.
+            # Guard each ALTER with a PRAGMA check: new DBs already have these columns.
+            existing = {
+                row[1]
+                for row in self._conn.execute("PRAGMA table_info(tracks)").fetchall()
+            }
+            if "source" not in existing:
+                self._conn.execute(
+                    "ALTER TABLE tracks ADD COLUMN source TEXT NOT NULL DEFAULT 'local'"
+                )
+            if "stream_url" not in existing:
+                self._conn.execute("ALTER TABLE tracks ADD COLUMN stream_url TEXT")
+            if "stream_url_expires_at" not in existing:
+                self._conn.execute(
+                    "ALTER TABLE tracks ADD COLUMN stream_url_expires_at REAL"
+                )
+            self._conn.execute("UPDATE schema_version SET version = 20")
+            self._conn.commit()
+            version = 20
+
     def _rebuild_fts(self) -> None:
         """Rebuild the FTS index from the current contents of the tracks table."""
         self._conn.execute("DELETE FROM tracks_fts")
@@ -1074,6 +1111,24 @@ class LibraryIndex:
         self._conn.execute("DELETE FROM bandcamp_collection")
         self._conn.commit()
 
+    def get_collection_item(self, sale_item_id: str) -> dict[str, Any] | None:
+        """Return the bandcamp_collection row for *sale_item_id*, or None if absent."""
+        row = self._conn.execute(
+            "SELECT * FROM bandcamp_collection WHERE sale_item_id = ?",
+            (sale_item_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_stream_url(
+        self, file_path_uri: str, stream_url: str, expires_at: float
+    ) -> None:
+        """Persist a refreshed CDN stream URL and its expiry timestamp for a remote track."""
+        self._conn.execute(
+            "UPDATE tracks SET stream_url = ?, stream_url_expires_at = ? WHERE file_path = ?",
+            (stream_url, expires_at, file_path_uri),
+        )
+        self._conn.commit()
+
     # ------------------------------------------------------------------
     # Settings (application configuration)
     # ------------------------------------------------------------------
@@ -1115,23 +1170,26 @@ class LibraryIndex:
                 (file_path, title, artist, album_artist, album, year,
                  track_number, disc_number, ext, embedded_art,
                  mb_release_id, mb_recording_id, date_added, file_mtime,
-                 genre, label)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 genre, label, source, stream_url, stream_url_expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_path) DO UPDATE SET
-                title           = excluded.title,
-                artist          = excluded.artist,
-                album_artist    = excluded.album_artist,
-                album           = excluded.album,
-                year            = excluded.year,
-                track_number    = excluded.track_number,
-                disc_number     = excluded.disc_number,
-                ext             = excluded.ext,
-                embedded_art    = excluded.embedded_art,
-                mb_release_id   = excluded.mb_release_id,
-                mb_recording_id = excluded.mb_recording_id,
-                file_mtime      = excluded.file_mtime,
-                genre           = excluded.genre,
-                label           = excluded.label
+                title                 = excluded.title,
+                artist                = excluded.artist,
+                album_artist          = excluded.album_artist,
+                album                 = excluded.album,
+                year                  = excluded.year,
+                track_number          = excluded.track_number,
+                disc_number           = excluded.disc_number,
+                ext                   = excluded.ext,
+                embedded_art          = excluded.embedded_art,
+                mb_release_id         = excluded.mb_release_id,
+                mb_recording_id       = excluded.mb_recording_id,
+                file_mtime            = excluded.file_mtime,
+                genre                 = excluded.genre,
+                label                 = excluded.label,
+                source                = excluded.source,
+                stream_url            = excluded.stream_url,
+                stream_url_expires_at = excluded.stream_url_expires_at
                 -- date_added intentionally omitted: preserve original scan date on re-scan
                 -- last_played intentionally omitted: managed exclusively by record_played()
             """,
@@ -1948,6 +2006,9 @@ def _track_to_params(
     float | None,
     str,
     str,
+    str,
+    str | None,
+    float | None,
 ]:
     return (
         str(t.file_path),
@@ -1966,6 +2027,9 @@ def _track_to_params(
         t.file_mtime,
         t.genre,
         t.label,
+        t.source,
+        t.stream_url,
+        t.stream_url_expires_at,
     )
 
 
@@ -1982,6 +2046,10 @@ def _row_to_deferred_op(row: sqlite3.Row) -> DeferredOp:
 
 
 def _row_to_track(row: sqlite3.Row) -> Track:
+    # KAMP-383 note: Path("bandcamp://sale_item_id/track_num") is safe on
+    # POSIX (round-trips via str()) but corrupts on Windows (backslash
+    # normalisation). Fix Track.file_path type when remote tracks are first
+    # inserted so Windows is addressed before they reach prod.
     return Track(
         id=row["id"],
         file_path=Path(row["file_path"]),
@@ -2003,6 +2071,9 @@ def _row_to_track(row: sqlite3.Row) -> Track:
         favorite=bool(row["favorite"]),
         play_count=row["play_count"],
         file_mtime=row["file_mtime"],
+        source=row["source"],
+        stream_url=row["stream_url"],
+        stream_url_expires_at=row["stream_url_expires_at"],
     )
 
 
