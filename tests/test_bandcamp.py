@@ -25,11 +25,9 @@ from kamp_daemon.bandcamp import (
     _get_cdn_url,
     _get_download_links,
     _get_fan_info,
-    _load_state,
     _make_requests_session,
     _paginate,
     _resolve_cdn_redirect,
-    _save_state,
     _session_from_cookie_file,
     _username_from_logout_cookie,
     _validate_session,
@@ -208,18 +206,8 @@ def _make_requests_mock(
 
 
 class TestState:
-    def test_load_missing_returns_empty(self, tmp_path: Path) -> None:
-        assert _load_state(tmp_path / "nonexistent.json") == {}
-
-    def test_round_trip(self, tmp_path: Path) -> None:
-        f = tmp_path / "state.json"
-        _save_state(f, {"123": 1234567890.0})
-        assert _load_state(f) == {"123": 1234567890.0}
-
-    def test_corrupted_file_returns_empty(self, tmp_path: Path) -> None:
-        f = tmp_path / "state.json"
-        f.write_text("not json")
-        assert _load_state(f) == {}
+    """Placeholder — _load_state/_save_state removed in KAMP-381.
+    Collection state tests are in test_library.py::TestBandcampCollection."""
 
 
 # ---------------------------------------------------------------------------
@@ -491,16 +479,16 @@ class TestSyncNewPurchases:
         self,
         tmp_path: Path,
         items: list[dict[str, Any]],
-        state: dict[str, float] | None = None,
+        known_ids: list[str] | None = None,
     ) -> list[Path]:
         watch_folder = tmp_path / "watch"
-        state_file = tmp_path / "state.json"
-        if state:
-            _save_state(state_file, state)
-
         config = _bc_config(tmp_path)
         mock_session = _make_requests_mock(items)
         index = MagicMock()
+        # get_collection_state returns {sale_item_id: mode}; known IDs are 'local'.
+        index.get_collection_state.return_value = {
+            k: "local" for k in (known_ids or [])
+        }
 
         def fake_download(
             item: dict[str, Any],
@@ -523,7 +511,7 @@ class TestSyncNewPurchases:
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            return sync_new_purchases(config, watch_folder, state_file, index)
+            return sync_new_purchases(config, watch_folder, index)
 
     def test_downloads_new_items(self, tmp_path: Path) -> None:
         items = [_item(1, "Artist A", "Album 1"), _item(2, "Artist B", "Album 2")]
@@ -534,23 +522,21 @@ class TestSyncNewPurchases:
 
     def test_skips_known_items(self, tmp_path: Path) -> None:
         items = [_item(1), _item(2)]
-        existing_state = {"1": time.time(), "2": time.time()}
-        paths = self._run(tmp_path, items, state=existing_state)
+        paths = self._run(tmp_path, items, known_ids=["1", "2"])
         assert paths == []
 
     def test_downloads_only_new_items(self, tmp_path: Path) -> None:
         items = [_item(1), _item(2), _item(3)]
-        existing_state = {"1": time.time()}
-        paths = self._run(tmp_path, items, state=existing_state)
+        paths = self._run(tmp_path, items, known_ids=["1"])
         assert len(paths) == 2
 
     def test_state_updated_after_download(self, tmp_path: Path) -> None:
-        state_file = tmp_path / "state.json"
         watch_folder = tmp_path / "watch"
         config = _bc_config(tmp_path)
         items = [_item(99)]
         mock_session = _make_requests_mock(items)
         index = MagicMock()
+        index.get_collection_state.return_value = {}
 
         def fake_download(
             item: dict[str, Any],
@@ -573,15 +559,17 @@ class TestSyncNewPurchases:
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            sync_new_purchases(config, watch_folder, state_file, index)
+            sync_new_purchases(config, watch_folder, index)
 
-        assert "99" in _load_state(state_file)
+        # Verify the index was asked to record the downloaded item.
+        index.upsert_collection_item.assert_called_once()
+        call_kwargs = index.upsert_collection_item.call_args
+        assert call_kwargs[0][0] == "99"
+        assert call_kwargs[1]["mode"] == "local"
 
     def test_state_persists_across_calls(self, tmp_path: Path) -> None:
-        state_file = tmp_path / "state.json"
         watch_folder = tmp_path / "watch"
         config = _bc_config(tmp_path)
-        index = MagicMock()
         call_num = 0
 
         def fake_download(
@@ -597,6 +585,9 @@ class TestSyncNewPurchases:
             path.write_bytes(b"fake")
             return path
 
+        # First call: item 42 is new — gets downloaded.
+        index1 = MagicMock()
+        index1.get_collection_state.return_value = {}
         mock1 = _make_requests_mock([_item(42)])
         with (
             patch(
@@ -606,8 +597,11 @@ class TestSyncNewPurchases:
             patch("kamp_daemon.bandcamp._make_requests_session", return_value=mock1),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            sync_new_purchases(config, watch_folder, state_file, index)
+            sync_new_purchases(config, watch_folder, index1)
 
+        # Second call: item 42 is already local — nothing downloaded.
+        index2 = MagicMock()
+        index2.get_collection_state.return_value = {"42": "local"}
         mock2 = _make_requests_mock([_item(42)])
         with (
             patch(
@@ -617,17 +611,17 @@ class TestSyncNewPurchases:
             patch("kamp_daemon.bandcamp._make_requests_session", return_value=mock2),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            paths = sync_new_purchases(config, watch_folder, state_file, index)
+            paths = sync_new_purchases(config, watch_folder, index2)
 
         assert paths == []
 
     def test_skips_failed_download_continues_others(self, tmp_path: Path) -> None:
         watch_folder = tmp_path / "watch"
-        state_file = tmp_path / "state.json"
         config = _bc_config(tmp_path)
         items = [_item(1), _item(2)]
         mock_session = _make_requests_mock(items)
         index = MagicMock()
+        index.get_collection_state.return_value = {}
         call_num = 0
 
         def fake_download(
@@ -655,14 +649,13 @@ class TestSyncNewPurchases:
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            paths = sync_new_purchases(config, watch_folder, state_file, index)
+            paths = sync_new_purchases(config, watch_folder, index)
 
         assert len(paths) == 1
 
     def test_warns_when_item_missing_from_redownload_urls(self, tmp_path: Path) -> None:
         """Items absent from the API redownload_urls dict are warned and skipped."""
         watch_folder = tmp_path / "watch"
-        state_file = tmp_path / "state.json"
         config = _bc_config(tmp_path)
         items = [_item(1), _item(2)]
 
@@ -703,6 +696,7 @@ class TestSyncNewPurchases:
             return path
 
         index = MagicMock()
+        index.get_collection_state.return_value = {}
         with (
             patch(
                 "kamp_daemon.bandcamp._ensure_session",
@@ -713,7 +707,7 @@ class TestSyncNewPurchases:
             ),
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
-            paths = sync_new_purchases(config, watch_folder, state_file, index)
+            paths = sync_new_purchases(config, watch_folder, index)
 
         assert len(paths) == 1  # only item 2 downloaded
 
@@ -725,11 +719,11 @@ class TestSyncNewPurchases:
 
 class TestMarkCollectionSynced:
     def test_marks_all_items_without_downloading(self, tmp_path: Path) -> None:
-        state_file = tmp_path / "state.json"
         config = _bc_config(tmp_path)
         items = [_item(1, "Artist A", "Album 1"), _item(2, "Artist B", "Album 2")]
         mock_session = _make_requests_mock(items)
         index = MagicMock()
+        index.get_collection_state.return_value = {}
 
         with (
             patch(
@@ -740,21 +734,18 @@ class TestMarkCollectionSynced:
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
         ):
-            count = mark_collection_synced(config, state_file, index)
+            count = mark_collection_synced(config, index)
 
         assert count == 2
-        state = _load_state(state_file)
-        assert "1" in state
-        assert "2" in state
+        assert index.upsert_collection_item.call_count == 2
         assert not any(tmp_path.rglob("*.zip"))
 
     def test_skips_already_recorded_items(self, tmp_path: Path) -> None:
-        state_file = tmp_path / "state.json"
-        _save_state(state_file, {"1": 0.0})
         config = _bc_config(tmp_path)
         items = [_item(1), _item(2)]
         mock_session = _make_requests_mock(items)
         index = MagicMock()
+        index.get_collection_state.return_value = {"1": "local"}
 
         with (
             patch(
@@ -765,18 +756,20 @@ class TestMarkCollectionSynced:
                 "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
             ),
         ):
-            count = mark_collection_synced(config, state_file, index)
+            count = mark_collection_synced(config, index)
 
         assert count == 1
-        assert "2" in _load_state(state_file)
+        # upsert called for both (to keep metadata current), but only 1 was newly marked
+        assert index.upsert_collection_item.call_count == 2
 
     def test_subsequent_sync_downloads_nothing(self, tmp_path: Path) -> None:
-        state_file = tmp_path / "state.json"
         watch_folder = tmp_path / "watch"
         config = _bc_config(tmp_path)
         items = [_item(1), _item(2)]
-        index = MagicMock()
 
+        # mark_collection_synced: both items become 'local'
+        index1 = MagicMock()
+        index1.get_collection_state.return_value = {}
         mock1 = _make_requests_mock(items)
         with (
             patch(
@@ -785,8 +778,11 @@ class TestMarkCollectionSynced:
             ),
             patch("kamp_daemon.bandcamp._make_requests_session", return_value=mock1),
         ):
-            mark_collection_synced(config, state_file, index)
+            mark_collection_synced(config, index1)
 
+        # sync_new_purchases: state shows both already local → nothing downloaded
+        index2 = MagicMock()
+        index2.get_collection_state.return_value = {"1": "local", "2": "local"}
         mock2 = _make_requests_mock(items)
         with (
             patch(
@@ -796,7 +792,7 @@ class TestMarkCollectionSynced:
             patch("kamp_daemon.bandcamp._make_requests_session", return_value=mock2),
             patch("kamp_daemon.bandcamp._download_item"),
         ):
-            paths = sync_new_purchases(config, watch_folder, state_file, index)
+            paths = sync_new_purchases(config, watch_folder, index2)
 
         assert paths == []
 
@@ -812,9 +808,7 @@ class TestNeedsLoginError:
         index = MagicMock()
         index.get_session.return_value = None
         with pytest.raises(NeedsLoginError):
-            sync_new_purchases(
-                config, tmp_path / "watch", tmp_path / "state.json", index
-            )
+            sync_new_purchases(config, tmp_path / "watch", index)
 
     def test_raised_when_session_expired(self, tmp_path: Path) -> None:
         config = _bc_config(tmp_path)
@@ -825,9 +819,7 @@ class TestNeedsLoginError:
         index = MagicMock()
         index.get_session.return_value = expired_data
         with pytest.raises(NeedsLoginError):
-            sync_new_purchases(
-                config, tmp_path / "watch", tmp_path / "state.json", index
-            )
+            sync_new_purchases(config, tmp_path / "watch", index)
 
 
 # ---------------------------------------------------------------------------
@@ -1350,12 +1342,12 @@ class TestDownloadFile:
 
 class TestSyncStatusCallback:
     def test_status_callback_called_per_item(self, tmp_path: Path) -> None:
-        state_file = tmp_path / "state.json"
         watch_folder = tmp_path / "watch"
         config = _bc_config(tmp_path)
         items = [_item(1, "Band A", "Album A"), _item(2, "Band B", "Album B")]
         mock_session = _make_requests_mock(items)
         index = MagicMock()
+        index.get_collection_state.return_value = {}
 
         statuses: list[str] = []
 
@@ -1381,7 +1373,7 @@ class TestSyncStatusCallback:
             patch("kamp_daemon.bandcamp._download_item", side_effect=fake_download),
         ):
             sync_new_purchases(
-                config, watch_folder, state_file, index, status_callback=statuses.append
+                config, watch_folder, index, status_callback=statuses.append
             )
 
         assert len(statuses) == 2

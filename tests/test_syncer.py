@@ -71,6 +71,20 @@ def _inline_worker(target: Any, args: tuple[Any, ...]) -> tuple[Any, Any, Any, A
     return _FakeProc(), status_q, log_q, result_q
 
 
+def _seed_collection_db(tmp_path: Path) -> None:
+    """Pre-populate bandcamp_collection so sync_once() skips first-run auto-mark.
+
+    sync_once() checks whether the collection table is empty to determine if
+    this is a first run.  Insert a dummy row so the table is non-empty and
+    auto-mark is skipped.  Call this before patching _state_dir.
+    """
+    from kamp_core.library import LibraryIndex
+
+    idx = LibraryIndex(tmp_path / "library.db")
+    idx.upsert_collection_item("_seed", mode="local")
+    idx.close()
+
+
 def _noop_worker(target: Any, args: tuple[Any, ...]) -> tuple[Any, Any, Any, Any]:
     """Test helper: skip the worker entirely, return an empty-ok result.
 
@@ -136,7 +150,7 @@ class TestSyncOnce:
 
     def test_logs_downloaded_count(self, tmp_path: Path) -> None:
         """sync_once() reports the number of downloaded files."""
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         fake_paths = [tmp_path / "a.mp3", tmp_path / "b.mp3"]
         with patch("kamp_daemon.bandcamp.sync_new_purchases", return_value=fake_paths):
             with patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker):
@@ -146,7 +160,7 @@ class TestSyncOnce:
 
     def test_logs_nothing_new(self, tmp_path: Path) -> None:
         """sync_once() handles an empty result without error."""
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         with patch("kamp_daemon.bandcamp.sync_new_purchases", return_value=[]):
             with patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker):
                 with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
@@ -267,7 +281,7 @@ class TestStatusCallback:
             result_q.put(("ok", []))
             return _FakeProc(), status_q, log_q, result_q
 
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         with patch(
             "kamp_daemon.syncer._spawn_worker", side_effect=_worker_with_two_messages
         ):
@@ -303,7 +317,7 @@ class TestLazyImport:
         """
         import sys
 
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         sys.modules.pop("kamp_daemon.bandcamp", None)
         syncer = Syncer(_make_config(tmp_path))
         with patch("kamp_daemon.syncer._spawn_worker", side_effect=_noop_worker):
@@ -315,7 +329,7 @@ class TestLazyImport:
 class TestWorkerExceptions:
     def test_sync_worker_exception_propagates(self, tmp_path: Path) -> None:
         """Exceptions raised inside the sync worker are re-raised by sync_once()."""
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         with patch(
             "kamp_daemon.bandcamp.sync_new_purchases",
             side_effect=RuntimeError("network failure"),
@@ -346,7 +360,7 @@ class TestWorkerExceptions:
 
         _FakeNeedsLogin.__name__ = "NeedsLoginError"
 
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         with patch(
             "kamp_daemon.bandcamp.sync_new_purchases",
             side_effect=_FakeNeedsLogin("no session"),
@@ -366,7 +380,7 @@ class TestWorkerExceptions:
         _FakeNeedsLogin.__name__ = "NeedsLoginError"
 
         statuses: list[str] = []
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         with patch(
             "kamp_daemon.bandcamp.sync_new_purchases",
             side_effect=_FakeNeedsLogin("no session"),
@@ -395,7 +409,7 @@ class TestWorkerExceptions:
             result_q.put(("needs_login", "no session"))
             return _FakeProc(), status_q, log_q, result_q
 
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         with patch(
             "kamp_daemon.syncer._spawn_worker",
             side_effect=_needs_login_worker,
@@ -425,7 +439,7 @@ class TestWorkerExceptions:
             result_q.put(("error", "boom"))
             return _FakeProc(), status_q, log_q, result_q
 
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         with patch(
             "kamp_daemon.syncer._spawn_worker",
             side_effect=_failing_then_stopping_worker,
@@ -468,7 +482,7 @@ class TestLogReplay:
             result_q.put(("ok", []))
             return _FakeProc(), status_q, log_q, result_q
 
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         handler = logging.handlers.MemoryHandler(
             capacity=100, flushLevel=logging.CRITICAL
         )
@@ -512,9 +526,9 @@ class TestAutoMarkOnFirstSync:
         # mark-synced worker runs first, then sync worker
         assert call_order == ["_mark_synced_worker", "_sync_worker"]
 
-    def test_no_auto_mark_when_state_file_exists(self, tmp_path: Path) -> None:
-        """sync_once() skips auto-mark when the state file already exists."""
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+    def test_no_auto_mark_when_collection_db_populated(self, tmp_path: Path) -> None:
+        """sync_once() skips auto-mark when bandcamp_collection already has rows."""
+        _seed_collection_db(tmp_path)
         call_order: list[str] = []
 
         def _recording_noop_worker(
@@ -579,10 +593,16 @@ class TestMarkSynced:
 
 
 class TestSyncAllPurchases:
-    def test_clears_state_file_before_sync(self, tmp_path: Path) -> None:
-        """sync_all_purchases() deletes the state file and runs sync with skip_auto_mark."""
-        state_file = tmp_path / "bandcamp_state.json"
-        state_file.write_text('{"12345": 1234567890}')
+    def test_resets_collection_sync_state_before_sync(self, tmp_path: Path) -> None:
+        """sync_all_purchases() nulls synced_at for all rows and runs sync with skip_auto_mark."""
+        from kamp_core.library import LibraryIndex
+
+        # Pre-populate DB with a synced row.
+        db_path = tmp_path / "library.db"
+        idx = LibraryIndex(db_path)
+        idx.upsert_collection_item("12345", mode="local", synced_at=1234567890.0)
+        idx.close()
+
         call_order: list[str] = []
 
         def _recording_noop_worker(
@@ -602,7 +622,13 @@ class TestSyncAllPurchases:
                 syncer = Syncer(_make_config(tmp_path))
                 syncer.sync_all_purchases()
 
-        assert not state_file.exists()
+        # synced_at should be NULL after reset so next sync treats items as new.
+        idx2 = LibraryIndex(db_path)
+        row = idx2._conn.execute(
+            "SELECT synced_at FROM bandcamp_collection WHERE sale_item_id = '12345'"
+        ).fetchone()
+        idx2.close()
+        assert row["synced_at"] is None
         # skip_auto_mark=True means no mark-synced worker runs first
         assert call_order == ["_sync_worker"]
 
@@ -625,8 +651,8 @@ class TestSyncAllPurchases:
 
 
 class TestLogout:
-    def test_clears_db_session_and_state_file(self, tmp_path: Path) -> None:
-        """logout() clears the DB session row and removes the state file."""
+    def test_clears_db_session_and_collection(self, tmp_path: Path) -> None:
+        """logout() clears the DB session row and bandcamp_collection."""
         from kamp_core.library import LibraryIndex
 
         db_path = tmp_path / "library.db"
@@ -635,13 +661,13 @@ class TestLogout:
             index.set_session(
                 "bandcamp", {"cookies": [{"name": "js_logged_in", "value": "1"}]}
             )
-            (tmp_path / "bandcamp_state.json").write_text("{}")
+            index.upsert_collection_item("999", mode="local")
 
             with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
                 logout()
 
             assert index.get_session("bandcamp") is None
-            assert not (tmp_path / "bandcamp_state.json").exists()
+            assert index.get_collection_state() == {}
         finally:
             index.close()
 
@@ -659,7 +685,7 @@ class TestLogout:
 
     def test_removes_state_file_without_db(self, tmp_path: Path) -> None:
         """logout() removes bandcamp_state.json even when library.db is absent."""
-        (tmp_path / "bandcamp_state.json").write_text("{}")
+        _seed_collection_db(tmp_path)
         with patch("kamp_daemon.syncer._state_dir", return_value=tmp_path):
             logout()
         assert not (tmp_path / "bandcamp_state.json").exists()

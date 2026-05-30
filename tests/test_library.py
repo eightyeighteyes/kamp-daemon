@@ -129,7 +129,7 @@ class TestLibraryIndex:
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
 
-        assert version == 18
+        assert version == 19
 
     def test_upsert_adds_track(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
@@ -1336,7 +1336,7 @@ class TestSearch:
         ]
         index.close()
 
-        assert version == 18
+        assert version == 19
         assert len(results) == 1
         assert results[0].title == "Title"
 
@@ -1393,7 +1393,7 @@ class TestSearch:
         ).fetchone()
         index.close()
 
-        assert version == 18
+        assert version == 19
         assert row is not None
         # date_added will be NULL since the file path is fake; that is expected.
         assert row[0] is None
@@ -1749,7 +1749,7 @@ class TestRecordPlayed:
         ).fetchone()
         index.close()
 
-        assert version == 18
+        assert version == 19
         assert row is not None
         assert row[0] == 0
 
@@ -1967,7 +1967,7 @@ class TestFavorite:
         row = index._conn.execute("SELECT favorite FROM tracks WHERE id = 1").fetchone()
         index.close()
 
-        assert version == 18
+        assert version == 19
         assert row is not None
         assert row[0] == 0  # existing tracks default to not-favorited
 
@@ -2059,7 +2059,7 @@ class TestAlbumFavorite:
         index._conn.execute("SELECT COUNT(*) FROM album_favorites").fetchone()
         index.close()
 
-        assert version == 18
+        assert version == 19
 
 
 # ---------------------------------------------------------------------------
@@ -2238,7 +2238,7 @@ class TestMtimeReindex:
         ).fetchone()
         index.close()
 
-        assert version == 18
+        assert version == 19
         assert row is not None
         # file_mtime is intentionally left NULL on migration so the next scan
         # treats all existing tracks as changed and re-reads their tags.
@@ -2333,7 +2333,7 @@ class TestSessionManagement:
             0
         ]
         index.close()
-        assert version == 18
+        assert version == 19
 
     def test_schema_version_9_after_migration(self, tmp_path: Path) -> None:
         index = self._make_index(tmp_path)
@@ -2341,7 +2341,7 @@ class TestSessionManagement:
             0
         ]
         index.close()
-        assert version == 18
+        assert version == 19
 
     def test_migration_v8_to_v9_nulls_flac_ogg_mtimes(self, tmp_path: Path) -> None:
         """v8→v9 resets file_mtime for FLAC/OGG rows so they are re-scanned.
@@ -3218,7 +3218,7 @@ class TestMigrationV11ToV12:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 18
+        assert version == 19
 
         index.close()
 
@@ -3901,7 +3901,7 @@ class TestMigrationV16ToV17:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 18
+        assert version == 19
         index.close()
 
     def test_migration_existing_rows_get_empty_defaults(self, tmp_path: Path) -> None:
@@ -3936,7 +3936,7 @@ class TestMigrationV16ToV17:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 18
+        assert version == 19
         index.close()
 
 
@@ -4027,3 +4027,198 @@ class TestMarkAlbumArtEmbedded:
         ).fetchone()
         assert row["embedded_art"] == 0
         index.close()
+
+
+# ---------------------------------------------------------------------------
+# BandcampCollection (KAMP-381)
+# ---------------------------------------------------------------------------
+
+
+class TestBandcampCollection:
+    def test_empty_on_fresh_db(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        assert index.get_collection_state() == {}
+        index.close()
+
+    def test_upsert_and_get(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item(
+            "123",
+            mode="local",
+            band_name="The Marloes",
+            item_title="Di Hotel Malibu",
+            synced_at=1000.0,
+            added_at=900.0,
+        )
+        state = index.get_collection_state()
+        index.close()
+
+        assert state == {"123": "local"}
+
+    def test_upsert_updates_existing_row(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item("99", mode="local", synced_at=1.0)
+        index.upsert_collection_item("99", mode="remote", synced_at=2.0)
+        state = index.get_collection_state()
+        index.close()
+
+        assert state == {"99": "remote"}
+
+    def test_upsert_does_not_overwrite_added_at_on_conflict(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item("7", mode="local", added_at=500.0)
+        index.upsert_collection_item("7", mode="remote", synced_at=1.0)
+        row = index._conn.execute(
+            "SELECT added_at FROM bandcamp_collection WHERE sale_item_id = '7'"
+        ).fetchone()
+        index.close()
+
+        assert row["added_at"] == 500.0
+
+    def test_get_remote_collection_filters_by_mode(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item("1", mode="local")
+        index.upsert_collection_item(
+            "2", mode="remote", band_name="Artist", item_title="Album"
+        )
+        index.upsert_collection_item("3", mode="preorder")
+        result = index.get_remote_collection()
+        index.close()
+
+        assert len(result) == 1
+        assert result[0]["sale_item_id"] == "2"
+        assert result[0]["band_name"] == "Artist"
+
+    def test_reset_collection_sync_state(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item("1", mode="local", synced_at=999.0)
+        index.upsert_collection_item("2", mode="local", synced_at=888.0)
+        index.reset_collection_sync_state()
+        rows = index._conn.execute(
+            "SELECT synced_at FROM bandcamp_collection"
+        ).fetchall()
+        index.close()
+
+        assert all(r["synced_at"] is None for r in rows)
+
+    def test_clear_bandcamp_collection(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item("1", mode="local")
+        index.upsert_collection_item("2", mode="remote")
+        index.clear_bandcamp_collection()
+        assert index.get_collection_state() == {}
+        index.close()
+
+    def test_migration_v19_imports_state_file(self, tmp_path: Path) -> None:
+        import json
+        import sqlite3
+
+        # Simulate a v18 database with a bandcamp_state.json alongside it.
+        db_path = tmp_path / "library.db"
+        state_file = tmp_path / "bandcamp_state.json"
+        state_file.write_text(json.dumps({"111": 1000.0, "222": 2000.0}))
+
+        # Bootstrap a v18 DB without the bandcamp_collection table.
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version VALUES (18)")
+        conn.execute("""
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                album_artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                track_number INTEGER NOT NULL DEFAULT 0,
+                disc_number INTEGER NOT NULL DEFAULT 1,
+                ext TEXT NOT NULL DEFAULT '',
+                embedded_art INTEGER NOT NULL DEFAULT 0,
+                mb_release_id TEXT NOT NULL DEFAULT '',
+                mb_recording_id TEXT NOT NULL DEFAULT '',
+                date_added REAL,
+                last_played REAL,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                file_mtime REAL,
+                genre TEXT NOT NULL DEFAULT '',
+                label TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS queue_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                tracks TEXT NOT NULL,
+                order_json TEXT NOT NULL DEFAULT '',
+                pos INTEGER NOT NULL DEFAULT -1,
+                shuffle INTEGER NOT NULL DEFAULT 0,
+                repeat INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        # Opening the index triggers migration.
+        index = LibraryIndex(db_path)
+        state = index.get_collection_state()
+        index.close()
+
+        assert state == {"111": "local", "222": "local"}
+        assert not state_file.exists()
+
+    def test_migration_v19_skips_missing_state_file(self, tmp_path: Path) -> None:
+        import sqlite3
+
+        db_path = tmp_path / "library.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version VALUES (18)")
+        conn.execute("""
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                album_artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                track_number INTEGER NOT NULL DEFAULT 0,
+                disc_number INTEGER NOT NULL DEFAULT 1,
+                ext TEXT NOT NULL DEFAULT '',
+                embedded_art INTEGER NOT NULL DEFAULT 0,
+                mb_release_id TEXT NOT NULL DEFAULT '',
+                mb_recording_id TEXT NOT NULL DEFAULT '',
+                date_added REAL,
+                last_played REAL,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                file_mtime REAL,
+                genre TEXT NOT NULL DEFAULT '',
+                label TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS queue_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                tracks TEXT NOT NULL,
+                order_json TEXT NOT NULL DEFAULT '',
+                pos INTEGER NOT NULL DEFAULT -1,
+                shuffle INTEGER NOT NULL DEFAULT 0,
+                repeat INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        index = LibraryIndex(db_path)
+        state = index.get_collection_state()
+        version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
+        index.close()
+
+        assert state == {}
+        assert version == 19
