@@ -1084,7 +1084,7 @@ class LibraryIndex:
                 tralbum_id = excluded.tralbum_id,
                 album_url  = excluded.album_url,
                 mode       = excluded.mode,
-                synced_at  = excluded.synced_at
+                synced_at  = COALESCE(excluded.synced_at, synced_at)
             """,
             (
                 sale_item_id,

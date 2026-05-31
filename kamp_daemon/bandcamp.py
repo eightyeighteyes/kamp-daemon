@@ -297,6 +297,26 @@ def sync_new_purchases(
         and state.get(str(item["sale_item_id"])) != "remote"
     ]
 
+    # Refresh metadata (band_name, album_url, tralbum_id) for all fetched items,
+    # not just new ones.  Existing rows may have been created before KAMP-382
+    # started populating these fields; synced_at is preserved via COALESCE.
+    for item in collection:
+        sid = item.get("sale_item_id")
+        if sid is None:
+            continue
+        key = str(sid)
+        if key in state and key not in {str(i["sale_item_id"]) for i in new_items}:
+            index.upsert_collection_item(
+                key,
+                mode=state[key],
+                item_type=str(item.get("sale_item_type", "p")),
+                band_name=str(item.get("band_name", "")),
+                item_title=str(item.get("item_title", "")),
+                album_url=str(item.get("item_url", "")),
+                tralbum_id=str(item.get("tralbum_id", "")),
+                synced_at=None,  # COALESCE preserves existing synced_at
+            )
+
     if not new_items:
         logger.info("No new purchases to download.")
         return []

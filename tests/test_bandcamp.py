@@ -717,6 +717,47 @@ class TestSyncNewPurchases:
 
         assert len(paths) == 1  # only item 2 downloaded
 
+    def test_refreshes_metadata_for_existing_items(self, tmp_path: Path) -> None:
+        """Existing items get band_name/album_url/tralbum_id refreshed even if not downloaded."""
+        items = [
+            _item(
+                1,
+                "The Artist",
+                "The Album",
+                item_url="https://theartist.bandcamp.com/album/the-album",
+                tralbum_id=42,
+            )
+        ]
+        paths = self._run(tmp_path, items, known_ids=["1"])
+
+        # No downloads — item was already known.
+        assert paths == []
+
+        # upsert_collection_item should have been called once for the metadata refresh.
+        index = MagicMock()
+        index.get_collection_state.return_value = {"1": "local"}
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
+            patch(
+                "kamp_daemon.bandcamp._make_requests_session",
+                return_value=_make_requests_mock(items),
+            ),
+        ):
+            sync_new_purchases(_bc_config(tmp_path), tmp_path / "watch", index)
+
+        index.upsert_collection_item.assert_called_once()
+        call_kwargs = index.upsert_collection_item.call_args[1]
+        assert call_kwargs["band_name"] == "The Artist"
+        assert (
+            call_kwargs["album_url"] == "https://theartist.bandcamp.com/album/the-album"
+        )
+        assert call_kwargs["tralbum_id"] == "42"
+        assert call_kwargs["synced_at"] is None  # preserved via COALESCE
+
 
 # ---------------------------------------------------------------------------
 # mark_collection_synced
