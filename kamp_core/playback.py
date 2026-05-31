@@ -45,6 +45,27 @@ class PlaybackState:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _canonical_track_key(path: "Path | str") -> str:
+    """Canonical string key for remote track URI comparison and persistence.
+
+    Normalises POSIX single-slash (bandcamp:/) and Windows backslash
+    (bandcamp:\\) forms to the canonical double-slash form (bandcamp://)
+    so DB lookups and in-queue comparisons are consistent across platforms.
+    Local paths are returned as-is via str().
+    """
+    s = str(path)
+    if "bandcamp:" in s:
+        rest = s.split("bandcamp:", 1)[1].lstrip("/\\").replace("\\", "/")
+        return "bandcamp://" + rest
+    return s
+
+
+# ---------------------------------------------------------------------------
 # PlaybackQueue
 # ---------------------------------------------------------------------------
 
@@ -69,14 +90,16 @@ class PlaybackQueue:
         else:
             self._pos = start_index if tracks else -1
 
-    def update_favorite(self, file_path: Path, favorite: bool) -> None:
+    def update_favorite(self, file_path: Path | str, favorite: bool) -> None:
         """Update the favorite flag on any queued tracks matching *file_path*.
 
         Called after a favorite is toggled so that the next player-state
         snapshot reflects the new value without requiring a queue reload.
+        Accepts str so remote track URIs (bandcamp://) can be matched.
         """
+        fp_key = _canonical_track_key(file_path)
         for t in self._tracks:
-            if t.file_path == file_path:
+            if _canonical_track_key(t.file_path) == fp_key:
                 t.favorite = favorite
 
     def update_track_path(self, old_path: Path, new_path: Path, new_title: str) -> None:
@@ -238,7 +261,8 @@ class PlaybackQueue:
         restored and toggling shuffle off recovers the true original order.
         Paths are returned as strings to match load_queue_state()'s list[str].
         """
-        original_paths = [str(t.file_path) for t in self._tracks]
+
+        original_paths = [_canonical_track_key(t.file_path) for t in self._tracks]
         return original_paths, list(self._order), self._pos, self._shuffle, self._repeat
 
     @property
@@ -1149,7 +1173,7 @@ class MpvPlaybackEngine:
         # Pause-toggle is unrelated to the lookahead slot; send outside the lock.
         self._send_command("set_property", "pause", False)
 
-    def load_paused(self, path: Path, position: float = 0.0) -> None:
+    def load_paused(self, path: Path | str, position: float = 0.0) -> None:
         """Load *path* into mpv, paused at *position*, without starting playback.
 
         Used on daemon startup to restore the previous session state without
@@ -1187,7 +1211,13 @@ class MpvPlaybackEngine:
         _lookahead_path mutation, and the playlist-remove/loadfile send happen
         atomically with respect to a concurrent end-file/eof handler.
         """
-        path = next_track.file_path if next_track is not None else None
+        # Remote tracks: CDN URL is resolved by _resolve_playback on EOF;
+        # passing the raw bandcamp: URI to mpv would silently fail.
+        path = (
+            None
+            if (next_track is None or next_track.is_remote)
+            else next_track.file_path
+        )
         with self._lock:
             if path == self._lookahead_path:
                 return
@@ -1395,3 +1425,14 @@ class MpvPlaybackEngine:
                 logger.info(
                     "eof: on_track_end returned (had_lookahead=%s)", had_lookahead
                 )
+
+            elif event.get("reason") in ("error", "network", "redirect"):
+                # mpv failed to open or buffer the stream (expired CDN URL,
+                # network drop, HTTP 403/404). Advance the queue rather than
+                # stalling silently. "stop" is intentional (loadfile replace or
+                # stop command) and must NOT advance the queue.
+                logger.warning(
+                    "end-file: reason=%s — advancing queue", event.get("reason")
+                )
+                if self.on_track_end is not None:
+                    self.on_track_end(False)

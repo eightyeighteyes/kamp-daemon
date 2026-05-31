@@ -738,7 +738,7 @@ def fetch_stream_url(
         )
 
     tralbum: dict[str, Any] = json.loads(html_lib.unescape(match.group(1)))
-    tracks: list[dict[str, Any]] = tralbum.get("tracks") or []
+    tracks: list[dict[str, Any]] = tralbum.get("trackinfo") or []
 
     for t in tracks:
         if t.get("track_num") == track_number:
@@ -756,6 +756,27 @@ def fetch_stream_url(
         f"fetch_stream_url: track_num={track_number} not found in {album_url} "
         f"(tracks present: {[t.get('track_num') for t in tracks]})"
     )
+
+
+def refresh_stream_url(
+    album_url: str, track_number: int, session_data: dict[str, Any]
+) -> tuple[str, float] | None:
+    """Fetch a fresh CDN stream URL for *track_number* on *album_url*.
+
+    Proxy-aware (Cloudflare-safe on PyInstaller/Windows). Returns None on any
+    failure so callers can fall back gracefully without raising.
+    """
+    try:
+        session = _make_requests_session(session_data)
+        return fetch_stream_url(album_url, track_number, session)
+    except Exception as exc:
+        logger.warning(
+            "refresh_stream_url: failed for track %d on %s — %s",
+            track_number,
+            album_url,
+            exc,
+        )
+        return None
 
 
 def fetch_album_art_bytes(album_url: str, session_data: dict[str, Any]) -> bytes | None:

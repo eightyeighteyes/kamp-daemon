@@ -1449,11 +1449,16 @@ class LibraryIndex:
         )
         self._conn.commit()
 
-    def set_favorite(self, file_path: Path, favorite: bool) -> None:
-        """Set or clear the favorite flag for the track at *file_path*."""
+    def set_favorite(self, file_path: "Path | str", favorite: bool) -> None:
+        """Set or clear the favorite flag for the track at *file_path*.
+
+        Accepts str so remote track URIs (bandcamp://) are not corrupted
+        by Path normalization on POSIX (// → /).
+        """
+        key = file_path if isinstance(file_path, str) else str(file_path)
         self._conn.execute(
             "UPDATE tracks SET favorite = ? WHERE file_path = ?",
-            (int(favorite), str(file_path)),
+            (int(favorite), key),
         )
         self._conn.commit()
 
