@@ -291,7 +291,7 @@ export function TrackList(): React.JSX.Element | null {
   const isRemoteAlbum = album.source !== 'local'
   const saleItemId =
     isRemoteAlbum && tracks.length > 0
-      ? tracks[0].file_path.split('bandcamp:')[1]?.replace(/^\/+/, '').split('/')[0] ?? null
+      ? (tracks[0].file_path.split('bandcamp:')[1]?.replace(/^\/+/, '').split('/')[0] ?? null)
       : null
 
   const isCurrentAlbum =
