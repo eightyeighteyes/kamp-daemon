@@ -727,7 +727,7 @@ class TestStreamMode:
         """sync_once() in stream mode does not call mark_synced() on first run."""
         syncer = Syncer(self._make_stream_config(tmp_path))
         with (
-            patch("kamp_daemon.bandcamp.sync_collection_stream", return_value=2),
+            patch("kamp_daemon.bandcamp.sync_collection_stream", return_value=(2, 10)),
             patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
             patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
             patch.object(syncer, "mark_synced") as mock_mark,
@@ -741,7 +741,7 @@ class TestStreamMode:
         """sync_all_purchases() in stream mode does not reset the collection state."""
         syncer = Syncer(self._make_stream_config(tmp_path))
         with (
-            patch("kamp_daemon.bandcamp.sync_collection_stream", return_value=0),
+            patch("kamp_daemon.bandcamp.sync_collection_stream", return_value=(0, 0)),
             patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
             patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
         ):
@@ -756,10 +756,38 @@ class TestStreamMode:
         syncer = Syncer(self._make_stream_config(tmp_path))
         with (
             patch(
-                "kamp_daemon.bandcamp.sync_collection_stream", return_value=3
+                "kamp_daemon.bandcamp.sync_collection_stream", return_value=(3, 15)
             ) as mock_stream,
             patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
             patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
         ):
             syncer.sync_once()
         mock_stream.assert_called_once()
+
+    def test_sync_once_stream_logs_track_count(self, tmp_path: Path) -> None:
+        """sync_once() in stream mode logs album and track counts when tracks indexed."""
+        syncer = Syncer(self._make_stream_config(tmp_path))
+        with (
+            patch("kamp_daemon.bandcamp.sync_collection_stream", return_value=(5, 42)),
+            patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
+            patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
+            patch("kamp_daemon.syncer.logger") as mock_log,
+        ):
+            syncer.sync_once()
+        info_msgs = " ".join(str(c) for c in mock_log.info.call_args_list)
+        assert "42" in info_msgs
+
+    def test_sync_once_stream_logs_up_to_date_when_no_new_tracks(
+        self, tmp_path: Path
+    ) -> None:
+        """sync_once() in stream mode logs 'up to date' when track_count == 0."""
+        syncer = Syncer(self._make_stream_config(tmp_path))
+        with (
+            patch("kamp_daemon.bandcamp.sync_collection_stream", return_value=(636, 0)),
+            patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
+            patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
+            patch("kamp_daemon.syncer.logger") as mock_log,
+        ):
+            syncer.sync_once()
+        info_msgs = " ".join(str(c) for c in mock_log.info.call_args_list)
+        assert "up to date" in info_msgs

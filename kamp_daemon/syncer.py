@@ -55,13 +55,13 @@ def _sync_worker(
             if bc_config.collection_mode == "stream":
                 from .bandcamp import sync_collection_stream
 
-                sync_collection_stream(
+                album_count, track_count = sync_collection_stream(
                     bc_config=bc_config,
                     watch_dir=watch_dir,
                     index=index,
                     status_callback=lambda msg: status_q.put(msg),
                 )
-                result_q.put(("ok", []))
+                result_q.put(("ok_stream", (album_count, track_count)))
             else:
                 from .bandcamp import sync_new_purchases
 
@@ -327,13 +327,26 @@ class Syncer:
         if status == "error":
             raise RuntimeError(f"Bandcamp sync failed: {value}")
 
-        paths = value or []
-        if paths:
-            logger.info(
-                "Sync complete: %d file(s) downloaded to watch folder.", len(paths)
-            )
+        if status == "ok_stream":
+            album_count, track_count = value
+            if track_count:
+                logger.info(
+                    "Sync complete: %d album(s), %d track(s) indexed as remote.",
+                    album_count,
+                    track_count,
+                )
+            else:
+                logger.info(
+                    "Sync complete: %d album(s) already up to date.", album_count
+                )
         else:
-            logger.info("Sync complete: nothing new.")
+            paths = value or []
+            if paths:
+                logger.info(
+                    "Sync complete: %d file(s) downloaded to watch folder.", len(paths)
+                )
+            else:
+                logger.info("Sync complete: nothing new.")
         # Clear the status display in the menu bar (applies to both automatic
         # and manual syncs — an empty string signals "no active sync").
         if self.status_callback is not None:
