@@ -57,6 +57,27 @@ def _track_for(n: int, artist: str, album: str) -> Track:
     )
 
 
+def _remote_track(sale_id: str = "123456", track_num: int = 1) -> Track:
+    """Remote Bandcamp track — file_path is a bandcamp:// URI."""
+    return Track(
+        file_path=Path(f"bandcamp://{sale_id}/{track_num}"),
+        title=f"Remote Track {track_num}",
+        artist="Remote Artist",
+        album_artist="Remote Artist",
+        album="Remote Album",
+        year="2025",
+        track_number=track_num,
+        disc_number=1,
+        ext="mp3",
+        embedded_art=False,
+        mb_release_id="",
+        mb_recording_id="",
+        source="remote",
+        stream_url="https://cdn.bcbits.com/stream/track.mp3",
+        stream_url_expires_at=9999999999.0,
+    )
+
+
 # ---------------------------------------------------------------------------
 # PlaybackQueue
 # ---------------------------------------------------------------------------
@@ -404,6 +425,22 @@ class TestPlaybackQueue:
         assert paths == []
         assert order == []
         assert pos == -1
+
+    def test_get_state_remote_track_canonical_uri(self) -> None:
+        """Remote tracks serialise as bandcamp:// (double-slash) even on POSIX."""
+        q = PlaybackQueue()
+        remote = _remote_track(sale_id="999", track_num=3)
+        q.load([remote])
+        paths, _, _, _, _ = q.get_state()
+        assert paths == ["bandcamp://999/3"]
+
+    def test_update_favorite_str_path_matches_remote_track(self) -> None:
+        """update_favorite accepts a str URI so remote tracks can be matched."""
+        q = PlaybackQueue()
+        remote = _remote_track()
+        q.load([remote])
+        q.update_favorite("bandcamp:/123456/1", True)
+        assert q._tracks[0].favorite is True
 
     def test_restore_sets_all_fields(self) -> None:
         q = PlaybackQueue()
@@ -1232,6 +1269,46 @@ class TestMpvPlaybackEngine:
 
         callback.assert_not_called()
 
+    def test_end_file_error_advances_queue(self) -> None:
+        """reason=error (e.g. expired CDN URL) must advance the queue."""
+        engine, _ = _make_engine()
+        callback = MagicMock()
+        engine.on_track_end = callback
+
+        engine._handle_event({"event": "end-file", "reason": "error"})
+
+        callback.assert_called_once_with(False)
+
+    def test_end_file_network_advances_queue(self) -> None:
+        """reason=network (dropped connection) must advance the queue."""
+        engine, _ = _make_engine()
+        callback = MagicMock()
+        engine.on_track_end = callback
+
+        engine._handle_event({"event": "end-file", "reason": "network"})
+
+        callback.assert_called_once_with(False)
+
+    def test_end_file_redirect_advances_queue(self) -> None:
+        """reason=redirect must advance the queue."""
+        engine, _ = _make_engine()
+        callback = MagicMock()
+        engine.on_track_end = callback
+
+        engine._handle_event({"event": "end-file", "reason": "redirect"})
+
+        callback.assert_called_once_with(False)
+
+    def test_end_file_stop_does_not_advance_queue(self) -> None:
+        """reason=stop is intentional (loadfile replace / stop command) — no advance."""
+        engine, _ = _make_engine()
+        callback = MagicMock()
+        engine.on_track_end = callback
+
+        engine._handle_event({"event": "end-file", "reason": "stop"})
+
+        callback.assert_not_called()
+
     def test_position_updated_from_property_change_event(self) -> None:
         engine, _ = _make_engine()
         engine._handle_event(
@@ -1579,6 +1656,31 @@ class TestMpvPlaybackEngine:
         engine.state.position = 0.0
         engine.preload_next(_track(2))
         send.assert_called_once_with("loadfile", str(_track(2).file_path), "append")
+
+    def test_preload_next_skips_remote_track(self) -> None:
+        """Remote next-tracks must never be preloaded — their bandcamp: URI
+        cannot be opened by mpv; CDN URL is resolved on EOF instead."""
+        engine, send = _make_engine()
+        engine.preload_next(_remote_track())
+        send.assert_not_called()
+        assert engine._lookahead_path is None
+
+    def test_preload_next_local_to_local_unchanged(self) -> None:
+        """Local→local preload is unaffected by the remote-skip guard."""
+        engine, send = _make_engine()
+        local = _track(2)
+        engine.preload_next(local)
+        send.assert_called_once_with("loadfile", str(local.file_path), "append")
+        assert engine._lookahead_path == local.file_path
+
+    def test_preload_next_remote_to_local_preloads(self) -> None:
+        """remote→local transition: local next-track IS still preloaded."""
+        engine, send = _make_engine()
+        local = _track(3)
+        # Current track is remote (simulated via engine state, not enforced here);
+        # what matters is that the NEXT track is local.
+        engine.preload_next(local)
+        send.assert_called_once_with("loadfile", str(local.file_path), "append")
 
     def test_file_loaded_resets_state_so_lookahead_re_arms_after_gapless(
         self,
