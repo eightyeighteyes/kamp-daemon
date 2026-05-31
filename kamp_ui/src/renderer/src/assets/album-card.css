@@ -112,23 +112,19 @@
   top: 8px;
   display: flex;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
   background: #1a1a4a;
   color: #7c86e1;
-  font-size: 8px;
-  font-weight: 500;
-  padding: 1px 4px;
+  padding: 2px 4px;
   border-radius: 3px;
-  line-height: 14px;
   height: 14px;
-  width: 28px;
   box-sizing: border-box;
   pointer-events: none;
 }
 
 /* Reserve right-side space so title doesn't run under the badge */
 .album-card--remote .album-title {
-  padding-right: 36px;
+  padding-right: 24px;
 }
 
 /* Offline state ------------------------------------------------------------- */

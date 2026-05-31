@@ -7,13 +7,6 @@ import { FavoriteIcon, PlayIcon } from './TransportIcons'
 
 type MenuPos = { x: number; y: number }
 
-const SOURCE_ABBREV: Record<string, string> = {
-  bandcamp: 'BC',
-  qobuz: 'QO',
-  plex: 'PL',
-  jellyfin: 'JF'
-}
-
 const CloudIcon = ({ size = 10 }: { size?: number }): React.JSX.Element => (
   <svg
     width={size}
@@ -29,6 +22,24 @@ const CloudIcon = ({ size = 10 }: { size?: number }): React.JSX.Element => (
     />
   </svg>
 )
+
+const BandcampIcon = ({ size = 10 }: { size?: number }): React.JSX.Element => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path d="M0 18.75l7.437-13.5H24L16.563 18.75z" fill="#4DA9D1" />
+  </svg>
+)
+
+function sourceIcon(source: string, size: number): React.JSX.Element {
+  if (source === 'bandcamp') return <BandcampIcon size={size} />
+  return <CloudIcon size={size} />
+}
 
 const WarnIcon = ({ size = 20 }: { size?: number }): React.JSX.Element => (
   <svg
@@ -94,7 +105,6 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
   const connected = configValues?.['bandcamp.connected'] ?? false
   const isRemote = album.source !== 'local'
   const isOffline = isRemote && !connected
-  const sourceAbbrev = SOURCE_ABBREV[album.source] ?? ''
   const [artLoaded, setArtLoaded] = useState(false)
   const [menu, setMenu] = useState<MenuPos | null>(null)
 
@@ -387,8 +397,7 @@ export function AlbumCard({ album }: { album: Album }): React.JSX.Element {
         )}
         {isRemote && (
           <div className="album-source-badge" aria-label={`Remote source: ${album.source}`}>
-            <CloudIcon size={9} />
-            {sourceAbbrev && <span>{sourceAbbrev}</span>}
+            {sourceIcon(album.source, 10)}
           </div>
         )}
         {album.missing_album ? (
