@@ -129,7 +129,7 @@ class TestLibraryIndex:
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
 
-        assert version == 20
+        assert version == 21
 
     def test_upsert_adds_track(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
@@ -1339,7 +1339,7 @@ class TestSearch:
         ]
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert len(results) == 1
         assert results[0].title == "Title"
 
@@ -1396,7 +1396,7 @@ class TestSearch:
         ).fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert row is not None
         # date_added will be NULL since the file path is fake; that is expected.
         assert row[0] is None
@@ -1752,7 +1752,7 @@ class TestRecordPlayed:
         ).fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert row is not None
         assert row[0] == 0
 
@@ -1970,7 +1970,7 @@ class TestFavorite:
         row = index._conn.execute("SELECT favorite FROM tracks WHERE id = 1").fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert row is not None
         assert row[0] == 0  # existing tracks default to not-favorited
 
@@ -2062,7 +2062,7 @@ class TestAlbumFavorite:
         index._conn.execute("SELECT COUNT(*) FROM album_favorites").fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
 
 
 # ---------------------------------------------------------------------------
@@ -2241,7 +2241,7 @@ class TestMtimeReindex:
         ).fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert row is not None
         # file_mtime is intentionally left NULL on migration so the next scan
         # treats all existing tracks as changed and re-reads their tags.
@@ -2336,7 +2336,7 @@ class TestSessionManagement:
             0
         ]
         index.close()
-        assert version == 20
+        assert version == 21
 
     def test_schema_version_9_after_migration(self, tmp_path: Path) -> None:
         index = self._make_index(tmp_path)
@@ -2344,7 +2344,7 @@ class TestSessionManagement:
             0
         ]
         index.close()
-        assert version == 20
+        assert version == 21
 
     def test_migration_v8_to_v9_nulls_flac_ogg_mtimes(self, tmp_path: Path) -> None:
         """v8→v9 resets file_mtime for FLAC/OGG rows so they are re-scanned.
@@ -3221,7 +3221,7 @@ class TestMigrationV11ToV12:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 20
+        assert version == 21
 
         index.close()
 
@@ -3904,7 +3904,7 @@ class TestMigrationV16ToV17:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 20
+        assert version == 21
         index.close()
 
     def test_migration_existing_rows_get_empty_defaults(self, tmp_path: Path) -> None:
@@ -3939,7 +3939,7 @@ class TestMigrationV16ToV17:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 20
+        assert version == 21
         index.close()
 
 
@@ -4224,7 +4224,7 @@ class TestBandcampCollection:
         index.close()
 
         assert state == {}
-        assert version == 20
+        assert version == 21
 
 
 class TestRemoteTrackSchema:
@@ -4398,10 +4398,71 @@ class TestRemoteTrackSchema:
         }
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert "source" in cols
         assert "stream_url" in cols
         assert "stream_url_expires_at" in cols
+
+    def test_migration_v21_renames_remote_source_to_bandcamp(
+        self, tmp_path: Path
+    ) -> None:
+        """A v20 DB with source='remote' tracks has them rewritten to 'bandcamp'."""
+        db_path = tmp_path / "library.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version VALUES (20)")
+        conn.execute("""
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                album_artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                track_number INTEGER NOT NULL DEFAULT 0,
+                disc_number INTEGER NOT NULL DEFAULT 1,
+                ext TEXT NOT NULL DEFAULT '',
+                embedded_art INTEGER NOT NULL DEFAULT 0,
+                mb_release_id TEXT NOT NULL DEFAULT '',
+                mb_recording_id TEXT NOT NULL DEFAULT '',
+                date_added REAL,
+                last_played REAL,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                file_mtime REAL,
+                genre TEXT NOT NULL DEFAULT '',
+                label TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT 'local',
+                stream_url TEXT,
+                stream_url_expires_at REAL
+            )
+        """)
+        conn.execute(
+            "INSERT INTO tracks (file_path, source) VALUES (?, ?)",
+            ("bandcamp://123/1", "remote"),
+        )
+        conn.execute(
+            "INSERT INTO tracks (file_path, source) VALUES (?, ?)",
+            ("/local/track.mp3", "local"),
+        )
+        conn.commit()
+        conn.close()
+
+        index = LibraryIndex(db_path)
+        rows = index._conn.execute(
+            "SELECT file_path, source FROM tracks ORDER BY file_path"
+        ).fetchall()
+        version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
+        index.close()
+
+        assert version == 21
+        sources = {r["file_path"]: r["source"] for r in rows}
+        assert sources["bandcamp://123/1"] == "bandcamp"
+        assert sources["/local/track.mp3"] == "local"
 
 
 # ---------------------------------------------------------------------------
@@ -4527,8 +4588,8 @@ class TestAlbumInfoRemoteFields:
         albums even though no embedded art is present locally.
         """
         index = LibraryIndex(tmp_path / "library.db")
-        self._insert_track(index, tmp_path, "bandcamp://999/1", source="remote")
-        self._insert_track(index, tmp_path, "bandcamp://999/2", source="remote")
+        self._insert_track(index, tmp_path, "bandcamp://999/1", source="bandcamp")
+        self._insert_track(index, tmp_path, "bandcamp://999/2", source="bandcamp")
         albums = index.albums()
         index.close()
 
@@ -4553,7 +4614,7 @@ class TestAlbumInfoRemoteFields:
         """Mixed albums use MAX(embedded_art) from local tracks, not the remote shortcut."""
         index = LibraryIndex(tmp_path / "library.db")
         self._insert_track(index, tmp_path, "t1.mp3", source="local")
-        self._insert_track(index, tmp_path, "bandcamp://999/2", source="remote")
+        self._insert_track(index, tmp_path, "bandcamp://999/2", source="bandcamp")
         albums = index.albums()
         index.close()
 

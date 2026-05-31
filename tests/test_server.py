@@ -3539,7 +3539,7 @@ class TestRemoteUriEndpointBypass:
             embedded_art=False,
             mb_release_id="",
             mb_recording_id="",
-            source="remote",
+            source="bandcamp",
             stream_url="https://cdn.bcbits.com/stream/t.mp3",
             stream_url_expires_at=9999999999.0,
         )

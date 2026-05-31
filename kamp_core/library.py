@@ -90,7 +90,7 @@ def _maybe_unprotect(text: str) -> str:
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 20
+_SCHEMA_VERSION = 21
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -356,8 +356,8 @@ class AlbumInfo:
     favorite: bool = False
     # True when any track in this album is individually favorited (KAMP-294).
     has_favorite_track: bool = False
-    # 'local' when all tracks are local, the source value when all are the same
-    # remote source, or 'mixed' when both local and remote tracks are present.
+    # 'local' when all tracks are local, the service name (e.g. 'bandcamp') when
+    # all tracks share one remote source, or 'mixed' when both are present.
     source: str = "local"
     # True when any track in this album has source != 'local'.
     has_remote_tracks: bool = False
@@ -764,6 +764,17 @@ class LibraryIndex:
             self._conn.execute("UPDATE schema_version SET version = 20")
             self._conn.commit()
             version = 20
+
+        if version < 21:
+            # v20 → v21: rename generic source value 'remote' to the specific
+            # service name 'bandcamp'. All remote tracks written before this
+            # migration came from Bandcamp — no other remote service existed.
+            self._conn.execute(
+                "UPDATE tracks SET source = 'bandcamp' WHERE source = 'remote'"
+            )
+            self._conn.execute("UPDATE schema_version SET version = 21")
+            self._conn.commit()
+            version = 21
 
     def _rebuild_fts(self) -> None:
         """Rebuild the FTS index from the current contents of the tracks table."""
@@ -1591,7 +1602,7 @@ class LibraryIndex:
             FROM (
                 SELECT t.album_artist, t.album, t.year, COUNT(*) AS track_count,
                        CASE
-                           WHEN COUNT(DISTINCT t.source) = 1 AND MIN(t.source) = 'remote' THEN 1
+                           WHEN COUNT(DISTINCT t.source) = 1 AND MIN(t.source) != 'local' THEN 1
                            ELSE MAX(t.embedded_art)
                        END AS has_art,
                        0 AS missing_album, '' AS file_path,

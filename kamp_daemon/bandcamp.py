@@ -862,7 +862,7 @@ def fetch_album_tracks(
 ) -> "list[Track]":
     """Fetch track metadata from a Bandcamp album page without downloading CDN URLs.
 
-    Returns a list of Track objects (source='remote', no stream_url) ready to
+    Returns a list of Track objects (source='bandcamp', no stream_url) ready to
     upsert into the tracks table.  CDN stream URLs are fetched on demand at
     play time by _resolve_playback().
 
@@ -906,7 +906,7 @@ def fetch_album_tracks(
                 embedded_art=False,
                 mb_release_id="",
                 mb_recording_id="",
-                source="remote",
+                source="bandcamp",
                 date_added=time.time(),
             )
         )
