@@ -3949,3 +3949,48 @@ class TestArtEndpointRemoteAlbums:
             params={"album_artist": "A", "album": "B", "file_path": self._FILE_PATH},
         )
         assert res.status_code == 404
+
+    def test_album_artist_album_path_serves_art(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Art request via album_artist+album (no file_path) works for remote albums.
+
+        The UI sends album_artist and album without file_path for normal albums
+        (file_path is only populated for missing-album tracks). The endpoint must
+        fall through to the remote-art branch after local art lookup returns nothing.
+        """
+        cache_dir = tmp_path / "art_cache"
+        cache_dir.mkdir()
+        (cache_dir / f"{self._TRALBUM_ID}.jpg").write_bytes(self._JPEG)
+
+        remote_track = Track(
+            file_path=Path(f"bandcamp://{self._SALE_ID}/1"),
+            title="Track One",
+            artist="Artist",
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track_number=1,
+            disc_number=1,
+            ext="mp3",
+            embedded_art=True,
+            mb_release_id="",
+            mb_recording_id="",
+            source="bandcamp",
+        )
+        mock_index.tracks_for_album.return_value = [remote_track]
+        mock_index.get_collection_item.return_value = self._collection_item()
+
+        c = self._make_app(mock_index, mock_engine, mock_queue, art_cache_dir=cache_dir)
+        # No file_path — this is the real request the UI sends for normal albums.
+        res = c.get(
+            "/api/v1/album-art",
+            params={"album_artist": "Artist", "album": "Album"},
+        )
+
+        assert res.status_code == 200
+        assert res.content == self._JPEG

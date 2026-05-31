@@ -1975,6 +1975,14 @@ def create_app(
 
         if resp is not None:
             return resp
+
+        # Local art not found — if any track is remote, try the proxy cache.
+        # album.file_path is empty for regular albums, so the bandcamp: check
+        # above never fires; use the first remote track's file_path instead.
+        remote_tracks = [t for t in tracks if t.is_remote]
+        if remote_tracks:
+            return _remote_art_response(str(remote_tracks[0].file_path), cache_control)
+
         raise HTTPException(status_code=404, detail="No art found")
 
     @app.get("/api/v1/search", response_model=SearchOut)
