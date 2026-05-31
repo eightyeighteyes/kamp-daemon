@@ -441,6 +441,12 @@ def _validate_library_path(file_path: str, library_path: Path | None) -> Path:
     return p
 
 
+def _is_remote_uri(s: str) -> bool:
+    """True for scheme-prefixed remote URIs (bandcamp://, etc.) that must bypass
+    library-path validation."""
+    return "://" in s or s.startswith("bandcamp:")
+
+
 def _validate_proxy_url(url: str) -> str:
     parsed = urlparse(url)
     host = parsed.hostname or ""
@@ -973,14 +979,21 @@ def create_app(
 
     @app.post("/api/v1/tracks/favorite")
     def set_track_favorite(req: FavoriteRequest) -> dict[str, Any]:
-        p = _validate_library_path(req.file_path, _state["library_path"])
-        track = index.get_track_by_path(p)
-        if track is None:
-            raise HTTPException(status_code=404, detail="Track not found")
-        index.set_favorite(p, req.favorite)
-        # Keep the in-memory queue in sync so the next player-state snapshot
-        # reflects the new favorite value without requiring a queue reload.
-        queue.update_favorite(p, req.favorite)
+        if _is_remote_uri(req.file_path):
+            track = index.get_track_by_path(req.file_path)
+            if track is None:
+                raise HTTPException(status_code=404, detail="Track not found")
+            index.set_favorite(req.file_path, req.favorite)
+            queue.update_favorite(req.file_path, req.favorite)
+        else:
+            p = _validate_library_path(req.file_path, _state["library_path"])
+            track = index.get_track_by_path(p)
+            if track is None:
+                raise HTTPException(status_code=404, detail="Track not found")
+            index.set_favorite(p, req.favorite)
+            # Keep the in-memory queue in sync so the next player-state snapshot
+            # reflects the new favorite value without requiring a queue reload.
+            queue.update_favorite(p, req.favorite)
         return {"ok": True}
 
     @app.post("/api/v1/albums/favorite")
@@ -2390,7 +2403,10 @@ def create_app(
     def play(req: PlayRequest) -> dict[str, Any]:
         old_current = queue.current()
         old_lookahead = queue.peek_next()
-        if req.file_path:
+        if req.file_path and _is_remote_uri(req.file_path):
+            track = index.get_track_by_path(req.file_path)
+            tracks = [track] if track else []
+        elif req.file_path:
             p = _validate_library_path(req.file_path, _state["library_path"])
             track = index.get_track_by_path(p)
             tracks = [track] if track else []
@@ -2487,8 +2503,11 @@ def create_app(
 
     @app.post("/api/v1/player/queue/add")
     def queue_add(req: AddToQueueRequest) -> dict[str, Any]:
-        p = _validate_library_path(req.file_path, _state["library_path"])
-        track = index.get_track_by_path(p)
+        if _is_remote_uri(req.file_path):
+            track = index.get_track_by_path(req.file_path)
+        else:
+            p = _validate_library_path(req.file_path, _state["library_path"])
+            track = index.get_track_by_path(p)
         if track is None:
             raise HTTPException(status_code=404, detail="Track not found")
         was_stopped = queue.current() is None
@@ -2504,8 +2523,11 @@ def create_app(
 
     @app.post("/api/v1/player/queue/play-next")
     def queue_play_next(req: AddToQueueRequest) -> dict[str, Any]:
-        p = _validate_library_path(req.file_path, _state["library_path"])
-        track = index.get_track_by_path(p)
+        if _is_remote_uri(req.file_path):
+            track = index.get_track_by_path(req.file_path)
+        else:
+            p = _validate_library_path(req.file_path, _state["library_path"])
+            track = index.get_track_by_path(p)
         if track is None:
             raise HTTPException(status_code=404, detail="Track not found")
         was_stopped = queue.current() is None
@@ -2521,8 +2543,11 @@ def create_app(
 
     @app.post("/api/v1/player/queue/insert")
     def queue_insert(req: InsertQueueRequest) -> dict[str, Any]:
-        p = _validate_library_path(req.file_path, _state["library_path"])
-        track = index.get_track_by_path(p)
+        if _is_remote_uri(req.file_path):
+            track = index.get_track_by_path(req.file_path)
+        else:
+            p = _validate_library_path(req.file_path, _state["library_path"])
+            track = index.get_track_by_path(p)
         if track is None:
             raise HTTPException(status_code=404, detail="Track not found")
         queue.insert_at(track, req.index)

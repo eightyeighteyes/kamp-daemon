@@ -3456,32 +3456,133 @@ class TestApplyLocalAlbumArt:
 
 
 class TestValidateLibraryPathRemoteURI:
-    """_validate_library_path rejects bandcamp: URIs in both slash forms."""
+    """Remote URIs bypass _validate_library_path in single-track queue endpoints."""
 
-    def test_bandcamp_double_slash_uri_returns_400(
+    def test_bandcamp_double_slash_uri_bypasses_path_validation(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
     ) -> None:
+        """bandcamp:// URIs no longer get HTTP 400 from path validation — they
+        bypass it and return 404 when not found in the index."""
+        mock_index.get_track_by_path.return_value = None
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
         c = TestClient(app)
         response = c.post(
             "/api/v1/player/queue/add",
             json={"file_path": "bandcamp://380008227/3"},
         )
-        assert response.status_code == 400
-        assert "Remote tracks" in response.json()["detail"]
+        assert response.status_code == 404
 
-    def test_bandcamp_single_slash_uri_returns_400(
+    def test_bandcamp_single_slash_uri_bypasses_path_validation(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
     ) -> None:
-        """POSIX Path normalises bandcamp:// → bandcamp:/ — must still be rejected."""
+        """POSIX-normalised bandcamp:/ URIs also bypass validation."""
+        mock_index.get_track_by_path.return_value = None
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
         c = TestClient(app)
         response = c.post(
             "/api/v1/player/queue/add",
             json={"file_path": "bandcamp:/380008227/3"},
         )
-        assert response.status_code == 400
-        assert "Remote tracks" in response.json()["detail"]
+        assert response.status_code == 404
+
+
+class TestRemoteUriEndpointBypass:
+    """Remote track URIs bypass _validate_library_path in single-track endpoints."""
+
+    _REMOTE_URI = "bandcamp://123456/1"
+
+    def _remote_track(self) -> Track:
+        return Track(
+            file_path=Path("bandcamp://123456/1"),
+            title="Remote Track 1",
+            artist="Artist",
+            album_artist="Artist",
+            album="Album",
+            year="2025",
+            track_number=1,
+            disc_number=1,
+            ext="mp3",
+            embedded_art=False,
+            mb_release_id="",
+            mb_recording_id="",
+            source="remote",
+            stream_url="https://cdn.bcbits.com/stream/t.mp3",
+            stream_url_expires_at=9999999999.0,
+        )
+
+    def test_play_with_remote_uri_does_not_raise_400(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        remote = self._remote_track()
+        mock_index.get_track_by_path.return_value = remote
+        mock_queue.current.return_value = remote
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        res = c.post(
+            "/api/v1/player/play",
+            json={
+                "album_artist": "Artist",
+                "album": "Album",
+                "file_path": self._REMOTE_URI,
+                "track_index": 0,
+            },
+        )
+        assert res.status_code == 200
+        mock_index.get_track_by_path.assert_called_with(self._REMOTE_URI)
+
+    def test_queue_add_remote_uri_adds_track(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        remote = self._remote_track()
+        mock_index.get_track_by_path.return_value = remote
+        mock_queue.current.return_value = None
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        res = c.post("/api/v1/player/queue/add", json={"file_path": self._REMOTE_URI})
+        assert res.status_code == 200
+        mock_index.get_track_by_path.assert_called_with(self._REMOTE_URI)
+
+    def test_queue_play_next_remote_uri(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        remote = self._remote_track()
+        mock_index.get_track_by_path.return_value = remote
+        mock_queue.current.return_value = remote
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        res = c.post(
+            "/api/v1/player/queue/play-next", json={"file_path": self._REMOTE_URI}
+        )
+        assert res.status_code == 200
+        mock_index.get_track_by_path.assert_called_with(self._REMOTE_URI)
+
+    def test_queue_insert_remote_uri(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        remote = self._remote_track()
+        mock_index.get_track_by_path.return_value = remote
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        res = c.post(
+            "/api/v1/player/queue/insert",
+            json={"file_path": self._REMOTE_URI, "index": 0},
+        )
+        assert res.status_code == 200
+        mock_index.get_track_by_path.assert_called_with(self._REMOTE_URI)
+
+    def test_favorite_remote_uri_does_not_raise_400(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        remote = self._remote_track()
+        mock_index.get_track_by_path.return_value = remote
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        res = c.post(
+            "/api/v1/tracks/favorite",
+            json={"file_path": self._REMOTE_URI, "favorite": True},
+        )
+        assert res.status_code == 200
+        mock_index.set_favorite.assert_called_once_with(self._REMOTE_URI, True)
 
 
 class TestResolvePlaybackRemote:
