@@ -907,6 +907,7 @@ def fetch_album_tracks(
                 mb_release_id="",
                 mb_recording_id="",
                 source="remote",
+                date_added=time.time(),
             )
         )
     return result

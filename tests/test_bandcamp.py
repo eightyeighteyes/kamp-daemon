@@ -2197,6 +2197,17 @@ class TestFetchAlbumTracks:
         )
         assert all(t.stream_url is None for t in result)
 
+    def test_date_added_is_set(self) -> None:
+        """date_added is set to the current time so tracks sort correctly by date added."""
+        before = time.time()
+        html = _stream_album_page_html()
+        result = fetch_album_tracks(
+            "https://x.bandcamp.com/album/y", 1, "B", "A", self._make_session(html)
+        )
+        after = time.time()
+        assert all(t.date_added is not None for t in result)
+        assert all(before <= t.date_added <= after for t in result)  # type: ignore[operator]
+
     def test_file_path_contains_sale_item_id_and_track_num(self) -> None:
         tracks = [{"title": "T", "track_num": 3, "artist": None}]
         html = _stream_album_page_html(tracks=tracks)
