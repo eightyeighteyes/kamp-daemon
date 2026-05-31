@@ -2021,12 +2021,13 @@ class TestSyncCollectionStream:
         *,
         already_have_tracks: bool = True,
         fake_tracks: list[Any] | None = None,
+        existing_state: dict[str, str] | None = None,
     ) -> tuple[tuple[int, int], MagicMock]:
         watch_folder = tmp_path / "watch"
         config = _bc_config(tmp_path)
         mock_session = _make_requests_mock(items)
         index = MagicMock()
-        index.get_collection_state.return_value = {}
+        index.get_collection_state.return_value = existing_state or {}
         # By default pretend tracks already exist so fetch_album_tracks is skipped.
         index.has_remote_album_tracks.return_value = already_have_tracks
 
@@ -2098,6 +2099,23 @@ class TestSyncCollectionStream:
         (_counts, _), index = self._run(tmp_path, items, already_have_tracks=True)
         index.upsert_collection_item.assert_called_once()
         assert index.upsert_collection_item.call_args[1]["mode"] == "remote"
+
+    def test_skips_local_mode_items(self, tmp_path: Path) -> None:
+        """Items already mode='local' are not overwritten with mode='remote'."""
+        items = [
+            _item(1, "Downloaded Band", "Downloaded Album"),
+            _item(2, "New Band", "New Album"),
+        ]
+        # Item 1 was already downloaded; item 2 is new.
+        (album_count, _), index = self._run(
+            tmp_path,
+            items,
+            existing_state={"1": "local"},
+        )
+        assert album_count == 1  # only the new item counted
+        calls = index.upsert_collection_item.call_args_list
+        assert len(calls) == 1
+        assert calls[0][0][0] == "2"  # only item 2 upserted
 
     def test_no_files_downloaded(self, tmp_path: Path) -> None:
         """Stream sync must not touch the watch folder."""

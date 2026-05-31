@@ -393,12 +393,20 @@ def sync_collection_stream(
     logger.info("Fetched fan_id=%s for user %r", fan_id, username)
 
     collection = _fetch_collection(fan_id, session, index)
+    # Load existing state so we never overwrite a locally-downloaded album
+    # (mode='local') with mode='remote'.  Local albums were processed by the
+    # download pipeline and already have their tracks in the tracks table.
+    existing_state = index.get_collection_state()
     album_count = 0
     track_count = 0
     fetch_index = 0  # throttle counter for album-page requests
     for item in collection:
         sid = item.get("sale_item_id")
         if sid is None:
+            continue
+
+        # Skip albums the user already has locally — do not demote to remote.
+        if existing_state.get(str(sid)) == "local":
             continue
 
         band_name = str(item.get("band_name", ""))
