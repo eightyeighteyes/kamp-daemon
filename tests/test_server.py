@@ -3456,9 +3456,9 @@ class TestApplyLocalAlbumArt:
 
 
 class TestValidateLibraryPathRemoteURI:
-    """_validate_library_path rejects bandcamp:// URIs."""
+    """_validate_library_path rejects bandcamp: URIs in both slash forms."""
 
-    def test_bandcamp_uri_returns_400(
+    def test_bandcamp_double_slash_uri_returns_400(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
     ) -> None:
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
@@ -3466,6 +3466,19 @@ class TestValidateLibraryPathRemoteURI:
         response = c.post(
             "/api/v1/player/queue/add",
             json={"file_path": "bandcamp://380008227/3"},
+        )
+        assert response.status_code == 400
+        assert "Remote tracks" in response.json()["detail"]
+
+    def test_bandcamp_single_slash_uri_returns_400(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """POSIX Path normalises bandcamp:// → bandcamp:/ — must still be rejected."""
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        response = c.post(
+            "/api/v1/player/queue/add",
+            json={"file_path": "bandcamp:/380008227/3"},
         )
         assert response.status_code == 400
         assert "Remote tracks" in response.json()["detail"]
@@ -3750,11 +3763,17 @@ class TestArtEndpointRemoteGuards:
 
 
 class TestArtEndpointRemoteAlbums:
-    """GET /api/v1/album-art proxies and caches art for remote (bandcamp://) albums."""
+    """GET /api/v1/album-art proxies and caches art for remote (bandcamp:) albums.
+
+    Tests use the single-slash URI form ('bandcamp:/sale_id/track') because
+    that is what the UI sends: str(track.file_path) where file_path is a Path,
+    and Path('bandcamp://...') on POSIX normalises the double-slash to single.
+    """
 
     _SALE_ID = "123456"
     _TRALBUM_ID = "987654321"
-    _FILE_PATH = f"bandcamp://{_SALE_ID}/1"
+    # Single-slash: what the UI actually sends after Path normalisation on POSIX.
+    _FILE_PATH = f"bandcamp:/{_SALE_ID}/1"
     _JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 20
 
     def _collection_item(self) -> dict[str, Any]:

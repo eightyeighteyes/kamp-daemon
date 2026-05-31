@@ -431,7 +431,7 @@ def _validate_library_path(file_path: str, library_path: Path | None) -> Path:
     Remote track URIs (bandcamp://) are rejected here; remote tracks are only
     reachable through the queue/album flow, not by direct file_path reference.
     """
-    if file_path.startswith("bandcamp://"):
+    if file_path.startswith("bandcamp:"):
         raise HTTPException(
             status_code=400, detail="Remote tracks cannot be addressed by path"
         )
@@ -1895,7 +1895,9 @@ def create_app(
         def _remote_art_response(fp: str, cache_ctrl: str) -> Response:
             if art_cache_dir is None or get_bandcamp_session is None:
                 raise HTTPException(status_code=404, detail="No art found")
-            sale_item_id = fp.removeprefix("bandcamp://").split("/")[0]
+            # Strip scheme; handle both 'bandcamp://...' and 'bandcamp:/...'
+            # (Path() on POSIX normalises double-slash to single-slash).
+            sale_item_id = fp.split("bandcamp:", 1)[1].lstrip("/").split("/")[0]
             item = index.get_collection_item(sale_item_id)
             if not item or not item.get("tralbum_id") or not item.get("album_url"):
                 raise HTTPException(status_code=404, detail="No art found")
@@ -1923,8 +1925,10 @@ def create_app(
                 headers={"Cache-Control": cache_ctrl},
             )
 
-        # Remote albums (bandcamp:// URIs) are served via the art proxy cache.
-        if file_path.startswith("bandcamp://"):
+        # Remote albums (bandcamp: URIs) are served via the art proxy cache.
+        # Path() on POSIX collapses bandcamp:// → bandcamp:/ so match on the
+        # scheme prefix without assuming a specific number of slashes.
+        if file_path.startswith("bandcamp:"):
             return _remote_art_response(file_path, cache_control)
 
         # file_path overrides (album_artist, album) for missing-album tracks.
