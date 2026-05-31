@@ -90,7 +90,7 @@ def _maybe_unprotect(text: str) -> str:
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 20
+_SCHEMA_VERSION = 21
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (

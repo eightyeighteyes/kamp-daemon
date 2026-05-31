@@ -129,7 +129,7 @@ class TestLibraryIndex:
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
 
-        assert version == 20
+        assert version == 21
 
     def test_upsert_adds_track(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
@@ -1339,7 +1339,7 @@ class TestSearch:
         ]
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert len(results) == 1
         assert results[0].title == "Title"
 
@@ -1396,7 +1396,7 @@ class TestSearch:
         ).fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert row is not None
         # date_added will be NULL since the file path is fake; that is expected.
         assert row[0] is None
@@ -1752,7 +1752,7 @@ class TestRecordPlayed:
         ).fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert row is not None
         assert row[0] == 0
 
@@ -1970,7 +1970,7 @@ class TestFavorite:
         row = index._conn.execute("SELECT favorite FROM tracks WHERE id = 1").fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert row is not None
         assert row[0] == 0  # existing tracks default to not-favorited
 
@@ -2062,7 +2062,7 @@ class TestAlbumFavorite:
         index._conn.execute("SELECT COUNT(*) FROM album_favorites").fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
 
 
 # ---------------------------------------------------------------------------
@@ -2241,7 +2241,7 @@ class TestMtimeReindex:
         ).fetchone()
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert row is not None
         # file_mtime is intentionally left NULL on migration so the next scan
         # treats all existing tracks as changed and re-reads their tags.
@@ -2336,7 +2336,7 @@ class TestSessionManagement:
             0
         ]
         index.close()
-        assert version == 20
+        assert version == 21
 
     def test_schema_version_9_after_migration(self, tmp_path: Path) -> None:
         index = self._make_index(tmp_path)
@@ -2344,7 +2344,7 @@ class TestSessionManagement:
             0
         ]
         index.close()
-        assert version == 20
+        assert version == 21
 
     def test_migration_v8_to_v9_nulls_flac_ogg_mtimes(self, tmp_path: Path) -> None:
         """v8→v9 resets file_mtime for FLAC/OGG rows so they are re-scanned.
@@ -3221,7 +3221,7 @@ class TestMigrationV11ToV12:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 20
+        assert version == 21
 
         index.close()
 
@@ -3904,7 +3904,7 @@ class TestMigrationV16ToV17:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 20
+        assert version == 21
         index.close()
 
     def test_migration_existing_rows_get_empty_defaults(self, tmp_path: Path) -> None:
@@ -3939,7 +3939,7 @@ class TestMigrationV16ToV17:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 20
+        assert version == 21
         index.close()
 
 
@@ -4224,7 +4224,7 @@ class TestBandcampCollection:
         index.close()
 
         assert state == {}
-        assert version == 20
+        assert version == 21
 
 
 class TestRemoteTrackSchema:
@@ -4398,7 +4398,7 @@ class TestRemoteTrackSchema:
         }
         index.close()
 
-        assert version == 20
+        assert version == 21
         assert "source" in cols
         assert "stream_url" in cols
         assert "stream_url_expires_at" in cols
