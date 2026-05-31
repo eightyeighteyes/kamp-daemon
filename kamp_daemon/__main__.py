@@ -852,6 +852,9 @@ def _cmd_daemon(
         "bandcamp.poll_interval_minutes": (
             config.bandcamp.poll_interval_minutes if config.bandcamp else None
         ),
+        "bandcamp.collection_mode": (
+            config.bandcamp.collection_mode if config.bandcamp else None
+        ),
         "lastfm.username": config.lastfm.username if config.lastfm else None,
     }
 
