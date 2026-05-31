@@ -823,7 +823,7 @@ class TestPlayerPlayEndpoint:
         )
         assert response.status_code == 200
         mock_queue.load.assert_called_once_with(tracks, start_index=0)
-        mock_engine.play.assert_called_once_with(tracks[0].file_path)
+        mock_engine.play.assert_called_once_with(str(tracks[0].file_path))
 
     def test_play_returns_404_for_unknown_album(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
@@ -869,7 +869,7 @@ class TestPlayerControlEndpoints:
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
         c = TestClient(app)
         assert c.post("/api/v1/player/next").status_code == 200
-        mock_engine.play.assert_called_once_with(next_track.file_path)
+        mock_engine.play.assert_called_once_with(str(next_track.file_path))
 
     def test_next_at_end_of_queue_stops(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
@@ -888,7 +888,7 @@ class TestPlayerControlEndpoints:
         app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
         c = TestClient(app)
         assert c.post("/api/v1/player/prev").status_code == 200
-        mock_engine.play.assert_called_once_with(prev_track.file_path)
+        mock_engine.play.assert_called_once_with(str(prev_track.file_path))
 
     def test_prev_at_start_of_queue_is_noop(
         self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
@@ -1053,7 +1053,7 @@ class TestQueueMutationEndpoints:
         resp = client.post("/api/v1/player/queue/skip-to", json={"position": 3})
         assert resp.status_code == 200
         mock_queue.skip_to.assert_called_once_with(3)
-        mock_engine.play.assert_called_once_with(t.file_path)
+        mock_engine.play.assert_called_once_with(str(t.file_path))
 
     def test_skip_to_invalid_position_does_not_play(
         self, client: TestClient, mock_engine: MagicMock, mock_queue: MagicMock
@@ -1078,7 +1078,7 @@ class TestQueueMutationEndpoints:
             "/api/v1/player/queue/add", json={"file_path": str(t.file_path)}
         )
         assert resp.status_code == 200
-        mock_engine.play.assert_called_once_with(t.file_path)
+        mock_engine.play.assert_called_once_with(str(t.file_path))
         mock_engine.preload_next.assert_not_called()
 
     def test_play_next_starts_playback_when_stopped(
@@ -1096,7 +1096,7 @@ class TestQueueMutationEndpoints:
             "/api/v1/player/queue/play-next", json={"file_path": str(t.file_path)}
         )
         assert resp.status_code == 200
-        mock_engine.play.assert_called_once_with(t.file_path)
+        mock_engine.play.assert_called_once_with(str(t.file_path))
         mock_engine.preload_next.assert_not_called()
 
 
@@ -1183,7 +1183,7 @@ class TestAlbumQueueEndpoints:
             json={"album_artist": "Artist", "album": "Album"},
         )
         assert resp.status_code == 200
-        mock_engine.play.assert_called_once_with(ts[0].file_path)
+        mock_engine.play.assert_called_once_with(str(ts[0].file_path))
         mock_engine.preload_next.assert_not_called()
 
     def test_play_album_next_starts_playback_when_stopped(
@@ -1202,7 +1202,7 @@ class TestAlbumQueueEndpoints:
             json={"album_artist": "Artist", "album": "Album"},
         )
         assert resp.status_code == 200
-        mock_engine.play.assert_called_once_with(ts[0].file_path)
+        mock_engine.play.assert_called_once_with(str(ts[0].file_path))
         mock_engine.preload_next.assert_not_called()
 
 
@@ -3453,3 +3453,175 @@ class TestApplyLocalAlbumArt:
         assert res.status_code == 200
         mock_write.assert_called_once()
         mock_index.mark_album_art_embedded.assert_called_once()
+
+
+class TestValidateLibraryPathRemoteURI:
+    """_validate_library_path rejects bandcamp:// URIs."""
+
+    def test_bandcamp_uri_returns_400(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        response = c.post(
+            "/api/v1/player/queue/add",
+            json={"file_path": "bandcamp://380008227/3"},
+        )
+        assert response.status_code == 400
+        assert "Remote tracks" in response.json()["detail"]
+
+
+class TestResolvePlaybackRemote:
+    """_resolve_playback invokes the refresh callback for expired remote track URLs."""
+
+    def test_local_track_plays_via_file_path(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        track = _track(1)
+        mock_queue.next.return_value = track
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+
+        c.post("/api/v1/player/next")
+        mock_engine.play.assert_called_once_with(str(track.file_path))
+
+    def test_remote_track_uses_stream_url_when_fresh(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        import time
+
+        remote = _track(1)
+        remote.source = "bandcamp"
+        remote.stream_url = "https://cdn.example.com/stream.mp3"
+        remote.stream_url_expires_at = time.time() + 7200  # 2 hours from now
+
+        mock_queue.next.return_value = remote
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+
+        c.post("/api/v1/player/next")
+        mock_engine.play.assert_called_once_with("https://cdn.example.com/stream.mp3")
+
+    def test_remote_track_refreshes_when_url_expired(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        remote = Track(
+            file_path=Path("bandcamp://999/3"),
+            title="Song",
+            artist="Artist",
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track_number=3,
+            disc_number=1,
+            ext="mp3",
+            embedded_art=False,
+            mb_release_id="",
+            mb_recording_id="",
+            source="bandcamp",
+            stream_url="https://cdn.example.com/old.mp3",
+            stream_url_expires_at=0.0,  # expired
+        )
+        mock_queue.next.return_value = remote
+        mock_index.get_collection_item.return_value = {
+            "sale_item_id": "999",
+            "album_url": "https://artist.bandcamp.com/album/the-album",
+        }
+
+        refreshed_url = "https://cdn.example.com/new.mp3"
+        refresh_fn = MagicMock(return_value=(refreshed_url, 9999.0))
+
+        app = create_app(
+            index=mock_index,
+            engine=mock_engine,
+            queue=mock_queue,
+            refresh_stream_url=refresh_fn,
+        )
+        c = TestClient(app)
+
+        c.post("/api/v1/player/next")
+
+        refresh_fn.assert_called_once_with(
+            "https://artist.bandcamp.com/album/the-album", 3
+        )
+        # update_stream_url receives the canonical bandcamp:// URI.
+        # Path() normalises bandcamp:// → bandcamp:/ on POSIX; _resolve_playback
+        # restores the canonical form so the DB lookup matches the stored row.
+        mock_index.update_stream_url.assert_called_once_with(
+            "bandcamp://999/3", refreshed_url, 9999.0
+        )
+        mock_engine.play.assert_called_once_with(refreshed_url)
+
+    def test_remote_track_refreshes_with_windows_corrupted_path(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """Windows Path normalises bandcamp:// to bandcamp:\\ — still parsed correctly."""
+        remote = Track(
+            # Simulate what str(Path("bandcamp://999/3")) yields on Windows.
+            file_path=Path("bandcamp:\\\\999\\3"),
+            title="Song",
+            artist="Artist",
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track_number=3,
+            disc_number=1,
+            ext="mp3",
+            embedded_art=False,
+            mb_release_id="",
+            mb_recording_id="",
+            source="bandcamp",
+            stream_url="https://cdn.example.com/old.mp3",
+            stream_url_expires_at=0.0,
+        )
+        mock_queue.next.return_value = remote
+        mock_index.get_collection_item.return_value = {
+            "sale_item_id": "999",
+            "album_url": "https://artist.bandcamp.com/album/the-album",
+        }
+
+        refresh_fn = MagicMock(return_value=("https://cdn.example.com/new.mp3", 9999.0))
+        app = create_app(
+            index=mock_index,
+            engine=mock_engine,
+            queue=mock_queue,
+            refresh_stream_url=refresh_fn,
+        )
+        c = TestClient(app)
+
+        c.post("/api/v1/player/next")
+
+        refresh_fn.assert_called_once_with(
+            "https://artist.bandcamp.com/album/the-album", 3
+        )
+        mock_index.update_stream_url.assert_called_once_with(
+            "bandcamp://999/3", "https://cdn.example.com/new.mp3", 9999.0
+        )
+
+    def test_remote_track_skips_refresh_when_no_callback(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        remote = Track(
+            file_path=Path("bandcamp://888/1"),
+            title="Song",
+            artist="Artist",
+            album_artist="Artist",
+            album="Album",
+            year="2024",
+            track_number=1,
+            disc_number=1,
+            ext="mp3",
+            embedded_art=False,
+            mb_release_id="",
+            mb_recording_id="",
+            source="bandcamp",
+            stream_url="https://cdn.example.com/existing.mp3",
+            stream_url_expires_at=0.0,  # expired
+        )
+        mock_queue.next.return_value = remote
+        # No refresh_stream_url callback provided — falls back to existing URL.
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+
+        c.post("/api/v1/player/next")
+        mock_engine.play.assert_called_once_with("https://cdn.example.com/existing.mp3")

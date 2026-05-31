@@ -31,6 +31,7 @@ from kamp_daemon.bandcamp import (
     _session_from_cookie_file,
     _username_from_logout_cookie,
     _validate_session,
+    fetch_stream_url,
     mark_collection_synced,
     sync_new_purchases,
 )
@@ -76,12 +77,17 @@ def _item(
     sale_item_id: int,
     band: str = "Band",
     title: str = "Album",
+    item_url: str = "",
+    tralbum_id: int = 0,
 ) -> dict[str, Any]:
     return {
         "sale_item_type": "p",
         "sale_item_id": sale_item_id,
         "band_name": band,
         "item_title": title,
+        "item_url": item_url
+        or f"https://{band.lower().replace(' ', '')}.bandcamp.com/album/{title.lower().replace(' ', '-')}",
+        "tralbum_id": tralbum_id or sale_item_id * 10,
     }
 
 
@@ -710,6 +716,47 @@ class TestSyncNewPurchases:
             paths = sync_new_purchases(config, watch_folder, index)
 
         assert len(paths) == 1  # only item 2 downloaded
+
+    def test_refreshes_metadata_for_existing_items(self, tmp_path: Path) -> None:
+        """Existing items get band_name/album_url/tralbum_id refreshed even if not downloaded."""
+        items = [
+            _item(
+                1,
+                "The Artist",
+                "The Album",
+                item_url="https://theartist.bandcamp.com/album/the-album",
+                tralbum_id=42,
+            )
+        ]
+        paths = self._run(tmp_path, items, known_ids=["1"])
+
+        # No downloads — item was already known.
+        assert paths == []
+
+        # upsert_collection_item should have been called once for the metadata refresh.
+        index = MagicMock()
+        index.get_collection_state.return_value = {"1": "local"}
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
+            patch(
+                "kamp_daemon.bandcamp._make_requests_session",
+                return_value=_make_requests_mock(items),
+            ),
+        ):
+            sync_new_purchases(_bc_config(tmp_path), tmp_path / "watch", index)
+
+        index.upsert_collection_item.assert_called_once()
+        call_kwargs = index.upsert_collection_item.call_args[1]
+        assert call_kwargs["band_name"] == "The Artist"
+        assert (
+            call_kwargs["album_url"] == "https://theartist.bandcamp.com/album/the-album"
+        )
+        assert call_kwargs["tralbum_id"] == "42"
+        assert call_kwargs["synced_at"] is None  # preserved via COALESCE
 
 
 # ---------------------------------------------------------------------------
@@ -1676,3 +1723,108 @@ class TestResolveCdnRedirect:
         result = _resolve_cdn_redirect(self._popplers_url, sess)
 
         assert result == self._popplers_url
+
+
+# ---------------------------------------------------------------------------
+# fetch_stream_url
+# ---------------------------------------------------------------------------
+
+
+def _album_page_html(tracks: list[dict]) -> str:
+    """Build fake Bandcamp album page HTML with data-tralbum attribute."""
+    import html as html_lib
+    import json
+
+    tralbum = {"tracks": tracks}
+    encoded = html_lib.escape(json.dumps(tralbum))
+    return f'<html><body><div data-tralbum="{encoded}"></div></body></html>'
+
+
+class TestFetchStreamUrl:
+    _album_url = "https://artist.bandcamp.com/album/my-album"
+
+    def test_returns_stream_url_for_track(self) -> None:
+        track_data = [
+            {"track_num": 1, "file": {"mp3-128": "https://cdn.example.com/1.mp3"}},
+            {"track_num": 2, "file": {"mp3-128": "https://cdn.example.com/2.mp3"}},
+        ]
+        html = _album_page_html(track_data)
+        sess = MagicMock()
+        sess.get.return_value = MagicMock(status_code=200, text=html)
+        sess.get.return_value.raise_for_status = MagicMock()
+
+        url, expires_at = fetch_stream_url(self._album_url, 2, sess)
+
+        assert url == "https://cdn.example.com/2.mp3"
+        import time
+
+        assert expires_at > time.time() + 86000
+
+    def test_falls_back_to_mp3_v0(self) -> None:
+        track_data = [
+            {"track_num": 1, "file": {"mp3-v0": "https://cdn.example.com/v0.mp3"}},
+        ]
+        html = _album_page_html(track_data)
+        sess = MagicMock()
+        sess.get.return_value = MagicMock(status_code=200, text=html)
+        sess.get.return_value.raise_for_status = MagicMock()
+
+        url, _ = fetch_stream_url(self._album_url, 1, sess)
+
+        assert url == "https://cdn.example.com/v0.mp3"
+
+    def test_raises_when_no_data_tralbum(self) -> None:
+        sess = MagicMock()
+        sess.get.return_value = MagicMock(
+            status_code=200, text="<html>no data here</html>"
+        )
+        sess.get.return_value.raise_for_status = MagicMock()
+
+        with pytest.raises(BandcampAPIError, match="no data-tralbum"):
+            fetch_stream_url(self._album_url, 1, sess)
+
+    def test_raises_when_track_not_found(self) -> None:
+        track_data = [
+            {"track_num": 1, "file": {"mp3-128": "https://cdn.example.com/1.mp3"}}
+        ]
+        html = _album_page_html(track_data)
+        sess = MagicMock()
+        sess.get.return_value = MagicMock(status_code=200, text=html)
+        sess.get.return_value.raise_for_status = MagicMock()
+
+        with pytest.raises(BandcampAPIError, match="track_num=99 not found"):
+            fetch_stream_url(self._album_url, 99, sess)
+
+
+class TestMarkCollectionSyncedStoresAlbumUrl:
+    """mark_collection_synced now passes album_url and tralbum_id from the API response."""
+
+    def test_mark_collection_synced_stores_album_url(self, tmp_path: Path) -> None:
+        config = _bc_config(tmp_path)
+        items = [
+            _item(
+                1,
+                "Artist",
+                "Album",
+                item_url="https://artist.bandcamp.com/album/album",
+                tralbum_id=100,
+            )
+        ]
+        mock_session = _make_requests_mock(items)
+        index = MagicMock()
+        index.get_collection_state.return_value = {}
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
+            patch(
+                "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
+            ),
+        ):
+            mark_collection_synced(config, index)
+
+        call_kwargs = index.upsert_collection_item.call_args[1]
+        assert call_kwargs["album_url"] == "https://artist.bandcamp.com/album/album"
+        assert call_kwargs["tralbum_id"] == "100"

@@ -252,6 +252,8 @@ def mark_collection_synced(
             item_type=str(item.get("sale_item_type", "p")),
             band_name=str(item.get("band_name", "")),
             item_title=str(item.get("item_title", "")),
+            album_url=str(item.get("item_url", "")),
+            tralbum_id=str(item.get("tralbum_id", "")),
             synced_at=now,
         )
 
@@ -295,6 +297,26 @@ def sync_new_purchases(
         and state.get(str(item["sale_item_id"])) != "remote"
     ]
 
+    # Refresh metadata (band_name, album_url, tralbum_id) for all fetched items,
+    # not just new ones.  Existing rows may have been created before KAMP-382
+    # started populating these fields; synced_at is preserved via COALESCE.
+    for item in collection:
+        sid = item.get("sale_item_id")
+        if sid is None:
+            continue
+        key = str(sid)
+        if key in state and key not in {str(i["sale_item_id"]) for i in new_items}:
+            index.upsert_collection_item(
+                key,
+                mode=state[key],
+                item_type=str(item.get("sale_item_type", "p")),
+                band_name=str(item.get("band_name", "")),
+                item_title=str(item.get("item_title", "")),
+                album_url=str(item.get("item_url", "")),
+                tralbum_id=str(item.get("tralbum_id", "")),
+                synced_at=None,  # COALESCE preserves existing synced_at
+            )
+
     if not new_items:
         logger.info("No new purchases to download.")
         return []
@@ -331,6 +353,8 @@ def sync_new_purchases(
                 item_type=str(item.get("sale_item_type", "p")),
                 band_name=str(item.get("band_name", "")),
                 item_title=str(item.get("item_title", "")),
+                album_url=str(item.get("item_url", "")),
+                tralbum_id=str(item.get("tralbum_id", "")),
                 synced_at=time.time(),
             )
             logger.info("Downloaded: %s", path.name)
@@ -685,6 +709,55 @@ def _get_download_links(
 
 
 # ---------------------------------------------------------------------------
+# Stream URL resolution
+# ---------------------------------------------------------------------------
+
+
+def fetch_stream_url(
+    album_url: str,
+    track_number: int,
+    session: "_AnySession",
+) -> tuple[str, float]:
+    """Fetch the streaming URL for *track_number* from a Bandcamp album page.
+
+    Scrapes the ``data-tralbum`` JSON attribute embedded in the album page HTML.
+    Returns ``(stream_url, expires_at)`` where ``expires_at`` is
+    ``time.time() + 86400`` (Bandcamp stream URLs are valid for ~24 hours).
+
+    Raises ``BandcampAPIError`` if the page cannot be parsed or the track is
+    not found.
+    """
+    resp = session.get(album_url, timeout=30)
+    resp.raise_for_status()
+    html = resp.text
+
+    match = re.search(r'data-tralbum="([^"]+)"', html)
+    if not match:
+        raise BandcampAPIError(
+            f"fetch_stream_url: no data-tralbum found in {album_url}"
+        )
+
+    tralbum: dict[str, Any] = json.loads(html_lib.unescape(match.group(1)))
+    tracks: list[dict[str, Any]] = tralbum.get("tracks") or []
+
+    for t in tracks:
+        if t.get("track_num") == track_number:
+            files: dict[str, Any] = t.get("file") or {}
+            url = files.get("mp3-128") or files.get("mp3-v0")
+            if not url:
+                raise BandcampAPIError(
+                    f"fetch_stream_url: no mp3 stream URL for track {track_number} "
+                    f"in {album_url}"
+                )
+            expires_at = time.time() + 86400
+            return url, expires_at
+
+    raise BandcampAPIError(
+        f"fetch_stream_url: track_num={track_number} not found in {album_url} "
+        f"(tracks present: {[t.get('track_num') for t in tracks]})"
+    )
+
+
 # Download
 # ---------------------------------------------------------------------------
 
