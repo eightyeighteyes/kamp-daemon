@@ -45,6 +45,27 @@ class PlaybackState:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _canonical_track_key(path: "Path | str") -> str:
+    """Canonical string key for remote track URI comparison and persistence.
+
+    Normalises POSIX single-slash (bandcamp:/) and Windows backslash
+    (bandcamp:\\) forms to the canonical double-slash form (bandcamp://)
+    so DB lookups and in-queue comparisons are consistent across platforms.
+    Local paths are returned as-is via str().
+    """
+    s = str(path)
+    if "bandcamp:" in s:
+        rest = s.split("bandcamp:", 1)[1].lstrip("/\\").replace("\\", "/")
+        return "bandcamp://" + rest
+    return s
+
+
+# ---------------------------------------------------------------------------
 # PlaybackQueue
 # ---------------------------------------------------------------------------
 
@@ -76,9 +97,9 @@ class PlaybackQueue:
         snapshot reflects the new value without requiring a queue reload.
         Accepts str so remote track URIs (bandcamp://) can be matched.
         """
-        fp_str = str(file_path)
+        fp_key = _canonical_track_key(file_path)
         for t in self._tracks:
-            if str(t.file_path) == fp_str:
+            if _canonical_track_key(t.file_path) == fp_key:
                 t.favorite = favorite
 
     def update_track_path(self, old_path: Path, new_path: Path, new_title: str) -> None:
@@ -241,16 +262,7 @@ class PlaybackQueue:
         Paths are returned as strings to match load_queue_state()'s list[str].
         """
 
-        def _persist_path(t: "Track") -> str:
-            fp = str(t.file_path)
-            if t.is_remote and "bandcamp:" in fp:
-                # Path() on POSIX collapses bandcamp:// → bandcamp:/ — reconstruct
-                # the canonical double-slash form so DB lookups succeed on restore.
-                rest = fp.split("bandcamp:", 1)[1].lstrip("/\\").replace("\\", "/")
-                return "bandcamp://" + rest
-            return fp
-
-        original_paths = [_persist_path(t) for t in self._tracks]
+        original_paths = [_canonical_track_key(t.file_path) for t in self._tracks]
         return original_paths, list(self._order), self._pos, self._shuffle, self._repeat
 
     @property
