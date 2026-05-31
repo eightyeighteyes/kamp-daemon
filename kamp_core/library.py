@@ -1119,6 +1119,18 @@ class LibraryIndex:
         )
         self._conn.commit()
 
+    def set_collection_item_mode(self, sale_item_id: str, mode: str) -> bool:
+        """Update mode for a collection item and clear synced_at so the next sync picks it up.
+
+        Returns True if the item was found, False if it does not exist.
+        """
+        cur = self._conn.execute(
+            "UPDATE bandcamp_collection SET mode = ?, synced_at = NULL WHERE sale_item_id = ?",
+            (mode, sale_item_id),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     def get_remote_collection(self) -> list[dict[str, Any]]:
         """Return all bandcamp_collection rows with mode='remote'."""
         rows = self._conn.execute(

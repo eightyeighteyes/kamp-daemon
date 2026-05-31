@@ -2307,6 +2307,71 @@ class TestBandcampSyncAll:
 
 
 # ---------------------------------------------------------------------------
+# Bandcamp collection item download endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestBandcampCollectionDownload:
+    """Tests for POST /api/v1/bandcamp/collection/{sale_item_id}/download."""
+
+    def test_returns_404_when_item_not_in_collection(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        mock_index.set_collection_item_mode.return_value = False
+        trigger_called: list[bool] = []
+        app = create_app(
+            index=mock_index,
+            engine=mock_engine,
+            queue=mock_queue,
+            on_bandcamp_sync_trigger=lambda: trigger_called.append(True),
+        )
+        resp = TestClient(app).post("/api/v1/bandcamp/collection/99999/download")
+        assert resp.status_code == 404
+        assert trigger_called == []
+
+    def test_returns_503_when_sync_not_configured(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        mock_index.set_collection_item_mode.return_value = True
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        resp = TestClient(app).post("/api/v1/bandcamp/collection/42/download")
+        assert resp.status_code == 503
+
+    def test_sets_mode_local_and_fires_sync_trigger(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        mock_index.set_collection_item_mode.return_value = True
+        trigger_done = threading.Event()
+        trigger_called: list[bool] = []
+
+        def _trigger() -> None:
+            trigger_called.append(True)
+            trigger_done.set()
+
+        app = create_app(
+            index=mock_index,
+            engine=mock_engine,
+            queue=mock_queue,
+            on_bandcamp_sync_trigger=_trigger,
+        )
+        with TestClient(app) as c:
+            resp = c.post("/api/v1/bandcamp/collection/42/download")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        mock_index.set_collection_item_mode.assert_called_once_with("42", "local")
+        trigger_done.wait(timeout=2)
+        assert trigger_called == [True]
+
+
 # Bandcamp session-cookies endpoint
 # ---------------------------------------------------------------------------
 

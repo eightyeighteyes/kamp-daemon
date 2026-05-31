@@ -258,6 +258,9 @@ export const getBandcampStatus = (): Promise<{ connected: boolean; username: str
 
 export const disconnectBandcamp = (): Promise<{ ok: boolean }> => del('/api/v1/bandcamp/connect')
 
+export const downloadAlbum = (saleItemId: string): Promise<{ ok: boolean }> =>
+  post(`/api/v1/bandcamp/collection/${encodeURIComponent(saleItemId)}/download`)
+
 // ---------------------------------------------------------------------------
 // Player
 // ---------------------------------------------------------------------------

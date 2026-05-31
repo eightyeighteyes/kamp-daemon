@@ -2397,6 +2397,24 @@ def create_app(
         ).start()
         return {"ok": True}
 
+    @app.post("/api/v1/bandcamp/collection/{sale_item_id}/download")
+    def download_collection_item(sale_item_id: str) -> dict[str, Any]:
+        """Switch a remote item to local mode and trigger a background sync.
+
+        Sets mode='local' and clears synced_at so the next sync downloads it.
+        Returns 404 if the item is not in the collection.
+        """
+        import threading
+
+        if not index.set_collection_item_mode(sale_item_id, "local"):
+            raise HTTPException(status_code=404, detail="Collection item not found")
+        if on_bandcamp_sync_trigger is None:
+            raise HTTPException(status_code=503, detail="Bandcamp sync not configured")
+        threading.Thread(
+            target=on_bandcamp_sync_trigger, daemon=True, name="download-item-sync"
+        ).start()
+        return {"ok": True}
+
     # -----------------------------------------------------------------------
     # Player
     # -----------------------------------------------------------------------

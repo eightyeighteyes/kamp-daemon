@@ -3,56 +3,14 @@ import { useStore } from '../store'
 import { artUrl } from '../api/client'
 import type { Album } from '../api/client'
 import { AlbumContextMenu } from './AlbumContextMenu'
-import { FavoriteIcon, PlayIcon } from './TransportIcons'
+import { BandcampIcon, CloudIcon, FavoriteIcon, PlayIcon, WarnIcon } from './TransportIcons'
 
 type MenuPos = { x: number; y: number }
-
-const CloudIcon = ({ size = 10 }: { size?: number }): React.JSX.Element => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-  >
-    <path
-      d="M12.932 4.70825C11.0205 4.70825 9.34183 5.69967 8.38009 7.19396C7.89905 7.06678 7.39433 6.99913 6.87467 6.99913C3.62978 6.99913 0.999268 9.62964 0.999268 12.8745C0.999268 16.1194 3.62978 18.7499 6.87467 18.7499H18.5233C20.9962 18.7499 23.0009 16.7453 23.0009 14.2724C23.0009 11.7995 20.9962 9.79481 18.5233 9.79481C18.4593 9.79481 18.3956 9.79616 18.3322 9.79883C18.1671 6.9597 15.8125 4.70825 12.932 4.70825Z"
-      fill="currentColor"
-    />
-  </svg>
-)
-
-const BandcampIcon = ({ size = 10 }: { size?: number }): React.JSX.Element => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-  >
-    <path d="M0 18.75l7.437-13.5H24L16.563 18.75z" fill="#4DA9D1" />
-  </svg>
-)
 
 function sourceIcon(source: string, size: number): React.JSX.Element {
   if (source === 'bandcamp') return <BandcampIcon size={size} />
   return <CloudIcon size={size} />
 }
-
-const WarnIcon = ({ size = 20 }: { size?: number }): React.JSX.Element => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-  >
-    <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" fill="currentColor" />
-  </svg>
-)
 
 function rnd(min: number, max: number): number {
   return min + Math.random() * (max - min)

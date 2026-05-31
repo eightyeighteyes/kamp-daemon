@@ -4332,6 +4332,30 @@ class TestRemoteTrackSchema:
 
         assert item is None
 
+    def test_set_collection_item_mode_updates_mode_and_clears_synced_at(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item("42", mode="remote", synced_at=999.0)
+
+        found = index.set_collection_item_mode("42", "local")
+        item = index.get_collection_item("42")
+        index.close()
+
+        assert found is True
+        assert item is not None
+        assert item["mode"] == "local"
+        assert item["synced_at"] is None
+
+    def test_set_collection_item_mode_returns_false_for_unknown_item(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        found = index.set_collection_item_mode("nonexistent", "local")
+        index.close()
+
+        assert found is False
+
     def test_migration_v20_adds_stream_columns(self, tmp_path: Path) -> None:
         """A v19 DB gains the three new columns on open."""
         db_path = tmp_path / "library.db"

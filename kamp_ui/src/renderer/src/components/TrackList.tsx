@@ -18,19 +18,31 @@ import { MusicBrainzModal } from './MusicBrainzModal'
 import type { MBApplyPayload } from './MusicBrainzModal'
 import { AlbumArtModal } from './AlbumArtModal'
 import {
+  BandcampIcon,
+  CloudIcon,
+  DownloadArrowIcon,
   FavoriteIcon,
   PencilIcon,
   PlayIcon,
   PauseIcon,
   QueueAddIcon,
-  PlayNextIcon
+  PlayNextIcon,
+  WarnIcon
 } from './TransportIcons'
+import { downloadAlbum } from '../api/client'
 
 const TOAST_TTL = 10_000 // ms
 
 const HERO_DEFAULT = 45
 const HERO_MIN = 15
 const HERO_KEY = 'kamp:hero-height-pct'
+
+const SOURCE_LABEL: Record<string, string> = { bandcamp: 'Bandcamp', mixed: 'Mixed' }
+
+function sourceIcon(source: string, size: number): React.JSX.Element {
+  if (source === 'bandcamp') return <BandcampIcon size={size} />
+  return <CloudIcon size={size} />
+}
 
 type ContextMenu = { x: number; y: number; track: Track }
 type AlbumRenameToast = {
@@ -70,6 +82,9 @@ export function TrackList(): React.JSX.Element | null {
   const setAlbumFavorite = useStore((s) => s.setAlbumFavorite)
   const addAlbumToQueue = useStore((s) => s.addAlbumToQueue)
   const playAlbumNext = useStore((s) => s.playAlbumNext)
+
+  const configValues = useStore((s) => s.configValues)
+  const connected = configValues?.['bandcamp.connected'] ?? false
 
   const albumEditMode = useStore((s) => s.albumEditMode)
   const setAlbumEditMode = useStore((s) => s.setAlbumEditMode)
@@ -273,6 +288,12 @@ export function TrackList(): React.JSX.Element | null {
 
   if (!album) return null
 
+  const isRemoteAlbum = album.source !== 'local'
+  const saleItemId =
+    isRemoteAlbum && tracks.length > 0
+      ? tracks[0].file_path.split('bandcamp:')[1]?.replace(/^\/+/, '').split('/')[0] ?? null
+      : null
+
   const isCurrentAlbum =
     currentTrack?.album === album.album && currentTrack?.album_artist === album.album_artist
 
@@ -319,18 +340,20 @@ export function TrackList(): React.JSX.Element | null {
         <span>{album.album}</span>
       </nav>
 
-      {/* Edit toggle — separate pill, right side of the hero row */}
-      <button
-        className={`breadcrumb-edit-btn${albumEditMode ? ' active' : ''}`}
-        aria-pressed={albumEditMode}
-        onClick={() => setAlbumEditMode(!albumEditMode)}
-      >
-        <PencilIcon size={11} />
-        {albumEditMode ? 'Done' : 'Edit tags'}
-      </button>
+      {/* Edit toggle — suppressed for bandcamp-only albums (no local files to edit) */}
+      {album.source !== 'bandcamp' && (
+        <button
+          className={`breadcrumb-edit-btn${albumEditMode ? ' active' : ''}`}
+          aria-pressed={albumEditMode}
+          onClick={() => setAlbumEditMode(!albumEditMode)}
+        >
+          <PencilIcon size={11} />
+          {albumEditMode ? 'Done' : 'Edit tags'}
+        </button>
+      )}
 
-      {/* MusicBrainz fetch pill — only visible in edit mode, stacked below Edit/Done */}
-      {albumEditMode && (
+      {/* MusicBrainz fetch pill — only for local albums in edit mode */}
+      {album.source === 'local' && albumEditMode && (
         <button
           className={`breadcrumb-edit-btn mb-pill${mbState.status === 'loading' ? ' mb-pill--loading' : mbState.status === 'error' ? ' mb-pill--error' : ''}`}
           disabled={mbState.status === 'loading'}
@@ -362,8 +385,8 @@ export function TrackList(): React.JSX.Element | null {
         </button>
       )}
 
-      {/* iTunes album art fetch pill — only visible in edit mode */}
-      {albumEditMode && (
+      {/* iTunes album art fetch pill — only for local albums in edit mode */}
+      {album.source === 'local' && albumEditMode && (
         <button
           className="breadcrumb-edit-btn mb-pill mb-pill--second"
           {...tooltip(TOOLTIPS.LIBRARY_FETCH_ART)}
@@ -458,34 +481,55 @@ export function TrackList(): React.JSX.Element | null {
             </div>
           )}
         </div>
-        <div className="album-controls">
-          <button
-            className="album-secondary-btn"
-            {...tooltip(TOOLTIPS.LIBRARY_ADD_TO_QUEUE)}
-            aria-label="Add album to queue"
-            onClick={() => void addAlbumToQueue(album.album_artist, album.album, album.file_path)}
-          >
-            <QueueAddIcon size={16} />
-          </button>
-          <button
-            className="album-secondary-btn"
-            {...tooltip(TOOLTIPS.LIBRARY_PLAY_NEXT)}
-            aria-label="Play album next"
-            onClick={() => void playAlbumNext(album.album_artist, album.album, album.file_path)}
-          >
-            <PlayNextIcon size={16} />
-          </button>
-          <button
-            className="play-all-btn"
-            aria-label={isCurrentAlbum && playing ? 'Pause' : 'Play all'}
-            onClick={() =>
-              isCurrentAlbum
-                ? togglePlayPause()
-                : playTrack(album.album_artist, album.album, 0, album.file_path)
-            }
-          >
-            {isCurrentAlbum && playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
-          </button>
+        <div className="album-controls-group">
+          <div className="album-controls">
+            <button
+              className="album-secondary-btn"
+              {...tooltip(TOOLTIPS.LIBRARY_ADD_TO_QUEUE)}
+              aria-label="Add album to queue"
+              onClick={() => void addAlbumToQueue(album.album_artist, album.album, album.file_path)}
+            >
+              <QueueAddIcon size={16} />
+            </button>
+            <button
+              className="album-secondary-btn"
+              {...tooltip(TOOLTIPS.LIBRARY_PLAY_NEXT)}
+              aria-label="Play album next"
+              onClick={() => void playAlbumNext(album.album_artist, album.album, album.file_path)}
+            >
+              <PlayNextIcon size={16} />
+            </button>
+            <button
+              className="play-all-btn"
+              aria-label={isCurrentAlbum && playing ? 'Pause' : 'Play all'}
+              onClick={() =>
+                isCurrentAlbum
+                  ? togglePlayPause()
+                  : playTrack(album.album_artist, album.album, 0, album.file_path)
+              }
+            >
+              {isCurrentAlbum && playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
+            </button>
+          </div>
+
+          {isRemoteAlbum && (
+            <div className="streaming-controls">
+              <span className="source-pill">
+                {sourceIcon(album.source, 11)}
+                {SOURCE_LABEL[album.source] ?? album.source}
+              </span>
+              {saleItemId && (
+                <button
+                  className="album-download-btn"
+                  title="Download to local library"
+                  onClick={() => void downloadAlbum(saleItemId)}
+                >
+                  <DownloadArrowIcon size={13} />
+                  Download
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -506,12 +550,15 @@ export function TrackList(): React.JSX.Element | null {
         <ol className="track-rows">
           {tracks.map((track, i) => {
             const isCurrent = currentTrack?.id === track.id
+            const isRemoteTrack = track.source !== 'local'
+            const isTrackOffline = isRemoteTrack && !connected
             return (
               <li
                 key={track.id}
-                className={`track-row${isCurrent ? ' current' : ''}`}
+                className={`track-row${isCurrent ? ' current' : ''}${isTrackOffline ? ' track-row--offline' : ''}`}
                 tabIndex={0}
                 onDoubleClick={() => {
+                  if (isTrackOffline) return
                   if (isCurrent) {
                     togglePlayPause()
                   } else {
@@ -520,14 +567,19 @@ export function TrackList(): React.JSX.Element | null {
                 }}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter') return
+                  if (isTrackOffline) return
                   if (isCurrent) togglePlayPause()
                   else playTrack(album.album_artist, album.album, i, album.file_path)
                 }}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/kamp-track-path', track.file_path)
-                  e.dataTransfer.effectAllowed = 'copy'
-                }}
+                {...(!isRemoteTrack
+                  ? {
+                      draggable: true,
+                      onDragStart: (e: React.DragEvent) => {
+                        e.dataTransfer.setData('text/kamp-track-path', track.file_path)
+                        e.dataTransfer.effectAllowed = 'copy'
+                      }
+                    }
+                  : {})}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   setMenu({ x: e.clientX, y: e.clientY, track })
@@ -537,6 +589,11 @@ export function TrackList(): React.JSX.Element | null {
                   {track.favorite && <FavoriteIcon active size={10} />}
                 </span>
                 <span className="track-row-num">
+                  {isRemoteTrack && !isCurrent && (
+                    <span className="track-row-cloud" aria-hidden="true">
+                      <CloudIcon size={8} />
+                    </span>
+                  )}
                   {isCurrent ? (
                     playing ? (
                       <PlayIcon size={11} />
@@ -547,18 +604,29 @@ export function TrackList(): React.JSX.Element | null {
                     track.track_number
                   )}
                 </span>
-                <EditableTrackTitle
-                  trackId={track.id}
-                  title={track.title}
-                  editMode={albumEditMode}
-                  deferred={track.id in deferredOps}
-                  onSave={async (trackId, newTitle) => {
-                    const result = await patchTrackTitle(trackId, newTitle)
-                    if (result?.collision) {
-                      setCollision({ ...result, pendingTrackId: trackId, pendingTitle: newTitle })
-                    }
-                  }}
-                />
+                <span className="track-row-title-cell">
+                  {isTrackOffline && (
+                    <span
+                      className="track-row-offline-icon"
+                      title="Track unavailable offline"
+                      aria-hidden="true"
+                    >
+                      <WarnIcon size={11} />
+                    </span>
+                  )}
+                  <EditableTrackTitle
+                    trackId={track.id}
+                    title={track.title}
+                    editMode={albumEditMode && !isRemoteTrack}
+                    deferred={track.id in deferredOps}
+                    onSave={async (trackId, newTitle) => {
+                      const result = await patchTrackTitle(trackId, newTitle)
+                      if (result?.collision) {
+                        setCollision({ ...result, pendingTrackId: trackId, pendingTitle: newTitle })
+                      }
+                    }}
+                  />
+                </span>
                 <span className="track-row-artist">{track.artist}</span>
               </li>
             )
