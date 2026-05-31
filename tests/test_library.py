@@ -4527,8 +4527,8 @@ class TestAlbumInfoRemoteFields:
         albums even though no embedded art is present locally.
         """
         index = LibraryIndex(tmp_path / "library.db")
-        self._insert_track(index, tmp_path, "bandcamp://999/1", source="remote")
-        self._insert_track(index, tmp_path, "bandcamp://999/2", source="remote")
+        self._insert_track(index, tmp_path, "bandcamp://999/1", source="bandcamp")
+        self._insert_track(index, tmp_path, "bandcamp://999/2", source="bandcamp")
         albums = index.albums()
         index.close()
 
@@ -4553,7 +4553,7 @@ class TestAlbumInfoRemoteFields:
         """Mixed albums use MAX(embedded_art) from local tracks, not the remote shortcut."""
         index = LibraryIndex(tmp_path / "library.db")
         self._insert_track(index, tmp_path, "t1.mp3", source="local")
-        self._insert_track(index, tmp_path, "bandcamp://999/2", source="remote")
+        self._insert_track(index, tmp_path, "bandcamp://999/2", source="bandcamp")
         albums = index.albums()
         index.close()
 

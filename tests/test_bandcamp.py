@@ -2077,7 +2077,7 @@ class TestSyncCollectionStream:
             embedded_art=False,
             mb_release_id="",
             mb_recording_id="",
-            source="remote",
+            source="bandcamp",
         )
         items = [_item(1)]
         (album_count, track_count), index = self._run(
@@ -2183,12 +2183,12 @@ class TestFetchAlbumTracks:
         assert result[1].title == "Song Two"
         assert result[1].track_number == 2
 
-    def test_source_is_remote(self) -> None:
+    def test_source_is_bandcamp(self) -> None:
         html = _stream_album_page_html()
         result = fetch_album_tracks(
             "https://x.bandcamp.com/album/y", 1, "B", "A", self._make_session(html)
         )
-        assert all(t.source == "remote" for t in result)
+        assert all(t.source == "bandcamp" for t in result)
 
     def test_no_stream_url(self) -> None:
         html = _stream_album_page_html()

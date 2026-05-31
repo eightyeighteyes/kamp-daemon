@@ -72,7 +72,7 @@ def _remote_track(sale_id: str = "123456", track_num: int = 1) -> Track:
         embedded_art=False,
         mb_release_id="",
         mb_recording_id="",
-        source="remote",
+        source="bandcamp",
         stream_url="https://cdn.bcbits.com/stream/track.mp3",
         stream_url_expires_at=9999999999.0,
     )
