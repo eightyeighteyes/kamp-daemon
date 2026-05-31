@@ -1006,7 +1006,7 @@ export function PreferencesDialog({
   const configLoading =
     configValues === null && (activeTab === 'general' || activeTab === 'services')
 
-  const hasBandcamp = configValues !== null && configValues['bandcamp.connected'] === true
+  const hasBandcamp = configValues !== null
 
   const str = (key: keyof NonNullable<typeof configValues>): string => {
     if (!configValues) return ''
