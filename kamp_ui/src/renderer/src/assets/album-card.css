@@ -66,22 +66,28 @@
   animation: albumCardDownloadPulse 1.8s ease-in-out infinite;
 }
 
-/* Slow drift of the art behind the blur — "motion behind frosted glass".
-   scale > 1 ensures the drifting translate never exposes edges through
-   the overflow:hidden container. */
+/* Drift of the art behind the blur — "motion behind frosted glass".
+   scale > 1 ensures translate never exposes edges through overflow:hidden.
+   linear timing keeps velocity constant so there are no pauses at keyframes.
+   Ten irregular waypoints across all quadrants prevent a circular feel. */
 @keyframes artDrift {
-  0%   { transform: scale(1.12) translate(0px, 0px); }
-  25%  { transform: scale(1.14) translate(-6px, -4px); }
-  50%  { transform: scale(1.12) translate(-10px, 4px); }
-  75%  { transform: scale(1.15) translate(-4px, 8px); }
-  100% { transform: scale(1.12) translate(0px, 0px); }
+  0%   { transform: scale(1.13) translate(0px,   0px);  }
+  10%  { transform: scale(1.15) translate(-5px,  -8px); }
+  22%  { transform: scale(1.12) translate( 4px, -10px); }
+  35%  { transform: scale(1.16) translate(10px,  -2px); }
+  47%  { transform: scale(1.13) translate( 7px,   7px); }
+  58%  { transform: scale(1.15) translate(-1px,  10px); }
+  70%  { transform: scale(1.12) translate(-9px,   5px); }
+  80%  { transform: scale(1.16) translate(-7px,  -5px); }
+  91%  { transform: scale(1.13) translate(-2px,  -9px); }
+  100% { transform: scale(1.13) translate(0px,   0px);  }
 }
 
 .album-art--blurred .album-art-img {
   /* Blur applies instantly so it's in place before the drift starts. */
   filter: blur(5px);
   transition: filter 0s;
-  animation: artDrift 10s ease-in-out infinite;
+  animation: artDrift 14s linear infinite;
 }
 
 .now-playing-badge {
