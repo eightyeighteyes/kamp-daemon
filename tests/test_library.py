@@ -4737,6 +4737,176 @@ class TestAlbumInfoRemoteFields:
         assert albums[0].track_count == 2
         assert albums[0].in_bandcamp_collection is True
 
+    def test_sale_item_id_populated_for_bandcamp_album(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        # Insert directly so file_path preserves the bandcamp:// scheme (Path normalizes // → /).
+        index._conn.executemany(
+            "INSERT INTO tracks (file_path, title, artist, album_artist, album,"
+            " track_number, disc_number, year, source)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    "bandcamp://abc123/1.mp3",
+                    "T1",
+                    "A",
+                    "A",
+                    "The Album",
+                    1,
+                    1,
+                    "2024",
+                    "bandcamp",
+                ),
+                (
+                    "bandcamp://abc123/2.mp3",
+                    "T2",
+                    "A",
+                    "A",
+                    "The Album",
+                    2,
+                    1,
+                    "2024",
+                    "bandcamp",
+                ),
+            ],
+        )
+        index._conn.commit()
+        albums = index.albums()
+        index.close()
+
+        assert len(albums) == 1
+        assert albums[0].sale_item_id == "abc123"
+
+    def test_sale_item_id_none_for_local_album(self, tmp_path: Path) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        self._insert_track(index, tmp_path, "t1.mp3", source="local")
+        albums = index.albums()
+        index.close()
+
+        assert len(albums) == 1
+        assert albums[0].sale_item_id is None
+
+    def _insert_bc_tracks(self, index: "LibraryIndex", sale_id: str) -> None:
+        """Insert two real bandcamp:// tracks directly, bypassing Path normalization.
+
+        Uses the same album_artist / album defaults as _insert_track so tests can
+        mix the two helpers in the same album group.
+        """
+        index._conn.executemany(
+            "INSERT INTO tracks (file_path, title, artist, album_artist, album,"
+            " track_number, disc_number, year, source)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    f"bandcamp://{sale_id}/1",
+                    "T1",
+                    "The Artist",
+                    "The Artist",
+                    "The Album",
+                    1,
+                    1,
+                    "2024",
+                    "bandcamp",
+                ),
+                (
+                    f"bandcamp://{sale_id}/2",
+                    "T2",
+                    "The Artist",
+                    "The Artist",
+                    "The Album",
+                    2,
+                    1,
+                    "2024",
+                    "bandcamp",
+                ),
+            ],
+        )
+        index._conn.commit()
+
+    def test_albums_deduplicates_when_local_and_bc_tracks_coexist(
+        self, tmp_path: Path
+    ) -> None:
+        """When local tracks coexist with old bandcamp:// rows, only local tracks count."""
+        index = LibraryIndex(tmp_path / "library.db")
+        self._insert_bc_tracks(index, "555")
+        self._insert_track(index, tmp_path, "t1.mp3", source="local")
+        self._insert_track(index, tmp_path, "t2.mp3", source="local")
+        albums = index.albums()
+        index.close()
+
+        assert len(albums) == 1
+        assert albums[0].track_count == 2  # only local tracks, not 4
+        assert albums[0].source == "local"
+        assert albums[0].has_remote_tracks is False
+
+    def test_tracks_for_album_excludes_bc_rows_when_local_tracks_exist(
+        self, tmp_path: Path
+    ) -> None:
+        """tracks_for_album returns only local tracks when both exist."""
+        index = LibraryIndex(tmp_path / "library.db")
+        self._insert_bc_tracks(index, "555")
+        self._insert_track(index, tmp_path, "t1.mp3", source="local")
+        tracks = index.tracks_for_album("The Artist", "The Album")
+        index.close()
+
+        assert len(tracks) == 1
+        assert "bandcamp:" not in str(tracks[0].file_path)
+
+    def test_tracks_for_album_returns_bc_rows_when_no_local_tracks(
+        self, tmp_path: Path
+    ) -> None:
+        """tracks_for_album returns bandcamp:// tracks when no local tracks exist."""
+        index = LibraryIndex(tmp_path / "library.db")
+        self._insert_bc_tracks(index, "777")
+        tracks = index.tracks_for_album("The Artist", "The Album")
+        index.close()
+
+        assert len(tracks) == 2
+        # Path() normalises bandcamp:// → bandcamp:/ on POSIX, so check the prefix not slashes.
+        assert all("bandcamp:" in str(t.file_path) for t in tracks)
+
+    def test_get_collection_item_by_album_finds_matching_row(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item(
+            "sale-99",
+            mode="local",
+            band_name="Artist",
+            item_title="Album",
+            synced_at=1000.0,
+        )
+        result = index.get_collection_item_by_album("Artist", "Album")
+        index.close()
+
+        assert result is not None
+        assert result["sale_item_id"] == "sale-99"
+
+    def test_get_collection_item_by_album_case_insensitive(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item(
+            "sale-99",
+            mode="local",
+            band_name="Artist",
+            item_title="Album",
+            synced_at=1000.0,
+        )
+        result = index.get_collection_item_by_album("ARTIST", "ALBUM")
+        index.close()
+
+        assert result is not None
+        assert result["sale_item_id"] == "sale-99"
+
+    def test_get_collection_item_by_album_returns_none_when_absent(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        result = index.get_collection_item_by_album("No Artist", "No Album")
+        index.close()
+
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # indexed_paths / indexed_paths_with_mtime remote exclusion
