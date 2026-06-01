@@ -224,3 +224,17 @@ class TestKampBandcampSyncer:
             syncer.start()
         with pytest.raises(AssertionError):
             syncer.stop()
+
+    def test_download_album_delegates_to_inner(self) -> None:
+        """download_album() delegates to the inner syncer."""
+        syncer = _make_syncer()
+        syncer._inner.download_album = MagicMock(return_value="/watch/album.zip")
+        result = syncer.download_album("42")
+        syncer._inner.download_album.assert_called_once_with("42")
+        assert result == "/watch/album.zip"
+
+    def test_download_album_asserts_before_configure(self) -> None:
+        """download_album() raises AssertionError when _inner not configured."""
+        syncer = KampBandcampSyncer(_ctx())
+        with pytest.raises(AssertionError):
+            syncer.download_album("42")

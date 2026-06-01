@@ -87,6 +87,47 @@ def _sync_worker(
         _root.removeHandler(handler)
 
 
+def _download_album_worker(
+    bc_config: BandcampConfig,
+    watch_dir: Path,
+    db_path: Path,
+    sale_item_id: str,
+    status_q: Any,
+    log_q: Any,
+    result_q: Any,
+) -> None:
+    """Entry point for the single-album download subprocess."""
+    _root = logging.getLogger()
+    _root.setLevel(logging.DEBUG)
+    handler = logging.handlers.QueueHandler(log_q)
+    _root.addHandler(handler)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    try:
+        from kamp_core.library import LibraryIndex
+
+        from .bandcamp import download_single_album
+
+        index = LibraryIndex(db_path)
+        try:
+            dest = download_single_album(
+                bc_config=bc_config,
+                watch_dir=watch_dir,
+                index=index,
+                sale_item_id=sale_item_id,
+                status_callback=lambda msg: status_q.put(msg),
+            )
+            result_q.put(("ok", str(dest)))
+        finally:
+            index.close()
+    except Exception as exc:  # noqa: BLE001
+        if type(exc).__name__ == "NeedsLoginError":
+            result_q.put(("needs_login", str(exc)))
+        else:
+            result_q.put(("error", str(exc)))
+    finally:
+        _root.removeHandler(handler)
+
+
 def _mark_synced_worker(
     bc_config: BandcampConfig,
     db_path: Path,
@@ -380,6 +421,62 @@ class Syncer:
             idx.close()
         logger.info("Bandcamp sync-all: reset collection sync state.")
         self.sync_once(skip_auto_mark=True)
+
+    def download_album(self, sale_item_id: str) -> str:
+        """Download a single Bandcamp album by its sale_item_id.
+
+        Runs in an isolated subprocess.  Returns the path to the downloaded
+        ZIP on success.  Raises ``RuntimeError`` or ``NeedsLoginError`` on
+        failure.
+        """
+        bc = self._config.bandcamp
+        if bc is None:
+            raise RuntimeError("No [bandcamp] section in config — cannot download.")
+
+        db_path = _state_dir() / "library.db"
+
+        if self.status_callback is not None:
+            self.status_callback(f"Downloading {sale_item_id}…")
+
+        proc, status_q, log_q, result_q = _spawn_worker(
+            _download_album_worker,
+            (bc, self._config.paths.watch_folder, db_path, sale_item_id),
+        )
+
+        while proc.is_alive():  # pragma: no cover
+            try:
+                msg = status_q.get(timeout=0.1)
+                if self.status_callback is not None:
+                    self.status_callback(msg)
+            except queue.Empty:
+                pass
+            _replay_log_queue(log_q)
+
+        while True:
+            try:
+                msg = status_q.get_nowait()
+                if self.status_callback is not None:
+                    self.status_callback(msg)
+            except queue.Empty:
+                break
+
+        proc.join(timeout=10)
+        _replay_log_queue(log_q)
+
+        if self.status_callback is not None:
+            self.status_callback("")
+
+        try:
+            status, value = result_q.get_nowait()
+        except queue.Empty:  # pragma: no cover
+            raise RuntimeError("Download subprocess exited without returning a result")
+
+        if status == "needs_login":
+            raise NeedsLoginError(value)
+        if status == "error":
+            raise RuntimeError(f"Album download failed: {value}")
+
+        return str(value)  # path to the downloaded ZIP
 
     def mark_synced(self) -> None:
         """Mark the entire collection as already downloaded without fetching anything."""

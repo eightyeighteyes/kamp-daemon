@@ -4332,6 +4332,99 @@ class TestRemoteTrackSchema:
 
         assert item is None
 
+    def test_set_collection_item_mode_updates_mode_and_clears_synced_at(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        index.upsert_collection_item("42", mode="remote", synced_at=999.0)
+
+        found = index.set_collection_item_mode("42", "local")
+        item = index.get_collection_item("42")
+        index.close()
+
+        assert found is True
+        assert item is not None
+        assert item["mode"] == "local"
+        assert item["synced_at"] is None
+
+    def test_set_collection_item_mode_returns_false_for_unknown_item(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        found = index.set_collection_item_mode("nonexistent", "local")
+        index.close()
+
+        assert found is False
+
+    def test_set_track_source_for_item_updates_matching_tracks(
+        self, tmp_path: Path
+    ) -> None:
+        from pathlib import PurePosixPath
+
+        index = LibraryIndex(tmp_path / "library.db")
+        # Insert two remote tracks for the same sale_item_id and one unrelated track.
+        index._conn.executemany(
+            "INSERT INTO tracks (file_path, title, artist, album_artist, album, "
+            "track_number, disc_number, year, source) VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    "bandcamp:/42/1",
+                    "Track 1",
+                    "Artist",
+                    "Artist",
+                    "Album",
+                    1,
+                    1,
+                    "",
+                    "bandcamp",
+                ),
+                (
+                    "bandcamp:/42/2",
+                    "Track 2",
+                    "Artist",
+                    "Artist",
+                    "Album",
+                    2,
+                    1,
+                    "",
+                    "bandcamp",
+                ),
+                (
+                    "/local/file.mp3",
+                    "Local",
+                    "Artist",
+                    "Artist",
+                    "Other",
+                    1,
+                    1,
+                    "",
+                    "local",
+                ),
+            ],
+        )
+        index._conn.commit()
+
+        updated = index.set_track_source_for_item("42", "local")
+        rows = index._conn.execute(
+            "SELECT file_path, source FROM tracks ORDER BY file_path"
+        ).fetchall()
+        index.close()
+
+        assert updated == 2
+        sources = {r["file_path"]: r["source"] for r in rows}
+        assert sources["bandcamp:/42/1"] == "local"
+        assert sources["bandcamp:/42/2"] == "local"
+        assert sources["/local/file.mp3"] == "local"  # unchanged
+
+    def test_set_track_source_for_item_returns_zero_when_no_match(
+        self, tmp_path: Path
+    ) -> None:
+        index = LibraryIndex(tmp_path / "library.db")
+        updated = index.set_track_source_for_item("99999", "local")
+        index.close()
+
+        assert updated == 0
+
     def test_migration_v20_adds_stream_columns(self, tmp_path: Path) -> None:
         """A v19 DB gains the three new columns on open."""
         db_path = tmp_path / "library.db"

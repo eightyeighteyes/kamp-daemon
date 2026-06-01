@@ -1119,6 +1119,31 @@ class LibraryIndex:
         )
         self._conn.commit()
 
+    def set_track_source_for_item(self, sale_item_id: str, source: str) -> int:
+        """Set source on every track whose file_path belongs to *sale_item_id*.
+
+        Matches both POSIX (bandcamp:/id/) and Windows (bandcamp:\\id\\) path
+        forms.  Returns the number of rows updated.
+        """
+        cur = self._conn.execute(
+            "UPDATE tracks SET source = ? WHERE file_path LIKE ? OR file_path LIKE ?",
+            (source, f"bandcamp:/{sale_item_id}/%", f"bandcamp:\\{sale_item_id}\\%"),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
+    def set_collection_item_mode(self, sale_item_id: str, mode: str) -> bool:
+        """Update mode for a collection item and clear synced_at so the next sync picks it up.
+
+        Returns True if the item was found, False if it does not exist.
+        """
+        cur = self._conn.execute(
+            "UPDATE bandcamp_collection SET mode = ?, synced_at = NULL WHERE sale_item_id = ?",
+            (mode, sale_item_id),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     def get_remote_collection(self) -> list[dict[str, Any]]:
         """Return all bandcamp_collection rows with mode='remote'."""
         rows = self._conn.execute(

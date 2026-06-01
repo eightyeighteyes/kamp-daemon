@@ -245,7 +245,18 @@ export default function App(): React.JSX.Element {
           void refreshOpenAlbum()
         },
         setAudioLevel,
-        bumpLastPlayedVersion
+        bumpLastPlayedVersion,
+        (saleItemId, state) => {
+          if (state === 'downloading') {
+            useStore.getState().markAlbumDownloading(saleItemId)
+          } else {
+            useStore.getState().clearAlbumDownloading(saleItemId)
+            if (state === 'done') {
+              void useStore.getState().loadLibrary()
+              void useStore.getState().refreshOpenAlbum()
+            }
+          }
+        }
       )
     }
 

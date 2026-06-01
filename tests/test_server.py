@@ -2307,6 +2307,84 @@ class TestBandcampSyncAll:
 
 
 # ---------------------------------------------------------------------------
+# Bandcamp collection item download endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestBandcampCollectionDownload:
+    """Tests for POST /api/v1/bandcamp/collection/{sale_item_id}/download."""
+
+    def test_returns_404_when_item_not_in_collection(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        mock_index.get_collection_item.return_value = None
+        trigger_calls: list[str] = []
+        app = create_app(
+            index=mock_index,
+            engine=mock_engine,
+            queue=mock_queue,
+            on_album_download_trigger=lambda sid: trigger_calls.append(sid),
+        )
+        resp = TestClient(app).post("/api/v1/bandcamp/collection/99999/download")
+        assert resp.status_code == 404
+        assert trigger_calls == []
+
+    def test_returns_503_when_download_trigger_not_configured(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        mock_index.get_collection_item.return_value = {"sale_item_id": "42"}
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        resp = TestClient(app).post("/api/v1/bandcamp/collection/42/download")
+        assert resp.status_code == 503
+
+    def test_sets_db_state_and_fires_download_trigger(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        mock_index.get_collection_item.return_value = {
+            "sale_item_id": "42",
+            "mode": "remote",
+        }
+        trigger_done = threading.Event()
+        trigger_calls: list[str] = []
+
+        def _trigger(sid: str) -> None:
+            trigger_calls.append(sid)
+            trigger_done.set()
+
+        app = create_app(
+            index=mock_index,
+            engine=mock_engine,
+            queue=mock_queue,
+            on_album_download_trigger=_trigger,
+        )
+        with TestClient(app) as c:
+            resp = c.post("/api/v1/bandcamp/collection/42/download")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        mock_index.set_collection_item_mode.assert_called_once_with("42", "local")
+        mock_index.set_track_source_for_item.assert_called_once_with("42", "local")
+        trigger_done.wait(timeout=2)
+        assert trigger_calls == ["42"]
+
+    def test_notify_album_download_status_exposed_on_app_state(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        assert callable(getattr(app.state, "notify_album_download_status", None))
+
+
 # Bandcamp session-cookies endpoint
 # ---------------------------------------------------------------------------
 

@@ -119,6 +119,11 @@ class KampBandcampSyncer(BaseSyncer):
         assert self._inner is not None, "call _configure() before sync_all_purchases()"
         self._inner.sync_all_purchases()
 
+    def download_album(self, sale_item_id: str) -> str:
+        """Download a single Bandcamp album to the watch folder."""
+        assert self._inner is not None, "call _configure() before download_album()"
+        return self._inner.download_album(sale_item_id)
+
     # ------------------------------------------------------------------
     # Internal daemon API (not part of BaseSyncer)
     # ------------------------------------------------------------------

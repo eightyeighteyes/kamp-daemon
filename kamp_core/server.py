@@ -558,6 +558,7 @@ def create_app(
     on_bandcamp_disconnect: Callable[[], None] | None = None,
     on_bandcamp_sync_trigger: Callable[[], None] | None = None,
     on_bandcamp_sync_all_trigger: Callable[[], None] | None = None,
+    on_album_download_trigger: Callable[[str], None] | None = None,
     refresh_stream_url: Callable[[str, int], tuple[str, float] | None] | None = None,
     art_cache_dir: Path | None = None,
     dev_mode: bool = False,
@@ -630,6 +631,17 @@ def create_app(
     def _notify_play_state_changed() -> None:
         """Broadcast a play_state.changed push event to all connected WebSocket clients."""
         _broadcast({"type": "play_state.changed", **_state_snapshot().model_dump()})
+
+    def _notify_album_download_status(sale_item_id: str, state: str) -> None:
+        _broadcast(
+            {
+                "type": "bandcamp.album-download",
+                "sale_item_id": sale_item_id,
+                "state": state,
+            }
+        )
+
+    app.state.notify_album_download_status = _notify_album_download_status
 
     def _notify_bandcamp_sync_status(status_msg: str) -> None:
         """Broadcast sync state derived from the syncer's status_callback string.
@@ -2394,6 +2406,48 @@ def create_app(
             )
         threading.Thread(
             target=on_bandcamp_sync_all_trigger, daemon=True, name="sync-all"
+        ).start()
+        return {"ok": True}
+
+    @app.post("/api/v1/bandcamp/collection/{sale_item_id}/download")
+    def download_collection_item(sale_item_id: str) -> dict[str, Any]:
+        """Download a single Bandcamp album to the watch folder.
+
+        Immediately marks the item as 'local' in bandcamp_collection and
+        updates tracks.source, broadcasts 'downloading' to WebSocket clients,
+        then runs the actual download in a background thread.  Broadcasts
+        'done' or 'error' when the download completes.
+
+        Returns 404 if the item is not in the collection.
+        Returns 503 if the album download callback is not configured.
+        """
+        import threading
+
+        if not index.get_collection_item(sale_item_id):
+            raise HTTPException(status_code=404, detail="Collection item not found")
+        if on_album_download_trigger is None:
+            raise HTTPException(status_code=503, detail="Album download not configured")
+
+        # Optimistically update DB state so the UI reflects the intent immediately.
+        index.set_collection_item_mode(sale_item_id, "local")
+        index.set_track_source_for_item(sale_item_id, "local")
+
+        _broadcast(
+            {
+                "type": "bandcamp.album-download",
+                "sale_item_id": sale_item_id,
+                "state": "downloading",
+            }
+        )
+
+        def _run() -> None:
+            try:
+                on_album_download_trigger(sale_item_id)
+            except Exception:
+                _notify_album_download_status(sale_item_id, "error")
+
+        threading.Thread(
+            target=_run, daemon=True, name=f"album-dl-{sale_item_id}"
         ).start()
         return {"ok": True}
 
