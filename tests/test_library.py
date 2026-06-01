@@ -129,7 +129,7 @@ class TestLibraryIndex:
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
         conn.close()
 
-        assert version == 21
+        assert version == 22
 
     def test_upsert_adds_track(self, tmp_path: Path) -> None:
         index = LibraryIndex(tmp_path / "library.db")
@@ -1339,7 +1339,7 @@ class TestSearch:
         ]
         index.close()
 
-        assert version == 21
+        assert version == 22
         assert len(results) == 1
         assert results[0].title == "Title"
 
@@ -1396,7 +1396,7 @@ class TestSearch:
         ).fetchone()
         index.close()
 
-        assert version == 21
+        assert version == 22
         assert row is not None
         # date_added will be NULL since the file path is fake; that is expected.
         assert row[0] is None
@@ -1752,7 +1752,7 @@ class TestRecordPlayed:
         ).fetchone()
         index.close()
 
-        assert version == 21
+        assert version == 22
         assert row is not None
         assert row[0] == 0
 
@@ -1970,7 +1970,7 @@ class TestFavorite:
         row = index._conn.execute("SELECT favorite FROM tracks WHERE id = 1").fetchone()
         index.close()
 
-        assert version == 21
+        assert version == 22
         assert row is not None
         assert row[0] == 0  # existing tracks default to not-favorited
 
@@ -2062,7 +2062,7 @@ class TestAlbumFavorite:
         index._conn.execute("SELECT COUNT(*) FROM album_favorites").fetchone()
         index.close()
 
-        assert version == 21
+        assert version == 22
 
 
 # ---------------------------------------------------------------------------
@@ -2241,7 +2241,7 @@ class TestMtimeReindex:
         ).fetchone()
         index.close()
 
-        assert version == 21
+        assert version == 22
         assert row is not None
         # file_mtime is intentionally left NULL on migration so the next scan
         # treats all existing tracks as changed and re-reads their tags.
@@ -2336,7 +2336,7 @@ class TestSessionManagement:
             0
         ]
         index.close()
-        assert version == 21
+        assert version == 22
 
     def test_schema_version_9_after_migration(self, tmp_path: Path) -> None:
         index = self._make_index(tmp_path)
@@ -2344,7 +2344,7 @@ class TestSessionManagement:
             0
         ]
         index.close()
-        assert version == 21
+        assert version == 22
 
     def test_migration_v8_to_v9_nulls_flac_ogg_mtimes(self, tmp_path: Path) -> None:
         """v8→v9 resets file_mtime for FLAC/OGG rows so they are re-scanned.
@@ -3221,7 +3221,7 @@ class TestMigrationV11ToV12:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 21
+        assert version == 22
 
         index.close()
 
@@ -3904,7 +3904,7 @@ class TestMigrationV16ToV17:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 21
+        assert version == 22
         index.close()
 
     def test_migration_existing_rows_get_empty_defaults(self, tmp_path: Path) -> None:
@@ -3939,7 +3939,7 @@ class TestMigrationV16ToV17:
         version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
             0
         ]
-        assert version == 21
+        assert version == 22
         index.close()
 
 
@@ -4224,7 +4224,7 @@ class TestBandcampCollection:
         index.close()
 
         assert state == {}
-        assert version == 21
+        assert version == 22
 
 
 class TestRemoteTrackSchema:
@@ -4368,7 +4368,7 @@ class TestRemoteTrackSchema:
             "track_number, disc_number, year, source) VALUES (?,?,?,?,?,?,?,?,?)",
             [
                 (
-                    "bandcamp:/42/1",
+                    "bandcamp://42/1",
                     "Track 1",
                     "Artist",
                     "Artist",
@@ -4379,7 +4379,7 @@ class TestRemoteTrackSchema:
                     "bandcamp",
                 ),
                 (
-                    "bandcamp:/42/2",
+                    "bandcamp://42/2",
                     "Track 2",
                     "Artist",
                     "Artist",
@@ -4412,8 +4412,8 @@ class TestRemoteTrackSchema:
 
         assert updated == 2
         sources = {r["file_path"]: r["source"] for r in rows}
-        assert sources["bandcamp:/42/1"] == "local"
-        assert sources["bandcamp:/42/2"] == "local"
+        assert sources["bandcamp://42/1"] == "local"
+        assert sources["bandcamp://42/2"] == "local"
         assert sources["/local/file.mp3"] == "local"  # unchanged
 
     def test_set_track_source_for_item_returns_zero_when_no_match(
@@ -4491,7 +4491,7 @@ class TestRemoteTrackSchema:
         }
         index.close()
 
-        assert version == 21
+        assert version == 22
         assert "source" in cols
         assert "stream_url" in cols
         assert "stream_url_expires_at" in cols
@@ -4552,7 +4552,7 @@ class TestRemoteTrackSchema:
         ]
         index.close()
 
-        assert version == 21
+        assert version == 22
         sources = {r["file_path"]: r["source"] for r in rows}
         assert sources["bandcamp://123/1"] == "bandcamp"
         assert sources["/local/track.mp3"] == "local"
@@ -4911,3 +4911,166 @@ class TestQueuePlayerStateStr:
 
         assert track is not None
         assert track.title == "Remote"
+
+    def test_remote_track_roundtrip_get_track_by_path(self, tmp_path: Path) -> None:
+        """Regression: upsert a remote Track via Path, then find it by canonical URI.
+
+        Before KAMP-401: _track_to_params used str(file_path) which collapses
+        bandcamp:// to bandcamp:/ on POSIX, causing get_track_by_path to return
+        None for the canonical double-slash form used in queue state saves.
+        """
+        from pathlib import Path as _Path
+
+        index = LibraryIndex(tmp_path / "library.db")
+        remote = Track(
+            file_path=_Path("bandcamp://12345/2"),
+            title="Remote Song",
+            artist="Remote Artist",
+            album_artist="Remote Artist",
+            album="Remote Album",
+            year="2024",
+            track_number=2,
+            disc_number=1,
+            ext="mp3",
+            embedded_art=False,
+            mb_release_id="",
+            mb_recording_id="",
+            source="bandcamp",
+        )
+        index.upsert_track(remote)
+        found = index.get_track_by_path("bandcamp://12345/2")
+        index.close()
+
+        assert found is not None
+        assert found.title == "Remote Song"
+        assert found.source == "bandcamp"
+
+
+class TestMigrationV22:
+    """v21 → v22: normalise bandcamp:/ single-slash file_path rows to bandcamp://."""
+
+    def test_migration_normalises_bandcamp_single_slash(self, tmp_path: Path) -> None:
+        import sqlite3 as _sqlite3
+
+        db_path = tmp_path / "library.db"
+        # Build a minimal v21 DB with a single-slash remote track row.
+        conn = _sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version VALUES (21)")
+        conn.execute("""
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                album_artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                track_number INTEGER NOT NULL DEFAULT 0,
+                disc_number INTEGER NOT NULL DEFAULT 1,
+                ext TEXT NOT NULL DEFAULT '',
+                embedded_art INTEGER NOT NULL DEFAULT 0,
+                mb_release_id TEXT NOT NULL DEFAULT '',
+                mb_recording_id TEXT NOT NULL DEFAULT '',
+                date_added REAL,
+                last_played REAL,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                file_mtime REAL,
+                source TEXT NOT NULL DEFAULT 'local',
+                stream_url TEXT,
+                stream_url_expires_at REAL
+            )
+        """)
+        conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts
+            USING fts5(title, artist, album_artist, album, content=tracks, content_rowid=id)
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS player_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                track_path TEXT NOT NULL,
+                position REAL NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS queue_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                tracks TEXT NOT NULL DEFAULT '[]',
+                order_json TEXT NOT NULL DEFAULT '',
+                pos INTEGER NOT NULL DEFAULT 0,
+                shuffle INTEGER NOT NULL DEFAULT 0,
+                repeat INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bandcamp_collection (
+                sale_item_id TEXT PRIMARY KEY,
+                mode TEXT NOT NULL DEFAULT 'remote',
+                album_url TEXT NOT NULL DEFAULT '',
+                artist_name TEXT NOT NULL DEFAULT '',
+                album_title TEXT NOT NULL DEFAULT '',
+                tralbum_id TEXT NOT NULL DEFAULT '',
+                synced_at REAL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS album_favorites (
+                album_artist TEXT NOT NULL,
+                album TEXT NOT NULL,
+                PRIMARY KEY (album_artist, album)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS deferred_ops (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                op_type TEXT NOT NULL,
+                track_id INTEGER NOT NULL DEFAULT 0,
+                payload TEXT NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at REAL NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT
+            )
+        """)
+        # Insert a remote track in the old single-slash POSIX form.
+        conn.execute(
+            "INSERT INTO tracks (file_path, title, source) VALUES "
+            "('bandcamp:/999/1', 'OldForm', 'bandcamp')"
+        )
+        # Insert a row already in canonical form to confirm it is not double-converted.
+        conn.execute(
+            "INSERT INTO tracks (file_path, title, source) VALUES "
+            "('bandcamp://888/2', 'AlreadyCanonical', 'bandcamp')"
+        )
+        # Insert a local track to confirm it is untouched.
+        conn.execute(
+            "INSERT INTO tracks (file_path, title, source) VALUES "
+            "('/music/local.mp3', 'Local', 'local')"
+        )
+        conn.commit()
+        conn.close()
+
+        index = LibraryIndex(db_path)
+        version = index._conn.execute("SELECT version FROM schema_version").fetchone()[
+            0
+        ]
+        rows = {
+            r["file_path"]: r["title"]
+            for r in index._conn.execute(
+                "SELECT file_path, title FROM tracks"
+            ).fetchall()
+        }
+        index.close()
+
+        assert version == 22
+        assert (
+            rows.get("bandcamp://999/1") == "OldForm"
+        ), "single-slash row was not normalised to double-slash"
+        assert "bandcamp:/999/1" not in rows, "old single-slash row should be gone"
+        assert (
+            rows.get("bandcamp://888/2") == "AlreadyCanonical"
+        ), "already-canonical row should be unchanged"
+        assert (
+            rows.get("/music/local.mp3") == "Local"
+        ), "local track should be unchanged"

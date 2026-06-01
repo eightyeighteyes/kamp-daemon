@@ -529,7 +529,7 @@ def _cmd_daemon(
     import threading
     import uvicorn
 
-    from kamp_core.library import LibraryIndex
+    from kamp_core.library import LibraryIndex, Track
     from kamp_core.playback import MpvPlaybackEngine, PlaybackQueue
     from kamp_core.scrobbler import Scrobbler, authenticate as _lastfm_authenticate
     from kamp_core.server import create_app, resolve_playback_uri
@@ -595,17 +595,39 @@ def _cmd_daemon(
     if saved_queue and saved_player:
         saved_paths, q_order, q_pos, q_shuffle, q_repeat = saved_queue
         _, saved_position = saved_player
-        # Resolve original-order paths → Track objects; silently drop missing.
+        # Resolve original-order paths → Track objects.
+        # Remote tracks that can't be found in the DB (e.g. after a DB wipe) are
+        # kept as minimal stub Tracks with reachable=False so they remain visible
+        # in the queue UI rather than silently disappearing.  Local tracks that
+        # aren't found (deleted files) are still dropped.
         # Build a mapping old_index → new_index so the playback permutation
         # (q_order) can be remapped to the compacted resolved list.
         resolved: list[Any] = []
         old_to_new: dict[int, int] = {}
         for i, p in enumerate(saved_paths):
             t = index.get_track_by_path(p)
+            if t is None and p.startswith("bandcamp:"):
+                # Remote track missing from DB — keep as unreachable stub.
+                t = Track(
+                    file_path=Path(p),
+                    title=p.split("/")[-1] or p,
+                    artist="",
+                    album_artist="",
+                    album="",
+                    year="",
+                    track_number=0,
+                    disc_number=0,
+                    ext="",
+                    embedded_art=False,
+                    mb_release_id="",
+                    mb_recording_id="",
+                    source="bandcamp",
+                    reachable=False,
+                )
             if t is not None:
                 old_to_new[i] = len(resolved)
                 resolved.append(t)
-        # Remap the playback order, dropping references to deleted tracks.
+        # Remap the playback order, dropping references to deleted local tracks.
         new_order = [old_to_new[idx] for idx in q_order if idx in old_to_new]
         # Find the new position of the current track; fall back to 0.
         restored_pos = 0
@@ -654,6 +676,10 @@ def _cmd_daemon(
         track = queue.next()
         if finished is not None:
             index.record_played(finished.file_path)
+        # Skip over unreachable stub tracks (remote tracks missing from the DB).
+        # Keep advancing until we find a playable track or exhaust the queue.
+        while track is not None and not track.reachable:
+            track = queue.next()
         if track:
             # Write last_played for the incoming track before the notification
             # chain fires so LastPlayedModule sees it on its next re-fetch.

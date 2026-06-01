@@ -3,7 +3,7 @@ import { useStore } from '../store'
 import { useTooltip } from '../hooks/useTooltip'
 import { TOOLTIPS } from '../tooltipStrings'
 import { QueueContextMenu } from './QueueContextMenu'
-import { FavoriteIcon } from './TransportIcons'
+import { FavoriteIcon, WarnIcon } from './TransportIcons'
 import type { Track } from '../api/client'
 
 const QUEUE_WIDTH_KEY = 'kamp:queue-width'
@@ -44,6 +44,8 @@ export function QueuePanel(): React.JSX.Element {
   const insertIntoQueue = useStore((s) => s.insertIntoQueue)
   const insertAlbumAt = useStore((s) => s.insertAlbumAt)
   const addAlbumToQueue = useStore((s) => s.addAlbumToQueue)
+  const configValues = useStore((s) => s.configValues)
+  const bandcampConnected = configValues?.['bandcamp.connected'] ?? false
   // listRef is on the Next Up <ol> — used for queue-tail-drop visual
   const listRef = useRef<HTMLOListElement>(null)
   const historyListRef = useRef<HTMLOListElement>(null)
@@ -265,6 +267,7 @@ export function QueuePanel(): React.JSX.Element {
     const isPlayed = position >= 0 && idx < position
     const isUnplayed = position >= 0 && idx > position
     const isSelected = selectedIndices.has(idx)
+    const isOffline = (track.source !== 'local' && !bandcampConnected) || !track.reachable
     return (
       <li
         key={idx}
@@ -272,7 +275,8 @@ export function QueuePanel(): React.JSX.Element {
           'queue-track-row',
           isCurrent ? 'current' : '',
           isPlayed ? 'played' : '',
-          isSelected ? 'selected' : ''
+          isSelected ? 'selected' : '',
+          isOffline ? 'queue-track-row--offline' : ''
         ]
           .filter(Boolean)
           .join(' ')}
@@ -355,7 +359,14 @@ export function QueuePanel(): React.JSX.Element {
           {track.favorite && <FavoriteIcon active size={10} />}
         </span>
         <span className="queue-track-num">{idx + 1}</span>
-        <span className="queue-track-title">{track.title}</span>
+        <span className="queue-track-title">
+          {isOffline && (
+            <span className="queue-track-offline-icon" title="Track unavailable" aria-hidden="true">
+              <WarnIcon size={11} />
+            </span>
+          )}
+          {track.title}
+        </span>
         <span className="queue-track-artist">{track.artist}</span>
       </li>
     )

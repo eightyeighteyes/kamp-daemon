@@ -137,6 +137,7 @@ class TrackOut(BaseModel):
     favorite: bool
     play_count: int
     source: str
+    reachable: bool = True
 
     @classmethod
     def from_track(cls, t: Track) -> "TrackOut":
@@ -159,6 +160,7 @@ class TrackOut(BaseModel):
             favorite=t.favorite,
             play_count=t.play_count,
             source=t.source,
+            reachable=t.reachable,
         )
 
 

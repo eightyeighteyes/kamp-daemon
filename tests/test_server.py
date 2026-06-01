@@ -3110,6 +3110,54 @@ class TestPatchAlbumMetaEndpoint:
         assert resp.status_code == 200
         assert resp.json()[0]["source"] == "bandcamp"
 
+    def test_track_out_includes_reachable_field(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        track = _track(1)
+        mock_index.tracks_for_album.return_value = [track]
+
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        resp = TestClient(app).get(
+            "/api/v1/tracks",
+            params={"album_artist": track.album_artist, "album": track.album},
+        )
+        assert resp.status_code == 200
+        assert resp.json()[0]["reachable"] is True
+
+    def test_track_out_stub_track_reachable_false(
+        self,
+        mock_index: MagicMock,
+        mock_engine: MagicMock,
+        mock_queue: MagicMock,
+    ) -> None:
+        """Stub tracks created during queue restore expose reachable=False."""
+        from pathlib import Path as _Path
+
+        from kamp_core.library import Track as _Track
+        from kamp_core.server import TrackOut
+
+        stub = _Track(
+            file_path=_Path("bandcamp://777/1"),
+            title="777/1",
+            artist="",
+            album_artist="",
+            album="",
+            year="",
+            track_number=0,
+            disc_number=0,
+            ext="",
+            embedded_art=False,
+            mb_release_id="",
+            mb_recording_id="",
+            source="bandcamp",
+            reachable=False,
+        )
+        out = TrackOut.from_track(stub)
+        assert out.reachable is False
+
     def test_album_out_includes_source_and_has_remote_tracks(
         self,
         mock_index: MagicMock,

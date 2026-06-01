@@ -90,7 +90,7 @@ def _maybe_unprotect(text: str) -> str:
 
 _AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".flac", ".ogg"})
 
-_SCHEMA_VERSION = 21
+_SCHEMA_VERSION = 22
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -320,6 +320,9 @@ class Track:
     source: str = field(default="local", compare=False)
     stream_url: str | None = field(default=None, compare=False)
     stream_url_expires_at: float | None = field(default=None, compare=False)
+    # Runtime flag; not persisted to DB. False for stub tracks created during
+    # queue restore when the DB row is missing (e.g. after a DB wipe).
+    reachable: bool = field(default=True, compare=False)
 
     @property
     def is_remote(self) -> bool:
@@ -776,6 +779,24 @@ class LibraryIndex:
             self._conn.commit()
             version = 21
 
+        if version == 21:
+            # v21 → v22: normalise bandcamp:/ (POSIX-collapsed single-slash) file_path
+            # rows to canonical bandcamp:// form.  str(Path("bandcamp://x/y")) on POSIX
+            # collapses to "bandcamp:/x/y", so all remote tracks written before this
+            # migration have the single-slash form.  The canonical form is required so
+            # get_track_by_path("bandcamp://x/y") — used by the queue restore loop —
+            # matches the stored row.  Windows backslash rows are unaffected (they are
+            # already handled separately throughout the codebase).
+            self._conn.execute("""
+                UPDATE tracks
+                SET file_path = 'bandcamp://' || substr(file_path, 11)
+                WHERE file_path LIKE 'bandcamp:/%'
+                  AND file_path NOT LIKE 'bandcamp://%'
+                """)
+            self._conn.execute("UPDATE schema_version SET version = 22")
+            self._conn.commit()
+            version = 22
+
     def _rebuild_fts(self) -> None:
         """Rebuild the FTS index from the current contents of the tracks table."""
         self._conn.execute("DELETE FROM tracks_fts")
@@ -1122,12 +1143,12 @@ class LibraryIndex:
     def set_track_source_for_item(self, sale_item_id: str, source: str) -> int:
         """Set source on every track whose file_path belongs to *sale_item_id*.
 
-        Matches both POSIX (bandcamp:/id/) and Windows (bandcamp:\\id\\) path
-        forms.  Returns the number of rows updated.
+        Matches canonical bandcamp:// (POSIX) and Windows bandcamp:\\ path forms.
+        Returns the number of rows updated.
         """
         cur = self._conn.execute(
             "UPDATE tracks SET source = ? WHERE file_path LIKE ? OR file_path LIKE ?",
-            (source, f"bandcamp:/{sale_item_id}/%", f"bandcamp:\\{sale_item_id}\\%"),
+            (source, f"bandcamp://{sale_item_id}/%", f"bandcamp:\\{sale_item_id}\\%"),
         )
         self._conn.commit()
         return cur.rowcount
@@ -1154,12 +1175,12 @@ class LibraryIndex:
     def has_remote_album_tracks(self, sale_item_id: str) -> bool:
         """Return True if the tracks table already has entries for this remote album.
 
-        Checks both POSIX (bandcamp:/id/) and Windows (bandcamp:\\id\\) path forms so
+        Checks canonical bandcamp:// (POSIX) and Windows bandcamp:\\ path forms so
         incremental stream syncs can skip album-page fetches for existing albums.
         """
         row = self._conn.execute(
             "SELECT 1 FROM tracks WHERE file_path LIKE ? OR file_path LIKE ? LIMIT 1",
-            (f"bandcamp:/{sale_item_id}/%", f"bandcamp:\\{sale_item_id}\\%"),
+            (f"bandcamp://{sale_item_id}/%", f"bandcamp:\\{sale_item_id}\\%"),
         ).fetchone()
         return row is not None
 
@@ -2099,6 +2120,29 @@ _WRITABLE_TRACK_FIELDS: frozenset[str] = frozenset(
 )
 
 
+def _canonical_track_key(path: "Path | str") -> str:
+    """Return the canonical file_path key for *path*.
+
+    For bandcamp:// URIs, normalises the single-slash POSIX form (bandcamp:/)
+    and Windows backslash form (bandcamp:\\) back to the canonical double-slash
+    form (bandcamp://) used throughout the codebase.  Local paths pass through
+    unchanged.
+
+    Only paths whose string representation *starts* with "bandcamp:" are
+    treated as remote URIs; a local path that merely contains "bandcamp:" in a
+    subdirectory name is left as-is.
+
+    This mirrors the identically-named function in kamp_core.playback; it is
+    defined here separately to avoid a circular import (playback imports Track
+    from this module).
+    """
+    s = str(path)
+    if s.startswith("bandcamp:"):
+        rest = s.split("bandcamp:", 1)[1].lstrip("/\\").replace("\\", "/")
+        return "bandcamp://" + rest
+    return s
+
+
 def _track_to_params(
     t: Track,
 ) -> tuple[
@@ -2123,7 +2167,7 @@ def _track_to_params(
     float | None,
 ]:
     return (
-        str(t.file_path),
+        _canonical_track_key(t.file_path),
         t.title,
         t.artist,
         t.album_artist,
@@ -2158,10 +2202,10 @@ def _row_to_deferred_op(row: sqlite3.Row) -> DeferredOp:
 
 
 def _row_to_track(row: sqlite3.Row) -> Track:
-    # KAMP-383 note: Path("bandcamp://sale_item_id/track_num") is safe on
-    # POSIX (round-trips via str()) but corrupts on Windows (backslash
-    # normalisation). Fix Track.file_path type when remote tracks are first
-    # inserted so Windows is addressed before they reach prod.
+    # DB rows store canonical bandcamp:// form (ensured by _track_to_params and
+    # migration v22). Path() on POSIX still collapses the double-slash to single,
+    # but all callers that need a stable string key use _canonical_track_key() or
+    # get_track_by_path(str) rather than str(track.file_path), so this is safe.
     return Track(
         id=row["id"],
         file_path=Path(row["file_path"]),

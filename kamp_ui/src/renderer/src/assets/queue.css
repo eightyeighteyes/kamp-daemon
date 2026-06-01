@@ -222,6 +222,25 @@
   pointer-events: none;
 }
 
+/* Offline / unreachable remote track rows */
+.queue-track-offline-icon {
+  display: inline-flex;
+  align-items: center;
+  color: #e0a020;
+  flex-shrink: 0;
+  margin-right: 3px;
+}
+
+.queue-track-row--offline .queue-track-num,
+.queue-track-row--offline .queue-track-artist {
+  opacity: 0.42;
+}
+
+.queue-track-row--offline .queue-track-title {
+  font-style: italic;
+  opacity: 0.42;
+}
+
 /* Drag-to-reorder: grab cursor for draggable rows, locked cursor for current */
 .queue-track-row[draggable='true'] {
   cursor: grab;
