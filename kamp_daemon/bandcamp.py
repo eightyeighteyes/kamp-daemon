@@ -454,6 +454,12 @@ def sync_collection_stream(
         )
         album_count += 1
 
+        # Correct date_added for existing remote tracks so the purchase date —
+        # not the sync timestamp — drives the new-arrival highlight.
+        purchased_ts = _parse_purchased(item.get("purchased"))
+        if purchased_ts is not None:
+            index.update_remote_track_date_added(str(sid), purchased_ts)
+
         # Fetch track metadata only for albums not yet in the tracks table.
         # This keeps incremental syncs fast while still populating new albums.
         if album_url and not index.has_remote_album_tracks(str(sid)):
@@ -462,7 +468,12 @@ def sync_collection_stream(
             fetch_index += 1
             try:
                 tracks = fetch_album_tracks(
-                    album_url, int(sid), band_name, item_title, session
+                    album_url,
+                    int(sid),
+                    band_name,
+                    item_title,
+                    session,
+                    date_added=purchased_ts,
                 )
                 if tracks:
                     index.upsert_many(tracks)
@@ -968,6 +979,7 @@ def fetch_album_tracks(
     band_name: str,
     item_title: str,
     session: "_AnySession",
+    date_added: float | None = None,
 ) -> "list[Track]":
     """Fetch track metadata from a Bandcamp album page without downloading CDN URLs.
 
@@ -1016,7 +1028,7 @@ def fetch_album_tracks(
                 mb_release_id="",
                 mb_recording_id="",
                 source="bandcamp",
-                date_added=time.time(),
+                date_added=date_added if date_added is not None else time.time(),
             )
         )
     return result

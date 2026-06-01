@@ -2392,6 +2392,26 @@ class TestSyncCollectionStream:
         assert call_kwargs["added_at"] == _parse_purchased(purchased_str)
         assert call_kwargs["added_at"] is not None
 
+    def test_calls_update_remote_track_date_added(self, tmp_path: Path) -> None:
+        """sync_collection_stream corrects existing remote tracks' date_added."""
+        purchased_str = "10 Jun 2023 08:00:00 GMT"
+        items = [_item(1, purchased=purchased_str)]
+        _result, index = self._run(tmp_path, items)
+
+        from kamp_daemon.bandcamp import _parse_purchased
+
+        index.update_remote_track_date_added.assert_called_once_with(
+            "1", _parse_purchased(purchased_str)
+        )
+
+    def test_skips_update_when_purchased_missing(self, tmp_path: Path) -> None:
+        """Items without a purchased field don't call update_remote_track_date_added."""
+        item = _item(1)
+        item.pop("purchased")
+        _result, index = self._run(tmp_path, [item])
+
+        index.update_remote_track_date_added.assert_not_called()
+
 
 class TestStreamSyncArtPrefetch:
     """Art prefetch behaviour in sync_collection_stream."""
@@ -2521,8 +2541,8 @@ class TestFetchAlbumTracks:
         )
         assert all(t.stream_url is None for t in result)
 
-    def test_date_added_is_set(self) -> None:
-        """date_added is set to the current time so tracks sort correctly by date added."""
+    def test_date_added_defaults_to_current_time(self) -> None:
+        """Without an explicit date_added, tracks default to the current time."""
         before = time.time()
         html = _stream_album_page_html()
         result = fetch_album_tracks(
@@ -2531,6 +2551,19 @@ class TestFetchAlbumTracks:
         after = time.time()
         assert all(t.date_added is not None for t in result)
         assert all(before <= t.date_added <= after for t in result)  # type: ignore[operator]
+
+    def test_date_added_uses_provided_value(self) -> None:
+        """A caller-supplied date_added is used verbatim on every track."""
+        html = _stream_album_page_html()
+        result = fetch_album_tracks(
+            "https://x.bandcamp.com/album/y",
+            1,
+            "B",
+            "A",
+            self._make_session(html),
+            date_added=12345.0,
+        )
+        assert all(t.date_added == 12345.0 for t in result)
 
     def test_file_path_contains_sale_item_id_and_track_num(self) -> None:
         tracks = [{"title": "T", "track_num": 3, "artist": None}]
