@@ -83,6 +83,8 @@ export function TrackList(): React.JSX.Element | null {
 
   const configValues = useStore((s) => s.configValues)
   const connected = configValues?.['bandcamp.connected'] ?? false
+  const downloadingAlbumIds = useStore((s) => s.downloadingAlbumIds)
+  const markAlbumDownloading = useStore((s) => s.markAlbumDownloading)
 
   const albumEditMode = useStore((s) => s.albumEditMode)
   const setAlbumEditMode = useStore((s) => s.setAlbumEditMode)
@@ -291,6 +293,7 @@ export function TrackList(): React.JSX.Element | null {
     isRemoteAlbum && tracks.length > 0
       ? (tracks[0].file_path.split('bandcamp:')[1]?.replace(/^\/+/, '').split('/')[0] ?? null)
       : null
+  const isDownloading = saleItemId !== null && downloadingAlbumIds.has(saleItemId)
 
   const isCurrentAlbum =
     currentTrack?.album === album.album && currentTrack?.album_artist === album.album_artist
@@ -485,10 +488,14 @@ export function TrackList(): React.JSX.Element | null {
               <span className="source-pill">{sourceIcon(album.source, 16)}</span>
               {saleItemId && (
                 <button
-                  className="album-download-btn"
+                  className={`album-download-btn${isDownloading ? ' album-download-btn--downloading' : ''}`}
                   {...tooltip('Download Album')}
                   aria-label="Download album"
-                  onClick={() => void downloadAlbum(saleItemId)}
+                  disabled={isDownloading}
+                  onClick={() => {
+                    markAlbumDownloading(saleItemId)
+                    void downloadAlbum(saleItemId)
+                  }}
                 >
                   <DownloadArrowIcon size={16} />
                 </button>

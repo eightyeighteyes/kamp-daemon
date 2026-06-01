@@ -819,3 +819,67 @@ class TestStreamMode:
             syncer.sync_once()
         info_msgs = " ".join(str(c) for c in mock_log.info.call_args_list)
         assert "up to date" in info_msgs
+
+
+class TestDownloadAlbum:
+    """Tests for Syncer.download_album()."""
+
+    def test_raises_when_no_bandcamp(self, tmp_path: Path) -> None:
+        syncer = Syncer(_make_config_no_bandcamp(tmp_path))
+        with pytest.raises(RuntimeError, match="No \\[bandcamp\\]"):
+            syncer.download_album("42")
+
+    def test_returns_dest_path_on_success(self, tmp_path: Path) -> None:
+        syncer = Syncer(_make_config(tmp_path))
+        expected = str(tmp_path / "watch" / "album.zip")
+
+        def _fake_download(
+            bc_config: object,
+            watch_dir: object,
+            index: object,
+            sale_item_id: str,
+            status_callback: object,
+        ) -> str:
+            return expected
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp.download_single_album", side_effect=_fake_download
+            ),
+            patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
+            patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
+        ):
+            result = syncer.download_album("42")
+        assert result == expected
+
+    def test_raises_needs_login_error(self, tmp_path: Path) -> None:
+        from kamp_daemon.bandcamp import NeedsLoginError as BcNeedsLogin
+
+        syncer = Syncer(_make_config(tmp_path))
+
+        def _needs_login(*_a: object, **_kw: object) -> None:
+            raise BcNeedsLogin("no session")
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp.download_single_album", side_effect=_needs_login
+            ),
+            patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
+            patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
+            pytest.raises(NeedsLoginError),
+        ):
+            syncer.download_album("42")
+
+    def test_raises_runtime_error_on_failure(self, tmp_path: Path) -> None:
+        syncer = Syncer(_make_config(tmp_path))
+
+        def _fail(*_a: object, **_kw: object) -> None:
+            raise RuntimeError("CDN error")
+
+        with (
+            patch("kamp_daemon.bandcamp.download_single_album", side_effect=_fail),
+            patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
+            patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
+            pytest.raises(RuntimeError, match="Album download failed"),
+        ):
+            syncer.download_album("42")

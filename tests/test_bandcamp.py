@@ -31,6 +31,7 @@ from kamp_daemon.bandcamp import (
     _session_from_cookie_file,
     _username_from_logout_cookie,
     _validate_session,
+    download_single_album,
     fetch_album_art_bytes,
     fetch_album_tracks,
     fetch_stream_url,
@@ -2258,3 +2259,95 @@ class TestFetchAlbumTracks:
         )
         assert len(result) == 1
         assert result[0].title == "Good"
+
+
+class TestDownloadSingleAlbum:
+    """Tests for download_single_album()."""
+
+    def _run(
+        self,
+        tmp_path: Path,
+        sale_item_id: str = "42",
+        redownload_links: dict | None = None,
+        db_row: dict | None = None,
+    ) -> Path:
+        config = _bc_config(tmp_path)
+        watch_folder = tmp_path / "watch"
+        index = MagicMock()
+        index.get_collection_item.return_value = db_row or {
+            "sale_item_id": sale_item_id,
+            "band_name": "Test Band",
+            "item_title": "Test Album",
+        }
+
+        def fake_download_item(
+            item: dict, bc_config: object, watch_dir: Path, session: object
+        ) -> Path:
+            watch_dir.mkdir(parents=True, exist_ok=True)
+            dest = watch_dir / f"{item['sale_item_id']}.zip"
+            dest.write_bytes(b"zip")
+            return dest
+
+        links = (
+            redownload_links
+            if redownload_links is not None
+            else {int(sale_item_id): "https://bandcamp.com/download?id=42"}
+        )
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
+            patch(
+                "kamp_daemon.bandcamp._make_requests_session", return_value=MagicMock()
+            ),
+            patch("kamp_daemon.bandcamp._get_fan_info", return_value=(123, "testuser")),
+            patch("kamp_daemon.bandcamp._get_download_links", return_value=links),
+            patch(
+                "kamp_daemon.bandcamp._download_item", side_effect=fake_download_item
+            ),
+        ):
+            return download_single_album(config, watch_folder, index, sale_item_id)
+
+    def test_downloads_zip_to_watch_folder(self, tmp_path: Path) -> None:
+        dest = self._run(tmp_path)
+        assert dest.exists()
+        assert dest.suffix == ".zip"
+
+    def test_updates_collection_mode_and_track_source(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+
+        config = _bc_config(tmp_path)
+        index = MagicMock()
+        index.get_collection_item.return_value = {
+            "sale_item_id": "42",
+            "band_name": "B",
+            "item_title": "A",
+        }
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
+            patch(
+                "kamp_daemon.bandcamp._make_requests_session", return_value=MagicMock()
+            ),
+            patch("kamp_daemon.bandcamp._get_fan_info", return_value=(1, "user")),
+            patch(
+                "kamp_daemon.bandcamp._get_download_links",
+                return_value={42: "https://url"},
+            ),
+            patch(
+                "kamp_daemon.bandcamp._download_item", return_value=tmp_path / "a.zip"
+            ),
+        ):
+            download_single_album(config, tmp_path / "watch", index, "42")
+
+        index.set_collection_item_mode.assert_called_once_with("42", "local")
+        index.set_track_source_for_item.assert_called_once_with("42", "local")
+
+    def test_raises_when_no_download_link(self, tmp_path: Path) -> None:
+        with pytest.raises(BandcampAPIError, match="No download link"):
+            self._run(tmp_path, redownload_links={})

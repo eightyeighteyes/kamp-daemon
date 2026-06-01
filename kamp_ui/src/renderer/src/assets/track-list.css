@@ -600,6 +600,17 @@
   background: var(--surface-hover);
 }
 
+.album-download-btn--downloading {
+  color: var(--accent);
+  cursor: default;
+  animation: album-download-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes album-download-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 .track-list-divider {
   margin: 8px 0 0 0;
   flex-shrink: 0;

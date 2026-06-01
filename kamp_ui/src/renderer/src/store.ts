@@ -78,6 +78,7 @@ type PlayerStore = {
   artistPanelVisible: boolean
   artistPanelSnapshot: boolean | null // saved visibility before entering Now Playing
   queue: QueueState | null
+  downloadingAlbumIds: Set<string>
 
   // Actions
   setAudioLevel: (leftDb: number, rightDb: number, crestDb: number, peakDb: number) => void
@@ -98,6 +99,8 @@ type PlayerStore = {
   setLastPlayedCount: (n: number) => void
   setLastPlayedDays: (n: number) => void
   bumpLastPlayedVersion: () => void
+  markAlbumDownloading: (saleItemId: string) => void
+  clearAlbumDownloading: (saleItemId: string) => void
   setRecentlyAddedCount: (n: number) => void
   setRecentlyAddedDays: (n: number) => void
   setHighlightEnabled: (enabled: boolean) => void
@@ -288,6 +291,7 @@ export const useStore = create<PlayerStore>((set, get) => ({
   artistPanelVisible: localStorage.getItem('kamp:artist-panel-visible') !== 'false',
   artistPanelSnapshot: null,
   queue: null,
+  downloadingAlbumIds: new Set<string>(),
   configValues: null,
   prefsOpen: false,
   prefsInitialTab: 'general',
@@ -413,6 +417,14 @@ export const useStore = create<PlayerStore>((set, get) => ({
   },
 
   bumpLastPlayedVersion: () => set((s) => ({ lastPlayedVersion: s.lastPlayedVersion + 1 })),
+  markAlbumDownloading: (saleItemId) =>
+    set((s) => ({ downloadingAlbumIds: new Set([...s.downloadingAlbumIds, saleItemId]) })),
+  clearAlbumDownloading: (saleItemId) =>
+    set((s) => {
+      const next = new Set(s.downloadingAlbumIds)
+      next.delete(saleItemId)
+      return { downloadingAlbumIds: next }
+    }),
 
   setRecentlyAddedCount: (n) => {
     localStorage.setItem('kamp:recently-added-count', String(n))

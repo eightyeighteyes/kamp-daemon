@@ -530,6 +530,11 @@ export type AudioLevelMessage = {
   crest_db: number
   peak_db: number
 }
+export type AlbumDownloadMessage = {
+  type: 'bandcamp.album-download'
+  sale_item_id: string
+  state: 'downloading' | 'done' | 'error'
+}
 export type ServerMessage =
   | StateMessage
   | TrackChangedMessage
@@ -537,6 +542,7 @@ export type ServerMessage =
   | AlbumRenameProgressMessage
   | DeferredOpCompletedMessage
   | AudioLevelMessage
+  | AlbumDownloadMessage
 
 export async function getDeferredOps(): Promise<{ op_id: number; track_id: number }[]> {
   const res = await fetch(`${BASE_URL}/api/v1/deferred-ops`, {
@@ -554,7 +560,8 @@ export function connectStateStream(
   onAlbumRenameProgress?: (done: number, total: number) => void,
   onDeferredOpCompleted?: (trackId: number, opId: number) => void,
   onAudioLevel?: (leftDb: number, rightDb: number, crestDb: number, peakDb: number) => void,
-  onTrackChanged?: () => void
+  onTrackChanged?: () => void,
+  onAlbumDownload?: (saleItemId: string, state: 'downloading' | 'done' | 'error') => void
 ): () => void {
   const ws = new WebSocket(`${WS_BASE}/api/v1/ws`)
 
@@ -571,6 +578,8 @@ export function connectStateStream(
         onDeferredOpCompleted?.(msg.track_id, msg.op_id)
       else if (msg.type === 'audio.level')
         onAudioLevel?.(msg.left_db, msg.right_db, msg.crest_db, msg.peak_db)
+      else if (msg.type === 'bandcamp.album-download')
+        onAlbumDownload?.(msg.sale_item_id, msg.state)
     } catch {
       // malformed message — ignore
     }

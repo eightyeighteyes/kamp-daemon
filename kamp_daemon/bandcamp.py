@@ -464,6 +464,60 @@ def sync_collection_stream(
     return album_count, track_count
 
 
+def download_single_album(
+    bc_config: BandcampConfig,
+    watch_dir: Path,
+    index: "LibraryIndex",
+    sale_item_id: str,
+    status_callback: Callable[[str], None] | None = None,
+) -> Path:
+    """Download one Bandcamp purchase to *watch_dir* by its *sale_item_id*.
+
+    Authenticates, resolves the signed download URL for this specific item,
+    downloads the ZIP, updates bandcamp_collection.mode to 'local', and sets
+    tracks.source to 'local' on the existing remote track rows.
+
+    Returns the path to the downloaded ZIP.  Raises ``BandcampAPIError`` if
+    the item is not found in the collection or cannot be downloaded.
+    """
+    if status_callback:
+        status_callback(f"Downloading album {sale_item_id}…")
+
+    session_data = _ensure_session(bc_config, index)
+    session = _make_requests_session(session_data)
+
+    _, username = _get_fan_info(session)
+
+    # Resolve the signed download-page URL for this specific item.
+    links = _get_download_links(username, {int(sale_item_id)}, session)
+    redownload_url = links.get(int(sale_item_id))
+    if not redownload_url:
+        raise BandcampAPIError(
+            f"No download link found for sale_item_id={sale_item_id} "
+            f"(item may be hidden or not yet available for download)"
+        )
+
+    # Build a minimal item dict that _download_item expects.
+    db_row = index.get_collection_item(sale_item_id) or {}
+    item: dict[str, Any] = {
+        "sale_item_id": int(sale_item_id),
+        "band_name": db_row.get("band_name", "Unknown Artist"),
+        "item_title": db_row.get("item_title", "Unknown Album"),
+        "redownload_url": redownload_url,
+    }
+
+    watch_dir.mkdir(parents=True, exist_ok=True)
+    dest = _download_item(item, bc_config, watch_dir, session)
+
+    # Mark this item as locally downloaded and clear the remote track rows.
+    index.set_collection_item_mode(sale_item_id, "local")
+    index.set_track_source_for_item(sale_item_id, "local")
+
+    if status_callback:
+        status_callback("")
+    return dest
+
+
 # ---------------------------------------------------------------------------
 # Session management
 # ---------------------------------------------------------------------------

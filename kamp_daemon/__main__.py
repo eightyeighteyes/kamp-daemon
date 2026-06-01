@@ -821,6 +821,25 @@ def _cmd_daemon(
             _logger.exception("Unhandled error during manual Bandcamp sync")
             app.state.notify_bandcamp_sync_status("")  # back to idle
 
+    def _on_album_download_trigger(sale_item_id: str) -> None:
+        from .syncer import NeedsLoginError
+
+        fn = _album_download_trigger_ref[0]
+        if fn is None:
+            return
+        try:
+            fn(sale_item_id)
+            app.state.notify_album_download_status(sale_item_id, "done")
+            app.state.notify_library_changed()
+        except NeedsLoginError:
+            _logger.warning("Album download: no valid session — login required.")
+            app.state.notify_album_download_status(sale_item_id, "error")
+        except Exception:
+            _logger.exception(
+                "Unhandled error during album download (%s)", sale_item_id
+            )
+            app.state.notify_album_download_status(sale_item_id, "error")
+
     def _on_bandcamp_sync_all_trigger() -> None:
         from .syncer import NeedsLoginError
 
@@ -872,6 +891,7 @@ def _cmd_daemon(
     # lists so endpoints can call syncer methods without forward-reference issues.
     _sync_trigger_ref: list[Any] = [None]
     _sync_all_trigger_ref: list[Any] = [None]
+    _album_download_trigger_ref: list[Any] = [None]
 
     def _refresh_stream_url(album_url: str, track_num: int) -> tuple[str, float] | None:
         """Fetch a fresh CDN URL for a remote track before mpv plays it."""
@@ -901,6 +921,7 @@ def _cmd_daemon(
         on_bandcamp_disconnect=_on_bandcamp_disconnect,
         on_bandcamp_sync_trigger=_on_bandcamp_sync_trigger,
         on_bandcamp_sync_all_trigger=_on_bandcamp_sync_all_trigger,
+        on_album_download_trigger=_on_album_download_trigger,
         art_cache_dir=_state_dir() / "art_cache",
         refresh_stream_url=_refresh_stream_url,
         dev_mode=bool(os.environ.get("KAMP_DEV")),
@@ -1084,6 +1105,7 @@ def _cmd_daemon(
     # has the callback set.
     _sync_trigger_ref[0] = core.syncer.sync_once
     _sync_all_trigger_ref[0] = core.syncer.sync_all_purchases
+    _album_download_trigger_ref[0] = core.syncer.download_album
 
     core.syncer.status_callback = app.state.notify_bandcamp_sync_status
     core.syncer.on_tracks_indexed = app.state.notify_library_changed
