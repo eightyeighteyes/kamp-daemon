@@ -1028,6 +1028,57 @@ class TestLibraryScanner:
         assert len(tracks) == 1
         assert tracks[0].embedded_art is False
 
+    def test_scan_inherits_favorite_from_remote_track(self, tmp_path: Path) -> None:
+        """A newly-scanned local file inherits the favorite flag from a matching
+        bandcamp:// row (same album_artist, album, track_number, disc_number).
+        This preserves favorites set on streaming tracks after an album download.
+        """
+        lib = tmp_path / "music"
+        lib.mkdir()
+
+        index = LibraryIndex(tmp_path / "library.db")
+        # Seed a remote track that has been favorited.
+        remote_uri = "bandcamp://999/3"
+        index.upsert_many(
+            [
+                Track(
+                    file_path=Path(remote_uri),
+                    title="Remote",
+                    artist="The Artist",
+                    album_artist="The Artist",
+                    album="Great Album",
+                    year="2020",
+                    track_number=1,
+                    disc_number=1,
+                    ext="mp3",
+                    embedded_art=False,
+                    mb_release_id="",
+                    mb_recording_id="",
+                    source="bandcamp",
+                )
+            ]
+        )
+        index.set_favorite(remote_uri, True)
+
+        # Scan in a local file with matching album metadata.
+        _make_mp3(
+            lib / "01.mp3",
+            artist="The Artist",
+            album_artist="The Artist",
+            album="Great Album",
+            year="2020",
+            title="Remote",
+            track="1",
+            disc="1",
+        )
+        LibraryScanner(index).scan(lib)
+
+        local_track = index.get_track_by_path(lib / "01.mp3")
+        index.close()
+
+        assert local_track is not None
+        assert local_track.favorite is True
+
 
 # ---------------------------------------------------------------------------
 # Tag reader helpers
@@ -1699,6 +1750,37 @@ class TestRecordPlayed:
         assert track is not None
         assert track.play_count == 2
 
+    def test_record_played_remote_track(self, tmp_path: Path) -> None:
+        """record_played must work for bandcamp:// URIs (POSIX Path collapses // to /)."""
+        index = LibraryIndex(tmp_path / "library.db")
+        remote_uri = "bandcamp://999/3"
+        index.upsert_many(
+            [
+                Track(
+                    file_path=Path(remote_uri),
+                    title="Remote",
+                    artist="A",
+                    album_artist="A",
+                    album="B",
+                    year="",
+                    track_number=1,
+                    disc_number=1,
+                    ext="mp3",
+                    embedded_art=False,
+                    mb_release_id="",
+                    mb_recording_id="",
+                    source="bandcamp",
+                )
+            ]
+        )
+
+        index.record_played(Path(remote_uri))
+
+        track = index.get_track_by_path(remote_uri)
+        index.close()
+        assert track is not None
+        assert track.play_count == 1
+
     def test_migration_v4_to_v5_adds_play_count_column(self, tmp_path: Path) -> None:
         """Existing v4 databases gain the play_count column on open."""
         import sqlite3 as _sqlite3
@@ -1819,6 +1901,42 @@ class TestRecordTrackStarted:
         index = LibraryIndex(tmp_path / "library.db")
         index.record_track_started(tmp_path / "ghost.mp3")  # must not raise
         index.close()
+
+    def test_record_track_started_remote_track(self, tmp_path: Path) -> None:
+        """record_track_started must work for bandcamp:// URIs."""
+        import time
+
+        index = LibraryIndex(tmp_path / "library.db")
+        remote_uri = "bandcamp://999/3"
+        index.upsert_many(
+            [
+                Track(
+                    file_path=Path(remote_uri),
+                    title="Remote",
+                    artist="A",
+                    album_artist="A",
+                    album="B",
+                    year="",
+                    track_number=1,
+                    disc_number=1,
+                    ext="mp3",
+                    embedded_art=False,
+                    mb_release_id="",
+                    mb_recording_id="",
+                    source="bandcamp",
+                )
+            ]
+        )
+
+        before = time.time()
+        index.record_track_started(Path(remote_uri))
+        after = time.time()
+
+        track = index.get_track_by_path(remote_uri)
+        index.close()
+        assert track is not None
+        assert track.last_played is not None
+        assert before <= track.last_played <= after
 
     def test_last_played_sort_reflects_record_track_started(
         self, tmp_path: Path
