@@ -375,6 +375,7 @@ def sync_collection_stream(
     index: "LibraryIndex",
     status_callback: Callable[[str], None] | None = None,
     art_cache_dir: Path | None = None,
+    batch_indexed_callback: Callable[[], None] | None = None,
 ) -> tuple[int, int]:
     """Index all Bandcamp purchases as remote rows — no ZIP download.
 
@@ -454,6 +455,8 @@ def sync_collection_stream(
                         item_title,
                         band_name,
                     )
+                    if batch_indexed_callback:
+                        batch_indexed_callback()
             except Exception as exc:
                 logger.warning(
                     "fetch_album_tracks: skipping tracks for %r by %r (%s): %s",

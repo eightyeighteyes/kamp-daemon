@@ -35,6 +35,7 @@ def _sync_worker(
     bc_config: BandcampConfig,
     watch_dir: Path,
     db_path: Path,
+    notify_q: Any,
     status_q: Any,
     log_q: Any,
     result_q: Any,
@@ -61,6 +62,7 @@ def _sync_worker(
                     index=index,
                     status_callback=lambda msg: status_q.put(msg),
                     art_cache_dir=_state_dir() / "art_cache",
+                    batch_indexed_callback=lambda: notify_q.put(True),
                 )
                 result_q.put(("ok_stream", (album_count, track_count)))
             else:
@@ -327,9 +329,10 @@ class Syncer:
         if self.status_callback is not None:
             self.status_callback("Syncing\u2026")
 
+        notify_q: Any = multiprocessing.get_context("spawn").Queue()
         proc, status_q, log_q, result_q = _spawn_worker(
             _sync_worker,
-            (bc, self._config.paths.watch_folder, db_path),
+            (bc, self._config.paths.watch_folder, db_path, notify_q),
         )
 
         # Drain both queues while the subprocess runs.  log_q MUST be drained
@@ -344,6 +347,13 @@ class Syncer:
             except queue.Empty:
                 pass
             _replay_log_queue(log_q)
+            while True:
+                try:
+                    notify_q.get_nowait()
+                    if self.on_tracks_indexed is not None:
+                        self.on_tracks_indexed()
+                except queue.Empty:
+                    break
 
         # Drain any messages that arrived just before the process exited.
         while True:
@@ -351,6 +361,13 @@ class Syncer:
                 msg = status_q.get_nowait()
                 if self.status_callback is not None:
                     self.status_callback(msg)
+            except queue.Empty:
+                break
+        while True:
+            try:
+                notify_q.get_nowait()
+                if self.on_tracks_indexed is not None:
+                    self.on_tracks_indexed()
             except queue.Empty:
                 break
 

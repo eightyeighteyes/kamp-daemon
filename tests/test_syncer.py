@@ -790,6 +790,44 @@ class TestStreamMode:
             syncer.sync_once()
         assert fired == [True]
 
+    def test_on_tracks_indexed_fires_per_batch_via_notify_q(
+        self, tmp_path: Path
+    ) -> None:
+        """on_tracks_indexed fires once per album batch during streaming (via notify_q).
+
+        Simulates sync_collection_stream invoking batch_indexed_callback twice
+        (two album batches) plus the belt-and-suspenders final call at ok_stream.
+        """
+        syncer = Syncer(self._make_stream_config(tmp_path))
+        fired: list[bool] = []
+        syncer.on_tracks_indexed = lambda: fired.append(True)
+
+        def _stream_with_two_batches(
+            bc_config: object,
+            watch_dir: object,
+            index: object,
+            status_callback: object = None,
+            art_cache_dir: object = None,
+            batch_indexed_callback: object = None,
+        ) -> tuple[int, int]:
+            if batch_indexed_callback is not None:
+                batch_indexed_callback()
+                batch_indexed_callback()
+            return (2, 4)
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp.sync_collection_stream",
+                side_effect=_stream_with_two_batches,
+            ),
+            patch("kamp_daemon.syncer._spawn_worker", side_effect=_inline_worker),
+            patch("kamp_daemon.syncer._state_dir", return_value=tmp_path),
+        ):
+            syncer.sync_once()
+
+        # 2 per-batch calls via notify_q + 1 belt-and-suspenders final call = 3
+        assert len(fired) == 3
+
     def test_on_tracks_indexed_not_called_when_no_new_tracks(
         self, tmp_path: Path
     ) -> None:
