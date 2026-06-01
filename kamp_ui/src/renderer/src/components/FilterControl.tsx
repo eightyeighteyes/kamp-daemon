@@ -74,7 +74,9 @@ export function FilterControl(): React.JSX.Element {
             <>
               <button
                 className="toolbar-dropdown-item toolbar-dropdown-clear"
-                onClick={() => setLibraryFilter([])}
+                onClick={() =>
+                  setLibraryFilter(libraryFilter.filter((f) => SOURCE_KEYS.includes(f)))
+                }
               >
                 No filter
               </button>
