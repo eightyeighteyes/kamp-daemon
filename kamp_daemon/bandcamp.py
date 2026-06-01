@@ -486,25 +486,27 @@ def download_single_album(
     session_data = _ensure_session(bc_config, index)
     session = _make_requests_session(session_data)
 
-    _, username = _get_fan_info(session)
+    fan_id, _ = _get_fan_info(session)
 
-    # Resolve the signed download-page URL for this specific item.
-    links = _get_download_links(username, {int(sale_item_id)}, session)
-    redownload_url = links.get(int(sale_item_id))
-    if not redownload_url:
+    # Use the same collection API path that sync_new_purchases uses.
+    # _fetch_collection paginates the full collection and embeds redownload_url
+    # (from each page's redownload_urls dict) directly into every item dict.
+    # _get_download_links (HTML scrape) only shows recent purchases on the
+    # profile page and misses items that are not in the visible scroll window.
+    if status_callback:
+        status_callback(f"Fetching collection for {sale_item_id}…")
+    collection = _fetch_collection(fan_id, session, index)
+
+    target_id = int(sale_item_id)
+    item = next((i for i in collection if i.get("sale_item_id") == target_id), None)
+    if item is None or not item.get("redownload_url"):
         raise BandcampAPIError(
             f"No download link found for sale_item_id={sale_item_id} "
-            f"(item may be hidden or not yet available for download)"
+            f"(item not in collection or redownload_url missing)"
         )
 
-    # Build a minimal item dict that _download_item expects.
-    db_row = index.get_collection_item(sale_item_id) or {}
-    item: dict[str, Any] = {
-        "sale_item_id": int(sale_item_id),
-        "band_name": db_row.get("band_name", "Unknown Artist"),
-        "item_title": db_row.get("item_title", "Unknown Album"),
-        "redownload_url": redownload_url,
-    }
+    if status_callback:
+        status_callback(f"Downloading album {sale_item_id}…")
 
     watch_dir.mkdir(parents=True, exist_ok=True)
     dest = _download_item(item, bc_config, watch_dir, session)

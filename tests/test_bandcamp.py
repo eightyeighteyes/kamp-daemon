@@ -2264,21 +2264,28 @@ class TestFetchAlbumTracks:
 class TestDownloadSingleAlbum:
     """Tests for download_single_album()."""
 
+    def _collection_item(
+        self, sale_item_id: str = "42", with_url: bool = True
+    ) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "sale_item_id": int(sale_item_id),
+            "sale_item_type": "p",
+            "band_name": "Test Band",
+            "item_title": "Test Album",
+        }
+        if with_url:
+            item["redownload_url"] = f"https://bandcamp.com/download?id={sale_item_id}"
+        return item
+
     def _run(
         self,
         tmp_path: Path,
         sale_item_id: str = "42",
-        redownload_links: dict | None = None,
-        db_row: dict | None = None,
+        collection: list[dict[str, Any]] | None = None,
     ) -> Path:
         config = _bc_config(tmp_path)
         watch_folder = tmp_path / "watch"
         index = MagicMock()
-        index.get_collection_item.return_value = db_row or {
-            "sale_item_id": sale_item_id,
-            "band_name": "Test Band",
-            "item_title": "Test Album",
-        }
 
         def fake_download_item(
             item: dict, bc_config: object, watch_dir: Path, session: object
@@ -2288,10 +2295,10 @@ class TestDownloadSingleAlbum:
             dest.write_bytes(b"zip")
             return dest
 
-        links = (
-            redownload_links
-            if redownload_links is not None
-            else {int(sale_item_id): "https://bandcamp.com/download?id=42"}
+        fake_collection = (
+            collection
+            if collection is not None
+            else [self._collection_item(sale_item_id)]
         )
 
         with (
@@ -2303,7 +2310,9 @@ class TestDownloadSingleAlbum:
                 "kamp_daemon.bandcamp._make_requests_session", return_value=MagicMock()
             ),
             patch("kamp_daemon.bandcamp._get_fan_info", return_value=(123, "testuser")),
-            patch("kamp_daemon.bandcamp._get_download_links", return_value=links),
+            patch(
+                "kamp_daemon.bandcamp._fetch_collection", return_value=fake_collection
+            ),
             patch(
                 "kamp_daemon.bandcamp._download_item", side_effect=fake_download_item
             ),
@@ -2316,15 +2325,9 @@ class TestDownloadSingleAlbum:
         assert dest.suffix == ".zip"
 
     def test_updates_collection_mode_and_track_source(self, tmp_path: Path) -> None:
-        from unittest.mock import MagicMock
-
         config = _bc_config(tmp_path)
         index = MagicMock()
-        index.get_collection_item.return_value = {
-            "sale_item_id": "42",
-            "band_name": "B",
-            "item_title": "A",
-        }
+        fake_collection = [self._collection_item("42")]
 
         with (
             patch(
@@ -2336,8 +2339,7 @@ class TestDownloadSingleAlbum:
             ),
             patch("kamp_daemon.bandcamp._get_fan_info", return_value=(1, "user")),
             patch(
-                "kamp_daemon.bandcamp._get_download_links",
-                return_value={42: "https://url"},
+                "kamp_daemon.bandcamp._fetch_collection", return_value=fake_collection
             ),
             patch(
                 "kamp_daemon.bandcamp._download_item", return_value=tmp_path / "a.zip"
@@ -2348,6 +2350,12 @@ class TestDownloadSingleAlbum:
         index.set_collection_item_mode.assert_called_once_with("42", "local")
         index.set_track_source_for_item.assert_called_once_with("42", "local")
 
-    def test_raises_when_no_download_link(self, tmp_path: Path) -> None:
+    def test_raises_when_item_not_in_collection(self, tmp_path: Path) -> None:
         with pytest.raises(BandcampAPIError, match="No download link"):
-            self._run(tmp_path, redownload_links={})
+            self._run(tmp_path, collection=[])
+
+    def test_raises_when_redownload_url_missing(self, tmp_path: Path) -> None:
+        with pytest.raises(BandcampAPIError, match="No download link"):
+            self._run(
+                tmp_path, collection=[self._collection_item("42", with_url=False)]
+            )
