@@ -125,12 +125,18 @@ interface Props {
 export function OnboardingScreen({ onComplete, onTitleChange }: Props): React.JSX.Element {
   const scanStatus = useStore((s) => s.scanStatus)
   const scanProgress = useStore((s) => s.scanProgress)
+  const albums = useStore((s) => s.library.albums)
+  const configValues = useStore((s) => s.configValues)
   const setLibraryPath = useStore((s) => s.setLibraryPath)
   const scanLibrary = useStore((s) => s.scanLibrary)
   const setWatchFolderPath = useStore((s) => s.setWatchFolderPath)
   const configuredLibraryPath = useStore((s) => s.configuredLibraryPath)
   const loadConfig = useStore((s) => s.loadConfig)
   const setConfigValue = useStore((s) => s.setConfigValue)
+
+  const isBandcampStreamMode =
+    configValues?.['bandcamp.connected'] === true &&
+    configValues?.['bandcamp.collection_mode'] === 'stream'
 
   const [step, setStep] = useState<OnboardingStep>('welcome')
   const [vinylPhase, setVinylPhase] = useState<VinylPhase>('rising')
@@ -178,10 +184,16 @@ export function OnboardingScreen({ onComplete, onTitleChange }: Props): React.JS
   // When scan completes: sink the vinyl; if past all cards, finish onboarding.
   // onComplete is accessed via ref so this effect never needs it as a dep,
   // preventing re-renders from recreating the closure and cancelling the timeout.
+  // In Bandcamp stream mode, the almost-done step waits for the first album to
+  // appear before exiting — avoids handing the user a blank library while
+  // sync_collection_stream continues in the background.
   useEffect(() => {
     if (scanStatus !== 'done' || scanDoneRef.current) return
-    scanDoneRef.current = true
     if (step === 'almost-done') {
+      // In stream mode, hold until the first library.changed broadcast delivers content.
+      // scanDoneRef is NOT set here so this effect re-runs when albums.length changes.
+      if (isBandcampStreamMode && albums.length === 0) return
+      scanDoneRef.current = true
       // Snap rotating strings to "All set!" immediately (deferred to avoid sync setState in effect).
       setTimeout(() => setShowAllSet(true), 0)
       // After the 500ms hold, sink the vinyl; then wait for sink + art-preload buffer.
@@ -191,9 +203,10 @@ export function OnboardingScreen({ onComplete, onTitleChange }: Props): React.JS
         setTimeout(() => onCompleteRef.current(), 1600)
       }, 500)
     } else {
+      scanDoneRef.current = true
       setTimeout(() => setVinylPhase('sinking'), 0)
     }
-  }, [scanStatus, step])
+  }, [scanStatus, step, isBandcampStreamMode, albums.length])
 
   // Keep refs so the rotation interval can read the latest values without
   // needing them as dependencies (which would restart the interval on every poll tick).

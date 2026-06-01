@@ -2173,6 +2173,98 @@ class TestSyncCollectionStream:
         assert album_count == 2  # both albums counted in bandcamp_collection
         assert track_count == 0  # no tracks indexed (fetch failed)
 
+    def test_batch_indexed_callback_fires_per_new_batch(self, tmp_path: Path) -> None:
+        """batch_indexed_callback fires once per album batch that has new tracks."""
+        from kamp_core.library import Track
+        from pathlib import Path as _Path
+
+        def _fake_track(n: int) -> Track:
+            return Track(
+                file_path=_Path(f"bandcamp://1/{n}"),
+                title=f"Track {n}",
+                artist="A",
+                album_artist="A",
+                album="Album",
+                year="2020",
+                track_number=n,
+                disc_number=1,
+                ext="mp3",
+                embedded_art=False,
+                mb_release_id="",
+                mb_recording_id="",
+                source="bandcamp",
+            )
+
+        items = [_item(1), _item(2), _item(3)]
+        watch_folder = tmp_path / "watch"
+        config = _bc_config(tmp_path)
+        mock_session = _make_requests_mock(items)
+        index = MagicMock()
+        index.get_collection_state.return_value = {}
+        index.has_remote_album_tracks.return_value = False
+
+        fired: list[bool] = []
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
+            patch(
+                "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
+            ),
+            patch(
+                "kamp_daemon.bandcamp.fetch_album_tracks",
+                side_effect=[
+                    [_fake_track(1)],
+                    [_fake_track(2)],
+                    [_fake_track(3)],
+                ],
+            ),
+        ):
+            sync_collection_stream(
+                config,
+                watch_folder,
+                index,
+                batch_indexed_callback=lambda: fired.append(True),
+            )
+
+        assert len(fired) == 3  # one call per album with new tracks
+
+    def test_batch_indexed_callback_not_called_when_no_new_tracks(
+        self, tmp_path: Path
+    ) -> None:
+        """batch_indexed_callback is not called when albums already have tracks."""
+        items = [_item(1), _item(2)]
+        watch_folder = tmp_path / "watch"
+        config = _bc_config(tmp_path)
+        mock_session = _make_requests_mock(items)
+        index = MagicMock()
+        index.get_collection_state.return_value = {}
+        # Tracks already exist — fetch_album_tracks path is skipped entirely.
+        index.has_remote_album_tracks.return_value = True
+
+        fired: list[bool] = []
+
+        with (
+            patch(
+                "kamp_daemon.bandcamp._ensure_session",
+                return_value=_make_session_data(),
+            ),
+            patch(
+                "kamp_daemon.bandcamp._make_requests_session", return_value=mock_session
+            ),
+            patch("kamp_daemon.bandcamp.fetch_album_tracks", return_value=[]),
+        ):
+            sync_collection_stream(
+                config,
+                watch_folder,
+                index,
+                batch_indexed_callback=lambda: fired.append(True),
+            )
+
+        assert fired == []
+
 
 class TestStreamSyncArtPrefetch:
     """Art prefetch behaviour in sync_collection_stream."""
