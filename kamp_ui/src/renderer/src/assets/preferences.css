@@ -70,6 +70,15 @@
   scrollbar-color: var(--border) transparent;
 }
 
+.prefs-status-rail {
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: left;
+}
+
 .prefs-section {
   margin-top: 24px;
 }

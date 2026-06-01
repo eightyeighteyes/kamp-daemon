@@ -9,6 +9,15 @@ import { buildKampAPI, onBandcampSyncStatus, onPipelineStage } from './kampAPI'
 // directly from the filesystem. The .asar extension in __dirname is definitive.
 const isPackaged: boolean = __dirname.includes('.asar')
 
+// Read the app version from package.json at preload init time. __dirname in
+// the compiled preload is always two levels below the package root (out/preload/),
+// so ../../package.json resolves correctly in both dev and packaged modes.
+const appVersion: string = (
+  JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8')) as {
+    version: string
+  }
+).version
+
 function _kampTokenFilePath(): string {
   if (process.platform === 'win32') {
     return join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'kamp', '.token')
@@ -27,6 +36,7 @@ function _readKampToken(): string | null {
 // Custom APIs for renderer
 const api = {
   isPackaged,
+  appVersion,
   openDirectory: (): Promise<string | null> => ipcRenderer.invoke('open-directory'),
   onOpenPreferences: (callback: () => void): (() => void) => {
     const handler = (): void => callback()
