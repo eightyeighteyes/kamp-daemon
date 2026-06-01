@@ -1,6 +1,6 @@
 import React from 'react'
 import { useStore } from '../store'
-import { getTracksForAlbum } from '../api/client'
+import { getTracksForAlbum, downloadAlbum } from '../api/client'
 import type { Album } from '../api/client'
 import { ContextMenu } from './ContextMenu'
 import { revealInFinderLabel } from '../hooks/platformLabel'
@@ -17,6 +17,7 @@ export function AlbumContextMenu({ x, y, album, onClose }: Props): React.JSX.Ele
   const playAlbumNext = useStore((s) => s.playAlbumNext)
   const addAlbumToQueue = useStore((s) => s.addAlbumToQueue)
   const setAlbumFavorite = useStore((s) => s.setAlbumFavorite)
+  const markAlbumDownloading = useStore((s) => s.markAlbumDownloading)
 
   return (
     <ContextMenu x={x} y={y} onClose={onClose}>
@@ -62,20 +63,39 @@ export function AlbumContextMenu({ x, y, album, onClose }: Props): React.JSX.Ele
         </span>
         {album.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
       </button>
-      <button
-        className="track-context-menu-item"
-        onClick={async () => {
-          let filePath = album.file_path
-          if (!filePath) {
+      {album.source === 'local' && (
+        <button
+          className="track-context-menu-item"
+          onClick={async () => {
+            let filePath = album.file_path
+            if (!filePath) {
+              const tracks = await getTracksForAlbum(album.album_artist, album.album)
+              filePath = tracks[0]?.file_path ?? ''
+            }
+            if (filePath) window.api.showItemInFolder(filePath)
+            onClose()
+          }}
+        >
+          {revealInFinderLabel()}
+        </button>
+      )}
+      {album.source !== 'local' && (
+        <button
+          className="track-context-menu-item track-context-menu-item--action"
+          onClick={async () => {
             const tracks = await getTracksForAlbum(album.album_artist, album.album)
-            filePath = tracks[0]?.file_path ?? ''
-          }
-          if (filePath) window.api.showItemInFolder(filePath)
-          onClose()
-        }}
-      >
-        {revealInFinderLabel()}
-      </button>
+            const saleItemId =
+              tracks[0]?.file_path.split('bandcamp:')[1]?.replace(/^\/+/, '').split('/')[0] ?? null
+            if (saleItemId) {
+              markAlbumDownloading(saleItemId)
+              void downloadAlbum(saleItemId)
+            }
+            onClose()
+          }}
+        >
+          ⬇ Download this album
+        </button>
+      )}
     </ContextMenu>
   )
 }
