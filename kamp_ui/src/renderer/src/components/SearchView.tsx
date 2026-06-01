@@ -154,8 +154,10 @@ export function SearchView(): React.JSX.Element {
     )
   }
   // Source filters are AND-type: they narrow the result set independently.
-  if (libraryFilter.includes('remote_only')) visibleAlbums = visibleAlbums.filter((a) => a.source !== 'local')
-  if (libraryFilter.includes('local_only')) visibleAlbums = visibleAlbums.filter((a) => a.source === 'local')
+  if (libraryFilter.includes('remote_only'))
+    visibleAlbums = visibleAlbums.filter((a) => a.source !== 'local')
+  if (libraryFilter.includes('local_only'))
+    visibleAlbums = visibleAlbums.filter((a) => a.source === 'local')
 
   const albumMap = new Map<string, Album>()
   allAlbums.forEach((a) => albumMap.set(`${a.album_artist}\0${a.album}`, a))
@@ -175,8 +177,10 @@ export function SearchView(): React.JSX.Element {
     })
   }
   // Source filters are AND-type: they narrow the result set independently.
-  if (libraryFilter.includes('remote_only')) visibleTracks = visibleTracks.filter((t) => t.source !== 'local')
-  if (libraryFilter.includes('local_only')) visibleTracks = visibleTracks.filter((t) => t.source === 'local')
+  if (libraryFilter.includes('remote_only'))
+    visibleTracks = visibleTracks.filter((t) => t.source !== 'local')
+  if (libraryFilter.includes('local_only'))
+    visibleTracks = visibleTracks.filter((t) => t.source === 'local')
 
   return (
     <div className="search-view">
