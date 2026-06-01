@@ -7,6 +7,7 @@ import { useMenuBounds } from '../hooks/useMenuBounds'
 export function BandcampButton(): React.JSX.Element | null {
   const configValues = useStore((s) => s.configValues)
   const openPrefs = useStore((s) => s.openPrefs)
+  const loadConfig = useStore((s) => s.loadConfig)
   const [syncState, setSyncState] = useState<'idle' | 'syncing'>('idle')
   const [menuOpen, setMenuOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -40,7 +41,12 @@ export function BandcampButton(): React.JSX.Element | null {
       <div className="bandcamp-btn-anchor">
         <button
           className="bandcamp-btn bandcamp-btn--disconnected"
-          onClick={() => window.api.bandcamp.beginLogin().catch(console.error)}
+          onClick={() =>
+            window.api.bandcamp
+              .beginLogin()
+              .then(({ ok }) => { if (ok) loadConfig() })
+              .catch(console.error)
+          }
           {...tooltip(TOOLTIPS.BANDCAMP_RECONNECT)}
         >
           <svg viewBox="0 0 24 24" width="20" height="20">
