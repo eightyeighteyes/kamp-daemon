@@ -1796,6 +1796,25 @@ class TestFetchStreamUrl:
 
         assert url == "https://cdn.example.com/v0.mp3"
 
+    def test_prefers_mp3_v0_when_both_available(self) -> None:
+        track_data = [
+            {
+                "track_num": 1,
+                "file": {
+                    "mp3-128": "https://cdn.example.com/128.mp3",
+                    "mp3-v0": "https://cdn.example.com/v0.mp3",
+                },
+            },
+        ]
+        html = _album_page_html(track_data)
+        sess = MagicMock()
+        sess.get.return_value = MagicMock(status_code=200, text=html)
+        sess.get.return_value.raise_for_status = MagicMock()
+
+        url, _ = fetch_stream_url(self._album_url, 1, sess)
+
+        assert url == "https://cdn.example.com/v0.mp3"
+
     def test_raises_when_no_data_tralbum(self) -> None:
         sess = MagicMock()
         sess.get.return_value = MagicMock(

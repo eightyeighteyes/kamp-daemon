@@ -894,7 +894,7 @@ def fetch_stream_url(
     for t in tracks:
         if t.get("track_num") == track_number:
             files: dict[str, Any] = t.get("file") or {}
-            url = files.get("mp3-128") or files.get("mp3-v0")
+            url = files.get("mp3-v0") or files.get("mp3-128")
             if not url:
                 raise BandcampAPIError(
                     f"fetch_stream_url: no mp3 stream URL for track {track_number} "
