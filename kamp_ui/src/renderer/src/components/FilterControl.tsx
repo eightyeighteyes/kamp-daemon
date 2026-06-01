@@ -1,13 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 
-type FilterKey = 'favorite_album' | 'has_favorite_track' | 'unplayed' | 'top_albums'
+type FilterKey =
+  | 'favorite_album'
+  | 'has_favorite_track'
+  | 'unplayed'
+  | 'top_albums'
+  | 'remote_only'
+  | 'local_only'
 
 const FILTER_OPTIONS: { key: FilterKey; label: string }[] = [
   { key: 'favorite_album', label: 'Favorite albums' },
   { key: 'has_favorite_track', label: 'Albums with favorited tracks' },
   { key: 'unplayed', label: 'Unplayed' },
-  { key: 'top_albums', label: 'Top Albums' }
+  { key: 'top_albums', label: 'Top Albums' },
+  { key: 'remote_only', label: '☁ Remote' },
+  { key: 'local_only', label: '⬇ Local only' }
 ]
 
 export function FilterControl(): React.JSX.Element {
@@ -33,11 +41,18 @@ export function FilterControl(): React.JSX.Element {
     }
   }, [open])
 
+  const MUTUAL_EXCLUSIONS: Partial<Record<FilterKey, FilterKey>> = {
+    remote_only: 'local_only',
+    local_only: 'remote_only'
+  }
+
   const toggle = (key: FilterKey): void => {
     if (libraryFilter.includes(key)) {
       setLibraryFilter(libraryFilter.filter((f) => f !== key))
     } else {
-      setLibraryFilter([...libraryFilter, key])
+      const exclude = MUTUAL_EXCLUSIONS[key]
+      const base = exclude ? libraryFilter.filter((f) => f !== exclude) : libraryFilter
+      setLibraryFilter([...base, key])
     }
   }
 

@@ -29,24 +29,33 @@ export function AlbumGrid(): React.JSX.Element {
   let visible = selectedArtist ? albums.filter((a) => a.album_artist === selectedArtist) : albums
 
   if (libraryFilter.length > 0) {
-    // "Top Albums": top 100 by avg plays per track — same algorithm as Base Kamp Top Albums module.
-    const top100Keys =
-      libraryFilter.includes('top_albums') && albums.length > 0
-        ? new Set(
-            [...albums]
-              .sort((a, b) => b.play_count_avg - a.play_count_avg)
-              .slice(0, 100)
-              .map((a) => `${a.album_artist}\0${a.album}`)
-          )
-        : null
+    const QUALITATIVE_FILTERS = ['favorite_album', 'has_favorite_track', 'unplayed', 'top_albums']
+    const hasQualitativeFilter = QUALITATIVE_FILTERS.some((f) => libraryFilter.includes(f))
 
-    visible = visible.filter(
-      (a) =>
-        (libraryFilter.includes('favorite_album') && a.favorite) ||
-        (libraryFilter.includes('has_favorite_track') && a.has_favorite_track) ||
-        (libraryFilter.includes('unplayed') && a.last_played_at === null) ||
-        (libraryFilter.includes('top_albums') && top100Keys!.has(`${a.album_artist}\0${a.album}`))
-    )
+    if (hasQualitativeFilter) {
+      // "Top Albums": top 100 by avg plays per track — same algorithm as Base Kamp Top Albums module.
+      const top100Keys =
+        libraryFilter.includes('top_albums') && albums.length > 0
+          ? new Set(
+              [...albums]
+                .sort((a, b) => b.play_count_avg - a.play_count_avg)
+                .slice(0, 100)
+                .map((a) => `${a.album_artist}\0${a.album}`)
+            )
+          : null
+
+      visible = visible.filter(
+        (a) =>
+          (libraryFilter.includes('favorite_album') && a.favorite) ||
+          (libraryFilter.includes('has_favorite_track') && a.has_favorite_track) ||
+          (libraryFilter.includes('unplayed') && a.last_played_at === null) ||
+          (libraryFilter.includes('top_albums') && top100Keys!.has(`${a.album_artist}\0${a.album}`))
+      )
+    }
+
+    // Source filters are AND-type: they narrow the result set independently.
+    if (libraryFilter.includes('remote_only')) visible = visible.filter((a) => a.source !== 'local')
+    if (libraryFilter.includes('local_only')) visible = visible.filter((a) => a.source === 'local')
   }
 
   const emptyMessage = (): string => {
