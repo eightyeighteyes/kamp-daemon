@@ -37,8 +37,6 @@ const HERO_DEFAULT = 45
 const HERO_MIN = 15
 const HERO_KEY = 'kamp:hero-height-pct'
 
-const SOURCE_LABEL: Record<string, string> = { bandcamp: 'Bandcamp', mixed: 'Mixed' }
-
 function sourceIcon(source: string, size: number): React.JSX.Element {
   if (source === 'bandcamp') return <BandcampIcon size={size} />
   return <CloudIcon size={size} />
@@ -482,6 +480,22 @@ export function TrackList(): React.JSX.Element | null {
           )}
         </div>
         <div className="album-controls-group">
+          {isRemoteAlbum && (
+            <div className="streaming-controls">
+              <span className="source-pill">{sourceIcon(album.source, 16)}</span>
+              {saleItemId && (
+                <button
+                  className="album-download-btn"
+                  {...tooltip('Download Album')}
+                  aria-label="Download album"
+                  onClick={() => void downloadAlbum(saleItemId)}
+                >
+                  <DownloadArrowIcon size={16} />
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="album-controls">
             <button
               className="album-secondary-btn"
@@ -511,25 +525,6 @@ export function TrackList(): React.JSX.Element | null {
               {isCurrentAlbum && playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
             </button>
           </div>
-
-          {isRemoteAlbum && (
-            <div className="streaming-controls">
-              <span className="source-pill">
-                {sourceIcon(album.source, 11)}
-                {SOURCE_LABEL[album.source] ?? album.source}
-              </span>
-              {saleItemId && (
-                <button
-                  className="album-download-btn"
-                  title="Download to local library"
-                  onClick={() => void downloadAlbum(saleItemId)}
-                >
-                  <DownloadArrowIcon size={13} />
-                  Download
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
