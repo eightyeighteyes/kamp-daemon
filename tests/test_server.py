@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from kamp_core.library import AlbumInfo, Track
 from kamp_core.playback import PlaybackState
-from kamp_core.server import create_app, resolve_playback_uri
+from kamp_core.server import TrackOut, create_app, resolve_playback_uri
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1717,6 +1717,41 @@ class TestFavoriteEndpoint:
         )
         assert "play_count" in track
         assert track["play_count"] == 0
+
+    def test_track_out_preserves_remote_uri_double_slash(self) -> None:
+        # Path("bandcamp://999/3") on POSIX collapses // to /.  TrackOut must
+        # reconstruct the canonical double-slash form so clients can round-trip
+        # the URI back to the server correctly.
+        t = _track(1)
+        t.file_path = Path("bandcamp://999/3")
+        out = TrackOut.from_track(t)
+        assert out.file_path == "bandcamp://999/3"
+
+    def test_set_favorite_remote_track(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        remote_uri = "bandcamp://999/3"
+        mock_index.get_track_by_path.return_value = _track(1)
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        resp = TestClient(app).post(
+            "/api/v1/tracks/favorite",
+            json={"file_path": remote_uri, "favorite": True},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        mock_index.set_favorite.assert_called_once_with(remote_uri, True)
+        mock_queue.update_favorite.assert_called_once_with(remote_uri, True)
+
+    def test_set_favorite_remote_track_returns_404_when_not_found(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        mock_index.get_track_by_path.return_value = None
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        resp = TestClient(app).post(
+            "/api/v1/tracks/favorite",
+            json={"file_path": "bandcamp://999/3", "favorite": True},
+        )
+        assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------

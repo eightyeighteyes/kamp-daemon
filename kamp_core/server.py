@@ -40,7 +40,13 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-from kamp_core.library import LibraryIndex, LibraryScanner, Track, extract_art
+from kamp_core.library import (
+    LibraryIndex,
+    LibraryScanner,
+    Track,
+    _canonical_track_key,
+    extract_art,
+)
 from kamp_core.playback import MpvPlaybackEngine, PlaybackQueue
 
 # ---------------------------------------------------------------------------
@@ -150,7 +156,7 @@ class TrackOut(BaseModel):
             year=t.year,
             track_number=t.track_number,
             disc_number=t.disc_number,
-            file_path=str(t.file_path),
+            file_path=_canonical_track_key(t.file_path),
             ext=t.ext,
             embedded_art=t.embedded_art,
             mb_release_id=t.mb_release_id,
