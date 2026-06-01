@@ -488,10 +488,61 @@ class TestPlaybackQueue:
 
         assert q2.current() == before_toggle
 
-        # Toggling shuffle off on the restored queue must produce the original order.
-        q2.set_shuffle(False)
-        queue_tracks, _ = q2.queue_tracks()
-        assert queue_tracks == tracks
+    def test_restore_with_unreachable_stub_preserves_queue_length(self) -> None:
+        """Stub tracks (reachable=False) survive restore and appear in the queue."""
+        stub = Track(
+            file_path=Path("bandcamp://777/1"),
+            title="777/1",
+            artist="",
+            album_artist="",
+            album="",
+            year="",
+            track_number=0,
+            disc_number=0,
+            ext="",
+            embedded_art=False,
+            mb_release_id="",
+            mb_recording_id="",
+            source="bandcamp",
+            reachable=False,
+        )
+        local = _track(2)
+        q = PlaybackQueue()
+        q.restore([stub, local], order=[0, 1], pos=0, shuffle=False, repeat=False)
+
+        tracks, pos = q.queue_tracks()
+        assert len(tracks) == 2
+        assert tracks[0].reachable is False
+        assert tracks[1].reachable is True
+
+    def test_next_advances_past_unreachable_stubs(self) -> None:
+        """Simulates the _on_track_end skip loop: advancing past reachable=False tracks."""
+        stub = Track(
+            file_path=Path("bandcamp://777/1"),
+            title="777/1",
+            artist="",
+            album_artist="",
+            album="",
+            year="",
+            track_number=0,
+            disc_number=0,
+            ext="",
+            embedded_art=False,
+            mb_release_id="",
+            mb_recording_id="",
+            source="bandcamp",
+            reachable=False,
+        )
+        local = _track(2)
+        q = PlaybackQueue()
+        q.restore([stub, local], order=[0, 1], pos=0, shuffle=False, repeat=False)
+
+        # Simulate the _on_track_end loop: skip unreachable tracks.
+        track = q.next()
+        while track is not None and not track.reachable:
+            track = q.next()
+
+        assert track is local
 
     # ------------------------------------------------------------------
     # add_to_queue

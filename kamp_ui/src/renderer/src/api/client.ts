@@ -25,6 +25,7 @@ export type Track = {
   favorite: boolean
   play_count: number
   source: string
+  reachable: boolean
 }
 
 export type Album = {

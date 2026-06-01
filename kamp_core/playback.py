@@ -59,7 +59,7 @@ def _canonical_track_key(path: "Path | str") -> str:
     Local paths are returned as-is via str().
     """
     s = str(path)
-    if "bandcamp:" in s:
+    if s.startswith("bandcamp:"):
         rest = s.split("bandcamp:", 1)[1].lstrip("/\\").replace("\\", "/")
         return "bandcamp://" + rest
     return s
