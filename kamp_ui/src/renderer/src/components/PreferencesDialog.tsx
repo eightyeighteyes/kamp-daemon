@@ -1302,6 +1302,9 @@ export function PreferencesDialog({
             />
           )}
         </div>
+
+        {/* Status rail */}
+        <div className="prefs-status-rail">v{window.api.appVersion}</div>
       </div>
     </div>
   )

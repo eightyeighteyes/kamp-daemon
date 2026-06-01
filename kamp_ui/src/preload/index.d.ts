@@ -6,6 +6,7 @@ declare global {
     electron: ElectronAPI
     api: {
       isPackaged: boolean
+      appVersion: string
       openDirectory: () => Promise<string | null>
       onOpenPreferences: (callback: () => void) => () => void
       bandcamp: {
