@@ -41,7 +41,9 @@ export function FilterControl(): React.JSX.Element {
     }
   }
 
-  const hasActive = libraryFilter.length > 0
+  const SOURCE_KEYS = ['remote_only', 'local_only']
+  const activeFilters = libraryFilter.filter((f) => !SOURCE_KEYS.includes(f))
+  const hasActive = activeFilters.length > 0
 
   return (
     <div className="filter-anchor" ref={ref}>
@@ -53,8 +55,8 @@ export function FilterControl(): React.JSX.Element {
       >
         Filter
         {hasActive && (
-          <span className="toolbar-dropdown-badge" aria-label={`${libraryFilter.length} active`}>
-            · {libraryFilter.length}
+          <span className="toolbar-dropdown-badge" aria-label={`${activeFilters.length} active`}>
+            · {activeFilters.length}
           </span>
         )}
         <span className="dropdown-chevron" aria-hidden="true">

@@ -42,7 +42,7 @@ export function SortControl(): React.JSX.Element {
         aria-expanded={open}
         aria-haspopup="listbox"
       >
-        {SORT_LABELS[sortOrder as SortOrder] ?? SORT_LABELS.album_artist}
+        {`Sort: ${SORT_LABELS[sortOrder as SortOrder] ?? SORT_LABELS.album_artist}`}
         <span className="dropdown-chevron" aria-hidden="true">
           ▾
         </span>
