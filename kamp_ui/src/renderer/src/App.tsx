@@ -248,6 +248,7 @@ export default function App(): React.JSX.Element {
         bumpLastPlayedVersion,
         (saleItemId, state) => {
           if (state === 'queued') {
+            useStore.getState().clearAlbumDownloading(saleItemId)
             useStore.getState().markAlbumQueued(saleItemId)
           } else if (state === 'downloading') {
             useStore.getState().clearAlbumQueued(saleItemId)

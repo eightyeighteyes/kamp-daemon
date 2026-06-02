@@ -82,6 +82,10 @@
   animation: albumArtBlurPulse 1.8s ease-in-out infinite;
 }
 
+.album-card--queued .album-art--blurred .album-art-img {
+  animation: none;
+}
+
 .now-playing-badge {
   position: absolute;
   bottom: 6px;
