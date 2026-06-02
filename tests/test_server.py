@@ -806,6 +806,41 @@ class TestPlayerStateEndpoint:
         assert data["playing"] is True
         assert data["current_track"]["title"] == "Track 3"
 
+    def test_extrapolates_position_when_time_pos_events_stale(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """When no time-pos event has arrived for >300 ms while playing, the
+        snapshot must extrapolate position from wall-clock time so the progress
+        bar advances even after mpv stops emitting events (e.g. seek near EOF
+        of an HTTP stream — KAMP-392)."""
+        import time
+
+        state = PlaybackState(playing=True, position=42.0, duration=180.0)
+        state.position_updated_at = time.time() - 2.0  # simulate 2 s stale
+        mock_engine.state = state
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        data = c.get("/api/v1/player/state").json()
+        # Position must be extrapolated beyond the raw 42.0 (by ~2 s).
+        assert data["position"] > 42.0
+        assert data["position"] < 47.0  # allow 5 s slack for test execution time
+        assert data["position"] <= 180.0
+
+    def test_does_not_extrapolate_when_paused(
+        self, mock_index: MagicMock, mock_engine: MagicMock, mock_queue: MagicMock
+    ) -> None:
+        """Extrapolation must be suppressed when paused — freezing the bar
+        is correct behaviour in that state."""
+        import time
+
+        state = PlaybackState(playing=False, position=42.0, duration=180.0)
+        state.position_updated_at = time.time() - 5.0
+        mock_engine.state = state
+        app = create_app(index=mock_index, engine=mock_engine, queue=mock_queue)
+        c = TestClient(app)
+        data = c.get("/api/v1/player/state").json()
+        assert data["position"] == pytest.approx(42.0)
+
 
 class TestPlayerPlayEndpoint:
     def test_play_loads_album_and_starts_playback(

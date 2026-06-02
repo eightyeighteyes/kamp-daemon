@@ -1661,6 +1661,60 @@ class TestMpvPlaybackEngine:
         assert engine._lookahead_path is None
 
     # ------------------------------------------------------------------
+    # position_updated_at — KAMP-392 seek-freeze fix
+    # ------------------------------------------------------------------
+
+    def test_time_pos_event_updates_position_updated_at(self) -> None:
+        """Every time-pos event must refresh position_updated_at so the
+        _state_snapshot() interpolation threshold resets while mpv is emitting
+        normally."""
+        engine, _ = _make_engine()
+        before = engine.state.position_updated_at
+        engine._handle_event(
+            {"event": "property-change", "name": "time-pos", "data": 42.0}
+        )
+        assert engine.state.position_updated_at >= before
+        assert engine.state.position == pytest.approx(42.0)
+
+    def test_play_resets_position_updated_at(self) -> None:
+        """play() must reset position_updated_at so a stale timestamp from the
+        previous track's event-stall does not immediately extrapolate the new
+        track's position past 0."""
+        engine, _ = _make_engine()
+        engine.state.position_updated_at = 0.0  # simulate very stale
+        engine.play(Path("/music/01.mp3"))
+        import time
+
+        assert engine.state.position_updated_at >= time.time() - 1.0
+
+    def test_load_paused_resets_position_updated_at(self) -> None:
+        engine, _ = _make_engine()
+        engine.state.position_updated_at = 0.0
+        engine.load_paused(Path("/music/01.mp3"))
+        import time
+
+        assert engine.state.position_updated_at >= time.time() - 1.0
+
+    def test_file_loaded_resets_position_updated_at(self) -> None:
+        engine, _ = _make_engine()
+        engine.state.position_updated_at = 0.0
+        engine._handle_event({"event": "file-loaded"})
+        import time
+
+        assert engine.state.position_updated_at >= time.time() - 1.0
+
+    def test_eof_gapless_transition_resets_position_updated_at(self) -> None:
+        """When a gapless transition fires (had_lookahead=True), position_updated_at
+        must be reset so the new track's bar doesn't immediately jump forward."""
+        engine, _ = _make_engine()
+        engine.preload_next(_track(2))
+        engine.state.position_updated_at = 0.0  # simulate stale
+        engine._handle_event({"event": "end-file", "reason": "eof"})
+        import time
+
+        assert engine.state.position_updated_at >= time.time() - 1.0
+
+    # ------------------------------------------------------------------
     # preload_next near-end guard
     # ------------------------------------------------------------------
 
