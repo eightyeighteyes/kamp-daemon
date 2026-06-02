@@ -794,11 +794,27 @@ def create_app(
     )
 
     def _state_snapshot() -> PlayerStateOut:
+        import time as _t
+
         current = queue.current()
         nxt = queue.peek_next()
+        pos = engine.state.position
+        # When mpv stops emitting time-pos events (e.g. after seeking near EOF
+        # of an HTTP stream where the demuxer is at EOF but audio drains from
+        # the hardware buffer), extrapolate position from wall-clock time so the
+        # progress bar advances smoothly instead of freezing.
+        if (
+            engine.state.playing
+            and engine.state.duration > 0
+            and _t.time() - engine.state.position_updated_at > 0.3
+        ):
+            pos = min(
+                pos + (_t.time() - engine.state.position_updated_at),
+                engine.state.duration,
+            )
         return PlayerStateOut(
             playing=engine.state.playing,
-            position=engine.state.position,
+            position=pos,
             duration=engine.state.duration,
             volume=engine.state.volume,
             current_track=TrackOut.from_track(current) if current else None,

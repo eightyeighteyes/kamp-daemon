@@ -42,6 +42,11 @@ class PlaybackState:
     position: float = 0.0
     duration: float = 0.0
     volume: int = 100
+    # Wall-clock time of the last time-pos event from mpv. Used by
+    # _state_snapshot() to extrapolate position when events stall (e.g.
+    # after seeking near EOF of an HTTP stream: mpv drains its audio
+    # buffer while the demuxer is already at EOF and stops emitting events).
+    position_updated_at: float = field(default_factory=time.time, compare=False)
 
 
 # ---------------------------------------------------------------------------
@@ -1178,6 +1183,7 @@ class MpvPlaybackEngine:
             self._lookahead_id = None
             self.state.position = 0.0
             self.state.duration = 0.0
+            self.state.position_updated_at = time.time()
             self._send_command("loadfile", str(path), "replace")
         # Pause-toggle is unrelated to the lookahead slot; send outside the lock.
         self._send_command("set_property", "pause", False)
@@ -1202,6 +1208,7 @@ class MpvPlaybackEngine:
             self._lookahead_id = None
             self.state.position = 0.0
             self.state.duration = 0.0
+            self.state.position_updated_at = time.time()
             self._send_command("loadfile", str(path), "replace")
         self._send_command("set_property", "pause", True)
 
@@ -1409,6 +1416,7 @@ class MpvPlaybackEngine:
             data = event.get("data")
             if prop == "time-pos" and isinstance(data, (int, float)):
                 self.state.position = float(data)
+                self.state.position_updated_at = time.time()
             elif prop == "duration" and isinstance(data, (int, float)):
                 self.state.duration = float(data)
             elif prop == "pause" and isinstance(data, bool):
@@ -1424,6 +1432,7 @@ class MpvPlaybackEngine:
             # not fire on the new file-loaded event and block the lookahead re-arm.
             self.state.position = 0.0
             self.state.duration = 0.0
+            self.state.position_updated_at = time.time()
             if self._pending_seek is not None:
                 self.seek(self._pending_seek)
                 self._pending_seek = None
@@ -1462,6 +1471,7 @@ class MpvPlaybackEngine:
                         # the new track at 0:00 instead of a stale position.
                         self.state.position = 0.0
                         self.state.duration = 0.0
+                        self.state.position_updated_at = time.time()
                     self._lookahead_path = None
                     self._lookahead_url = None
                     self._lookahead_id = None
